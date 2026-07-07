@@ -1,0 +1,503 @@
+import React, { useState, useEffect } from "react";
+import { useParams, Link } from "react-router-dom";
+import { 
+  Calendar, 
+  Clock, 
+  MapPin, 
+  ArrowRight, 
+  ChevronRight,
+  SlidersHorizontal,
+  Bookmark
+} from "lucide-react";
+import SEO from "../../components/layout/SEO";
+import Button from "../../components/ui/Button";
+import { db } from "../../config/firebase";
+import { doc, getDoc, collection, getDocs, query, limit } from "firebase/firestore";
+
+// Import local assets
+import sparkImg from "../../assets/images/spark.png";
+import hackathonImg from "../../assets/images/hackathon.png";
+import seminarImg from "../../assets/images/seminar.png";
+import elenaImg from "../../assets/images/elena.png";
+
+interface DetailedEvent {
+  id: string;
+  title: string;
+  type: "Workshop" | "Hackathon" | "Seminar" | "Networking";
+  date: string;
+  time: string;
+  location: string;
+  description: string;
+  image: string;
+  primaryTag?: string;
+  maxReg: number;
+  currentReg: number;
+  startDate?: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  isVirtual?: boolean;
+  speakerName?: string;
+  speakerRole?: string;
+  speakerBio?: string;
+  speakerLinkedin?: string;
+  speakerTwitter?: string;
+  speakerImagePreview?: string;
+  minTeamSize?: number;
+  maxTeamSize?: number;
+  agendaTime1?: string;
+  agendaTitle1?: string;
+  agendaDesc1?: string;
+  agendaTime2?: string;
+  agendaTitle2?: string;
+  agendaDesc2?: string;
+  agendaTime3?: string;
+  agendaTitle3?: string;
+  agendaDesc3?: string;
+  agendaItems?: Array<{ time: string, title: string, description: string }>;
+}
+
+const EventDetailsPage: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const [event, setEvent] = useState<DetailedEvent | null>(null);
+  const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!id) return;
+    
+    const fetchEventDetails = async () => {
+      try {
+        setLoading(true);
+        const docRef = doc(db, "events", id);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          
+          let eventType: DetailedEvent["type"] = "Workshop";
+          if (data.category === "HACKATHONS") eventType = "Hackathon";
+          else if (data.category === "LECTURES") eventType = "Seminar";
+          
+          let img = sparkImg;
+          if (data.imageName === "hackathonImg" || data.category === "HACKATHONS") img = hackathonImg;
+          else if (data.imageName === "seminarImg" || data.category === "LECTURES") img = seminarImg;
+          
+          if (data.posterPreview) {
+            img = data.posterPreview;
+          }
+
+          let timeText = data.time || "10:00 AM";
+          if (data.startTime) {
+            timeText = data.startTime;
+            if (data.endTime) timeText += ` - ${data.endTime}`;
+          }
+
+          setEvent({
+            id: docSnap.id,
+            title: data.title || "",
+            type: eventType,
+            date: data.date || "Oct 24",
+            time: timeText,
+            location: data.location || "Virtual Hub",
+            description: data.description || "No description provided.",
+            image: img,
+            primaryTag: data.primaryTag || "",
+            maxReg: data.maxReg || 100,
+            currentReg: data.currentReg || 0,
+            startDate: data.startDate || "",
+            endDate: data.endDate || "",
+            startTime: data.startTime || "",
+            endTime: data.endTime || "",
+            isVirtual: data.isVirtual !== undefined ? data.isVirtual : true,
+            speakerName: data.speakerName || "Dr. Elena Vos",
+            speakerRole: data.speakerRole || "Lead Research Scientist @ AI Verse",
+            speakerBio: data.speakerBio || '"The limits of our models are the limits of our imagination. We aren\'t just building software, we are architecting thought."',
+            speakerLinkedin: data.speakerLinkedin || "#",
+            speakerTwitter: data.speakerTwitter || "#",
+            speakerImagePreview: data.speakerImagePreview || "",
+            minTeamSize: data.minTeamSize || null,
+            maxTeamSize: data.maxTeamSize || null,
+            agendaTime1: data.agendaTime1 || "09:00 AM - 10:30 AM",
+            agendaTitle1: data.agendaTitle1 || "Morning Keynote: The Future of Compute",
+            agendaDesc1: data.agendaDesc1 || "Opening session detailing next-generation silicon and computation architectural design patterns.",
+            agendaTime2: data.agendaTime2 || "11:30 AM - 01:00 PM",
+            agendaTitle2: data.agendaTitle2 || "Workshop: Transformer Efficiency",
+            agendaDesc2: data.agendaDesc2 || "Hands-on session covering FlashAttention, quantization techniques, and sparse computation models.",
+            agendaTime3: data.agendaTime3 || "03:00 PM - 04:30 PM",
+            agendaTitle3: data.agendaTitle3 || "Panel: Ethical Scaling",
+            agendaDesc3: data.agendaDesc3 || "A roundtable discussion with industry leaders on the societal implications of massive model deployment.",
+            agendaItems: data.agendaItems || []
+          });
+        }
+
+        // Fetch first 3 other events as related events
+        const q = query(collection(db, "events"), limit(4));
+        const querySnapshot = await getDocs(q);
+        const related: any[] = [];
+        querySnapshot.forEach((doc) => {
+          if (doc.id !== id && related.length < 3) {
+            const data = doc.data();
+            let eventType: DetailedEvent["type"] = "Workshop";
+            if (data.category === "HACKATHONS") eventType = "Hackathon";
+            else if (data.category === "LECTURES") eventType = "Seminar";
+            
+            let img = sparkImg;
+            if (data.imageName === "hackathonImg" || data.category === "HACKATHONS") img = hackathonImg;
+            else if (data.imageName === "seminarImg" || data.category === "LECTURES") img = seminarImg;
+            
+            if (data.posterPreview) {
+              img = data.posterPreview;
+            }
+
+            related.push({
+              id: doc.id,
+              title: data.title || "",
+              type: eventType,
+              date: data.date || "Oct 24",
+              location: data.location || "Virtual Hub",
+              image: img
+            });
+          }
+        });
+        setRelatedEvents(related);
+      } catch (err) {
+        console.error("Error reading event details:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchEventDetails();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-slate-500 font-bold text-xs uppercase tracking-wider animate-pulse">Loading event details...</p>
+      </div>
+    );
+  }
+
+  if (!event) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 text-center">
+        <h2 className="text-2xl font-extrabold text-slate-800">Event Not Found</h2>
+        <p className="text-slate-500 mt-2 text-sm max-w-xs font-semibold">The event you are looking for does not exist or has been removed.</p>
+        <Link to="/events" className="mt-6">
+          <Button variant="gradient" className="font-bold rounded-xl text-xs px-6 py-2.5">
+            Back to Events
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const seatsLeft = Math.max(0, event.maxReg - event.currentReg);
+
+  return (
+    <div className="bg-[#F8FAFC] pb-24 text-left font-sans animate-in fade-in duration-200">
+      <SEO 
+        title={`${event.title} - AI Verse`} 
+        description={event.description.substring(0, 150)}
+        keywords={`${event.type}, ${event.title}, AI Verse`}
+      />
+
+      {/* ================= HERO BANNER ================= */}
+      <section className="relative pt-24 pb-12 bg-gradient-to-tr from-slate-50 via-blue-50/20 to-sky-50/20 rounded-b-[40px] border-b border-slate-100 shadow-sm overflow-hidden">
+        {/* Background Decorative Blur */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
+          <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full bg-blue-100/30 blur-3xl"></div>
+          <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full bg-sky-100/20 blur-3xl"></div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            
+            {/* Title Column */}
+            <div className="lg:col-span-8 space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-block bg-blue-600/10 text-blue-700 text-[9px] font-black tracking-widest px-3 py-1 rounded-full uppercase">
+                  {event.type}
+                </span>
+                {event.primaryTag && (
+                  <span className="inline-block bg-slate-100 text-slate-500 text-[9px] font-bold tracking-wider px-2.5 py-0.5 rounded-full border border-slate-200/40">
+                    #{event.primaryTag}
+                  </span>
+                )}
+              </div>
+
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-800 tracking-tight leading-tight">
+                {event.title}
+              </h1>
+
+              {/* Meta Details */}
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-4 text-xs sm:text-sm text-slate-550 font-semibold">
+                <span className="flex items-center gap-2">
+                  <Calendar className="h-4.5 w-4.5 text-blue-600 shrink-0" />
+                  {event.date}
+                </span>
+                <span className="flex items-center gap-2">
+                  <Clock className="h-4.5 w-4.5 text-blue-600 shrink-0" />
+                  {event.time}
+                </span>
+                <span className="flex items-center gap-2">
+                  <MapPin className="h-4.5 w-4.5 text-blue-600 shrink-0" />
+                  {event.location}
+                </span>
+              </div>
+            </div>
+
+            {/* Registration Float Box */}
+            <div className="lg:col-span-4 self-stretch flex items-center">
+              <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xl w-full flex flex-col space-y-4 text-left">
+                <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                  <span className="text-[10px] font-black text-slate-400 tracking-wider uppercase">REGISTRATION</span>
+                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                    {seatsLeft > 0 ? `${seatsLeft} Seats Left` : "RSVP Full"}
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <h3 className="text-3xl font-black text-slate-800 tracking-tight">Free</h3>
+                  <p className="text-[10px] text-slate-400 font-semibold">Early Bird RSVP active</p>
+                </div>
+
+                {event.minTeamSize && event.maxTeamSize && (
+                  <div className="bg-slate-50/50 rounded-2xl p-3 border border-slate-100/50 flex items-center justify-between text-xs mt-2 text-left">
+                    <span className="font-bold text-slate-500">Team Size:</span>
+                    <span className="font-black text-slate-800 bg-white px-2 py-0.5 rounded-lg border border-slate-200 text-[10px]">
+                      {event.minTeamSize === event.maxTeamSize ? `${event.minTeamSize} member` : `${event.minTeamSize} - ${event.maxTeamSize} members`}
+                    </span>
+                  </div>
+                )}
+
+                <Link to={`/events/${event.id}/register`} className="w-full">
+                  <Button variant="gradient" className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2">
+                    Register Now
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+
+                <span className="text-[10px] text-slate-400 font-bold text-center block pt-1">
+                  Includes Certificate & Workshop Assets
+                </span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* ================= DETAILS CONTENT GRID ================= */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          {/* Left Column (span 8) */}
+          <div className="lg:col-span-8 space-y-8">
+            {/* Banner poster container */}
+            <div className="w-full h-64 sm:h-96 rounded-3xl overflow-hidden shadow-sm border border-slate-100">
+              <img 
+                src={event.image} 
+                alt={event.title} 
+                className="w-full h-full object-cover"
+              />
+            </div>
+
+            {/* About the Event */}
+            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] space-y-4">
+              <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2 border-b border-slate-50 pb-3">
+                <Bookmark className="h-4.5 w-4.5 text-blue-600" />
+                About the Event
+              </h2>
+              <p className="text-slate-550 text-sm leading-relaxed whitespace-pre-wrap font-semibold">
+                {event.description}
+              </p>
+              <p className="text-slate-550 text-sm leading-relaxed font-semibold pt-2">
+                This event is tailored for students, scholars, and builders wanting to deep-dive into cutting-edge applications. During the hands-on lab modules, mentors will assist step-by-step to design and deploy functional pipelines, reinforcing foundational frameworks.
+              </p>
+            </div>
+
+            {/* Event Agenda */}
+            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] space-y-6">
+              <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2 border-b border-slate-50 pb-3">
+                <SlidersHorizontal className="h-4.5 w-4.5 text-blue-600" />
+                Event Agenda
+              </h2>
+              
+              <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100 text-left">
+                {(event.agendaItems && event.agendaItems.length > 0
+                  ? event.agendaItems
+                  : [
+                      { time: event.agendaTime1, title: event.agendaTitle1, description: event.agendaDesc1 },
+                      { time: event.agendaTime2, title: event.agendaTitle2, description: event.agendaDesc2 },
+                      { time: event.agendaTime3, title: event.agendaTitle3, description: event.agendaDesc3 }
+                    ].filter(it => it.time || it.title)
+                ).map((item, idx) => (
+                  <div key={idx} className="relative group">
+                    <div className="absolute -left-[23px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white bg-blue-600 shadow-sm" />
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-blue-600">{item.time}</span>
+                      <h4 className="text-sm font-bold text-slate-850">{item.title}</h4>
+                      <p className="text-xs text-slate-550 font-semibold leading-relaxed">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Right Column (span 4) */}
+          <div className="lg:col-span-4 space-y-6">
+            
+            {/* 1. Meet the Speaker */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50">
+                Meet the Speaker
+              </h3>
+              
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-slate-100 shadow-inner">
+                  <img src={event.speakerImagePreview || elenaImg} alt="Speaker" className="w-full h-full object-cover" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-extrabold text-slate-800">{event.speakerName}</h4>
+                  <span className="text-[10px] text-blue-600 font-bold block">{event.speakerRole}</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-550 leading-relaxed font-semibold">
+                {event.speakerBio}
+              </p>
+
+              <div className="flex items-center gap-3.5 pt-3 border-t border-slate-50 text-slate-450">
+                {event.speakerLinkedin && event.speakerLinkedin !== "#" && (
+                  <a href={event.speakerLinkedin} target="_blank" rel="noreferrer" className="hover:text-blue-600 transition-colors" title="LinkedIn">
+                    <svg className="h-4.5 w-4.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                    </svg>
+                  </a>
+                )}
+                {event.speakerTwitter && event.speakerTwitter !== "#" && (
+                  <a href={event.speakerTwitter} target="_blank" rel="noreferrer" className="hover:text-sky-500 transition-colors" title="Twitter">
+                    <svg className="h-4.5 w-4.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
+                    </svg>
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Location & Venue */}
+            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
+              <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50">
+                Location & Venue
+              </h3>
+
+              {/* Styled Mock Map Box */}
+              <div className="relative h-44 rounded-2xl overflow-hidden border border-slate-100 shadow-inner bg-slate-50 flex items-center justify-center">
+                {/* Decorative map patterns */}
+                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:16px_16px]"></div>
+                
+                <div className="relative z-10 flex flex-col items-center gap-2">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm border border-blue-100">
+                    <MapPin className="h-5 w-5" />
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => alert("Opening directions in Google Maps...")}
+                    className="px-3.5 py-1.5 bg-white text-slate-700 font-bold rounded-lg border border-slate-200 text-[10px] shadow hover:bg-slate-50 transition-colors mt-2"
+                  >
+                    Get Directions
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1 leading-normal">
+                <span className="text-xs font-bold text-slate-700 block">{event.location}</span>
+                <span className="text-[10px] text-slate-450 font-semibold block">University Tech Campus Hub</span>
+              </div>
+
+              <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100/20 space-y-1">
+                <span className="text-[10px] font-black text-blue-800 uppercase tracking-wider">CHECK-IN INSTRUCTIONS</span>
+                <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                  Please bring a valid photo ID. On-site parking is validated for all registered attendees.
+                </p>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* ================= RELATED EVENTS ================= */}
+      {relatedEvents.length > 0 && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-16 pt-16 border-t border-slate-100">
+          <div className="flex justify-between items-center mb-8 text-left">
+            <h3 className="text-2xl font-black text-slate-800 tracking-tight">
+              Related Events
+            </h3>
+            <span className="text-xs font-bold text-blue-600 flex items-center gap-1">
+              Explore More
+              <ChevronRight className="h-4 w-4" />
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {relatedEvents.map((rEvent) => (
+              <div 
+                key={rEvent.id}
+                className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-md transition-all group flex flex-col justify-between"
+              >
+                <div>
+                  <div className="relative h-44 bg-slate-100 overflow-hidden">
+                    <img 
+                      src={rEvent.image} 
+                      alt={rEvent.title} 
+                      className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500"
+                    />
+                    <span className="absolute top-3 left-3 bg-white/95 text-blue-700 text-[8px] font-black tracking-widest px-2.5 py-1 rounded-full uppercase shadow">
+                      {rEvent.type}
+                    </span>
+                  </div>
+
+                  <div className="p-5 text-left space-y-2">
+                    <h4 className="font-extrabold text-slate-800 text-sm group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[40px]">
+                      {rEvent.title}
+                    </h4>
+                    <div className="flex items-center gap-4 text-[10px] font-bold text-slate-400 pt-1">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5 text-blue-500" />
+                        {rEvent.date}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5 text-blue-500 truncate" />
+                        {rEvent.location.split("/")[0].trim()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-5 pb-5 pt-1">
+                  <Link to={`/events/${rEvent.id}`} onClick={() => window.scrollTo(0, 0)}>
+                    <Button variant="secondary" size="sm" className="w-full rounded-xl bg-slate-50 border border-slate-200/50 hover:bg-slate-100 text-slate-650 font-bold text-xs py-2">
+                      View Details
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+    </div>
+  );
+};
+
+export default EventDetailsPage;
