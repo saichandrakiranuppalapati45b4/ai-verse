@@ -30,91 +30,98 @@ export const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="bg-[#0A0F1D] text-slate-400 font-sans border-t border-slate-900/60 pt-16 pb-12">
-      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+    <footer className="bg-white text-slate-500 font-sans border-t border-slate-100 pt-20 pb-12 relative overflow-hidden">
+      {/* Subtle background glow for light theme */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[1px] bg-gradient-to-r from-transparent via-blue-200 to-transparent"></div>
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-blue-50/50 rounded-full blur-[100px] pointer-events-none -z-10"></div>
+
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 relative z-10">
         
         {/* Main Columns Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-8 pb-12 border-b border-slate-900">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-12 pb-16 border-b border-slate-100">
           
           {/* Column 1: Logo & description */}
-          <div className="md:col-span-4 space-y-5">
-            <Link to="/" className="inline-flex items-center gap-1 group font-extrabold text-white text-xl tracking-tight select-none">
-              <span className="text-white font-serif text-2xl font-semibold">AI Verse</span>
+          <div className="md:col-span-4 space-y-6">
+            <Link to="/" className="inline-flex items-center gap-2 group font-extrabold tracking-tight select-none">
+              <div className="w-8 h-8 rounded-lg bg-[#2563EB] flex items-center justify-center text-white font-bold text-xs shadow-md shadow-blue-600/20 group-hover:scale-105 transition-transform duration-300">
+                AV
+              </div>
+              <span className="text-slate-900 font-sans text-2xl font-black tracking-tight">AI Verse</span>
             </Link>
-            <p className="text-sm text-slate-500 leading-relaxed max-w-sm">
+            <p className="text-sm text-slate-500 leading-relaxed max-w-sm font-medium">
               Empowering the next generation of AI pioneers through rigorous research and community-driven innovation.
             </p>
             {/* Social Links under logo */}
-            <div className="flex items-center gap-4 text-slate-600 pt-2">
-              <a href="#" className="hover:text-white transition-colors" aria-label="Twitter">
+            <div className="flex items-center gap-3 text-slate-400 pt-2">
+              <a href="#" className="p-2 -ml-2 rounded-lg hover:bg-blue-50 hover:text-[#2563EB] transition-all duration-300" aria-label="Twitter">
                 <Twitter className="h-5 w-5" />
               </a>
-              <a href="#" className="hover:text-white transition-colors" aria-label="GitHub">
+              <a href="#" className="p-2 rounded-lg hover:bg-blue-50 hover:text-[#2563EB] transition-all duration-300" aria-label="GitHub">
                 <Github className="h-5 w-5" />
               </a>
-              <a href="#" className="hover:text-white transition-colors" aria-label="Discord">
+              <a href="#" className="p-2 rounded-lg hover:bg-blue-50 hover:text-[#2563EB] transition-all duration-300" aria-label="Discord">
                 <MessageSquare className="h-5 w-5" />
               </a>
-              <a href="#" className="hover:text-white transition-colors" aria-label="LinkedIn">
+              <a href="#" className="p-2 rounded-lg hover:bg-blue-50 hover:text-[#2563EB] transition-all duration-300" aria-label="LinkedIn">
                 <Linkedin className="h-5 w-5" />
               </a>
             </div>
           </div>
 
           {/* Column 2: Community */}
-          <div className="md:col-span-2 space-y-4">
-            <h3 className="text-sm font-semibold text-white tracking-wide font-sans">Community</h3>
-            <ul className="space-y-2 text-sm text-slate-500">
+          <div className="md:col-span-2 space-y-5">
+            <h3 className="text-sm font-bold text-slate-900 tracking-wider uppercase font-sans">Community</h3>
+            <ul className="space-y-3 text-sm font-medium text-slate-500">
               <li>
-                <a href="#" className="hover:text-white transition-colors">Twitter</a>
+                <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Twitter</a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition-colors">GitHub</a>
+                <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">GitHub</a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition-colors">Discord</a>
+                <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Discord</a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition-colors">LinkedIn</a>
+                <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">LinkedIn</a>
               </li>
             </ul>
           </div>
 
           {/* Column 3: Resources */}
-          <div className="md:col-span-2 space-y-4">
-            <h3 className="text-sm font-semibold text-white tracking-wide font-sans">Resources</h3>
-            <ul className="space-y-2 text-sm text-slate-500">
+          <div className="md:col-span-2 space-y-5">
+            <h3 className="text-sm font-bold text-slate-900 tracking-wider uppercase font-sans">Resources</h3>
+            <ul className="space-y-3 text-sm font-medium text-slate-500">
               <li>
-                <a href="#" className="hover:text-white transition-colors">Newsletter</a>
+                <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Newsletter</a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
+                <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Privacy Policy</a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition-colors">Code of Conduct</a>
+                <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Code of Conduct</a>
               </li>
               <li>
-                <a href="#" className="hover:text-white transition-colors">Contact</a>
+                <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Contact</a>
               </li>
             </ul>
           </div>
 
           {/* Column 4: Newsletter Sign-up */}
-          <div className="md:col-span-4 space-y-4">
-            <h3 className="text-sm font-semibold text-white tracking-wide font-sans">Newsletter</h3>
-            <p className="text-sm text-slate-500">Stay updated on the latest news.</p>
+          <div className="md:col-span-4 space-y-5">
+            <h3 className="text-sm font-bold text-slate-900 tracking-wider uppercase font-sans">Newsletter</h3>
+            <p className="text-sm text-slate-500 font-medium leading-relaxed">Join our weekly newsletter to stay updated on the latest news and features.</p>
             <form onSubmit={handleNewsletterSubmit} className="flex items-center mt-2 max-w-sm">
               <div className="relative flex-grow">
                 <input
                   type="email"
                   required
-                  placeholder="Email"
-                  className="w-full bg-[#141A2E] text-white placeholder-slate-600 text-sm px-4 py-3 rounded-lg border border-slate-800/80 outline-none focus:border-aether-blue-500 transition-colors font-sans"
+                  placeholder="Enter your email"
+                  className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 text-sm px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100 transition-all font-medium"
                 />
               </div>
               <button
                 type="submit"
-                className="ml-2 bg-aether-blue-600 hover:bg-aether-blue-700 text-white p-3 rounded-lg flex items-center justify-center transition-colors shadow-button"
+                className="ml-3 bg-[#2563EB] hover:bg-blue-700 text-white p-3.5 rounded-xl flex items-center justify-center transition-all duration-300 shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 hover:-translate-y-0.5"
                 aria-label="Subscribe"
               >
                 <Send className="h-4 w-4" />
@@ -125,14 +132,14 @@ export const Footer: React.FC = () => {
         </div>
 
         {/* Footer Bottom Bar */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-600 gap-4">
+        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs font-semibold text-slate-400 gap-4">
           <div>
-            © 2026 AI Verse. Precise Innovation.
+            © {new Date().getFullYear()} AI Verse. All rights reserved.
           </div>
           <div className="flex gap-6">
-            <a href="#" className="hover:text-white transition-colors">Terms</a>
-            <a href="#" className="hover:text-white transition-colors">Privacy</a>
-            <a href="#" className="hover:text-white transition-colors">Cookies</a>
+            <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Terms</a>
+            <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Privacy</a>
+            <a href="#" className="hover:text-[#2563EB] transition-colors duration-200">Cookies</a>
           </div>
         </div>
 
