@@ -162,8 +162,16 @@ const HomePage: React.FC = () => {
       <section className="relative min-h-[90vh] flex items-center pt-8 pb-16 lg:py-24">
         {/* Animated Background Gradients */}
         <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-blue-100/35 blur-3xl"></div>
-          <div className="absolute top-1/3 right-10 w-[400px] h-[400px] rounded-full bg-sky-100/40 blur-3xl"></div>
+          <motion.div 
+            className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-blue-100/35 blur-3xl"
+            animate={{ x: [0, 40, -20, 0], y: [0, -40, 20, 0] }}
+            transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+          />
+          <motion.div 
+            className="absolute top-1/3 right-10 w-[400px] h-[400px] rounded-full bg-sky-100/40 blur-3xl"
+            animate={{ x: [0, -30, 40, 0], y: [0, 30, -20, 0] }}
+            transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
+          />
           {/* Subtle grid lines */}
           <div className="absolute inset-0 opacity-[0.03] bg-[linear-gradient(to_right,#808080_1px,transparent_1px),linear-gradient(to_bottom,#808080_1px,transparent_1px)] bg-[size:24px_24px]"></div>
         </div>
@@ -336,9 +344,16 @@ const HomePage: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          <motion.div 
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-50px" }}
+            variants={staggerContainer}
+            className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto"
+          >
             {/* The Mission Card */}
             <motion.div
+              variants={fadeInUp}
               whileHover={{ y: -6, boxShadow: "0 20px 40px rgba(37,99,235,0.08)" }}
               className="bg-white rounded-card shadow-card border border-slate-100 p-8 text-left space-y-5 transition-all duration-300"
             >
@@ -353,6 +368,7 @@ const HomePage: React.FC = () => {
 
             {/* The Vision Card */}
             <motion.div
+              variants={fadeInUp}
               whileHover={{ y: -6, boxShadow: "0 20px 40px rgba(37,99,235,0.08)" }}
               className="bg-white rounded-card shadow-card border border-slate-100 p-8 text-left space-y-5 transition-all duration-300"
             >
@@ -364,7 +380,7 @@ const HomePage: React.FC = () => {
                 To become a global nexus for AI innovation where visionary minds converge to solve complex challenges. We envision a future where our community leads the development of aetheric AI technologies that positively transform society.
               </p>
             </motion.div>
-          </div>
+          </motion.div>
         </div>
       </section>
 
@@ -381,9 +397,16 @@ const HomePage: React.FC = () => {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <motion.div 
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-50px" }}
+            variants={staggerContainer}
+            className="grid grid-cols-1 md:grid-cols-3 gap-8"
+          >
             {/* Pillar 1: Education */}
             <motion.div
+              variants={fadeInUp}
               whileHover={{ y: -8, borderBottomColor: "#3b82f6" }}
               className="bg-white rounded-card shadow-card border border-slate-100 p-8 text-left space-y-6 flex flex-col justify-between transition-all duration-300 border-b-2"
             >
@@ -404,6 +427,7 @@ const HomePage: React.FC = () => {
 
             {/* Pillar 2: Research */}
             <motion.div
+              variants={fadeInUp}
               whileHover={{ y: -8, borderBottomColor: "#3b82f6" }}
               className="bg-white rounded-card shadow-card border border-slate-100 p-8 text-left space-y-6 flex flex-col justify-between transition-all duration-300 border-b-2"
             >
@@ -424,6 +448,7 @@ const HomePage: React.FC = () => {
 
             {/* Pillar 3: Innovation */}
             <motion.div
+              variants={fadeInUp}
               whileHover={{ y: -8, borderBottomColor: "#3b82f6" }}
               className="bg-white rounded-card shadow-card border border-slate-100 p-8 text-left space-y-6 flex flex-col justify-between transition-all duration-300 border-b-2"
             >
@@ -441,7 +466,7 @@ const HomePage: React.FC = () => {
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
               </Link>
             </motion.div>
-          </div>
+          </motion.div>
 
         </div>
       </section>
