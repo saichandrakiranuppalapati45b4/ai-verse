@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import jsQR from "jsqr";
 import { db, auth } from "../../config/firebase";
-import { collection, getDocs, getDoc, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
 import SEO from "../../components/layout/SEO";
 import { 
   Search, 
@@ -132,6 +132,11 @@ const OrgAttendancePage: React.FC = () => {
         );
 
         const updatedRegsSnap = await getDocs(collection(db, "registrations"));
+        
+        // Fetch attendances from the new collection to override statuses
+        const attsSnap = await getDocs(collection(db, "attendances"));
+        const attendances = attsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
         const list: StudentAttendee[] = [];
         const regList: any[] = [];
 
@@ -142,6 +147,7 @@ const OrgAttendancePage: React.FC = () => {
           if (data.eventId === activeEventInfo.id || data.eventTitle?.toLowerCase() === activeEventInfo.title?.toLowerCase()) {
             // Push Team Lead if not a database user/organizer
             if (!dbUserEmails.has(data.teamLeadEmail?.toLowerCase())) {
+              const attRecord = attendances.find(a => a.participantId === (docSnap.id + "_lead") && a.eventId === activeEventInfo.id);
               list.push({
                 id: docSnap.id + "_lead",
                 regId: docSnap.id,
@@ -152,8 +158,8 @@ const OrgAttendancePage: React.FC = () => {
                 department: data.groupName || "Computer Science",
                 year: data.year || "Year 3",
                 program: data.program || "Honours",
-                checkInTime: data.checkInTime || "Not Checked-in",
-                status: (data.attendanceStatus as any) || "Absent",
+                checkInTime: attRecord?.checkInTime || data.checkInTime || "Not Checked-in",
+                status: (attRecord?.status as any) || (data.attendanceStatus as any) || "Absent",
                 avatar: data.avatar || "satoshiImg"
               });
             }
@@ -162,6 +168,7 @@ const OrgAttendancePage: React.FC = () => {
             if (data.members && data.members.length > 0) {
               data.members.forEach((m: any, idx: number) => {
                 if (!dbUserEmails.has(m.email?.toLowerCase())) {
+                  const attRecord = attendances.find(a => a.participantId === (docSnap.id + `_member_${idx}`) && a.eventId === activeEventInfo.id);
                   list.push({
                     id: docSnap.id + `_member_${idx}`,
                     regId: docSnap.id,
@@ -173,8 +180,8 @@ const OrgAttendancePage: React.FC = () => {
                     department: data.groupName || "Computer Science",
                     year: data.year || "Year 3",
                     program: data.program || "Honours",
-                    checkInTime: m.checkInTime || "Not Checked-in",
-                    status: (m.attendanceStatus as any) || "Absent",
+                    checkInTime: attRecord?.checkInTime || m.checkInTime || "Not Checked-in",
+                    status: (attRecord?.status as any) || (m.attendanceStatus as any) || "Absent",
                     avatar: "sarah"
                   });
                 }
@@ -320,6 +327,30 @@ const OrgAttendancePage: React.FC = () => {
     try {
       const regId = student.regId || studentId;
       const docRef = doc(db, "registrations", regId);
+
+      if (assignedEvent) {
+        const attsSnap = await getDocs(collection(db, "attendances"));
+        const existingDoc = attsSnap.docs.find(d => {
+          const data = d.data();
+          return data.eventId === assignedEvent.id && data.participantId === student.id;
+        });
+
+        if (existingDoc) {
+          await updateDoc(doc(db, "attendances", existingDoc.id), {
+            status: newStatus,
+            checkInTime: formattedCheckIn
+          });
+        } else {
+          await setDoc(doc(collection(db, "attendances")), {
+            eventId: assignedEvent.id,
+            participantId: student.id,
+            name: student.name,
+            role: "Participant",
+            status: newStatus,
+            checkInTime: formattedCheckIn
+          });
+        }
+      }
 
       if (student.isLead) {
         await updateDoc(docRef, {
@@ -884,26 +915,110 @@ const OrgAttendancePage: React.FC = () => {
                               members: updatedMembers
                             });
 
-                            // 2. Update local students list
-                            setStudents(prev => prev.map(s => {
-                              if (s.regId === scannedTeamInfo.id) {
-                                const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " (QR Scan)";
-                                if (s.isLead) {
-                                  return {
-                                    ...s,
-                                    status: rosterAttendance["lead"] || "Present",
-                                    checkInTime: timeStr
-                                  };
-                                } else if (s.memberIndex !== undefined) {
-                                  return {
-                                    ...s,
-                                    status: rosterAttendance[`member_${s.memberIndex}`] || "Present",
-                                    checkInTime: timeStr
-                                  };
+                            // 1.5 Update attendances collection
+                            if (assignedEvent) {
+                              const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " (QR Scan)";
+                              const attsSnap = await getDocs(collection(db, "attendances"));
+                              const existingDocs = attsSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+                              
+                              // Save lead
+                              const leadId = scannedTeamInfo.id + "_lead";
+                              const leadStatus = rosterAttendance["lead"] || "Present";
+                              const existingLead = existingDocs.find(d => d.eventId === assignedEvent.id && d.participantId === leadId);
+                              
+                              if (existingLead) {
+                                await updateDoc(doc(db, "attendances", existingLead.id), { status: leadStatus, checkInTime: timeStr });
+                              } else {
+                                await setDoc(doc(collection(db, "attendances")), {
+                                  eventId: assignedEvent.id,
+                                  participantId: leadId,
+                                  name: scannedTeamInfo.teamLeadName || "Unnamed Student",
+                                  role: "Participant",
+                                  status: leadStatus,
+                                  checkInTime: timeStr
+                                });
+                              }
+
+                              // Save members
+                              if (scannedTeamInfo.members && scannedTeamInfo.members.length > 0) {
+                                for (let i = 0; i < scannedTeamInfo.members.length; i++) {
+                                  const m = scannedTeamInfo.members[i];
+                                  const memId = scannedTeamInfo.id + `_member_${i}`;
+                                  const memStatus = rosterAttendance[`member_${i}`] || "Present";
+                                  const existingMem = existingDocs.find(d => d.eventId === assignedEvent.id && d.participantId === memId);
+                                  
+                                  if (existingMem) {
+                                    await updateDoc(doc(db, "attendances", existingMem.id), { status: memStatus, checkInTime: timeStr });
+                                  } else {
+                                    await setDoc(doc(collection(db, "attendances")), {
+                                      eventId: assignedEvent.id,
+                                      participantId: memId,
+                                      name: m.name || "Unnamed Teammate",
+                                      role: "Participant",
+                                      status: memStatus,
+                                      checkInTime: timeStr
+                                    });
+                                  }
                                 }
                               }
-                              return s;
-                            }));
+                            }
+
+                            // 2. Update local students list
+                            setStudents(prev => {
+                              const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " (QR Scan)";
+                              const exists = prev.some(s => s.regId === scannedTeamInfo.id);
+                              
+                              if (exists) {
+                                return prev.map(s => {
+                                  if (s.regId === scannedTeamInfo.id) {
+                                    if (s.isLead) {
+                                      return { ...s, status: rosterAttendance["lead"] || "Present", checkInTime: timeStr };
+                                    } else if (s.memberIndex !== undefined) {
+                                      return { ...s, status: rosterAttendance[`member_${s.memberIndex}`] || "Present", checkInTime: timeStr };
+                                    }
+                                  }
+                                  return s;
+                                });
+                              } else {
+                                const newStudents = [...prev];
+                                
+                                newStudents.push({
+                                  id: scannedTeamInfo.id + "_lead",
+                                  regId: scannedTeamInfo.id,
+                                  isLead: true,
+                                  name: scannedTeamInfo.teamLeadName || "Unnamed Student",
+                                  email: scannedTeamInfo.teamLeadEmail || "",
+                                  studentId: scannedTeamInfo.teamLeadStudentId || `AI-2026-${Math.floor(100 + Math.random() * 900)}`,
+                                  department: scannedTeamInfo.groupName || "Computer Science",
+                                  year: scannedTeamInfo.year || "Year 3",
+                                  program: scannedTeamInfo.program || "Honours",
+                                  checkInTime: timeStr,
+                                  status: rosterAttendance["lead"] || "Present",
+                                  avatar: scannedTeamInfo.avatar || "satoshiImg"
+                                });
+
+                                if (scannedTeamInfo.members && scannedTeamInfo.members.length > 0) {
+                                  scannedTeamInfo.members.forEach((m: any, idx: number) => {
+                                    newStudents.push({
+                                      id: scannedTeamInfo.id + `_member_${idx}`,
+                                      regId: scannedTeamInfo.id,
+                                      isLead: false,
+                                      memberIndex: idx,
+                                      name: m.name || "Unnamed Teammate",
+                                      email: m.email || "",
+                                      studentId: m.studentId || `AI-2026-${Math.floor(100 + Math.random() * 900)}`,
+                                      department: scannedTeamInfo.groupName || "Computer Science",
+                                      year: scannedTeamInfo.year || "Year 3",
+                                      program: scannedTeamInfo.program || "Honours",
+                                      checkInTime: timeStr,
+                                      status: rosterAttendance[`member_${idx}`] || "Present",
+                                      avatar: "sarah"
+                                    });
+                                  });
+                                }
+                                return newStudents;
+                              }
+                            });
 
                             setScanLoading(false);
                             setScanSuccessMsg(`${scannedTeamInfo.groupName} checked in successfully!`);
