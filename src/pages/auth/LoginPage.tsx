@@ -65,11 +65,15 @@ const LoginPage: React.FC = () => {
             if (userDocSnap.exists()) {
               const rawRole = userDocSnap.data().role || "member";
               const rawRoleLower = rawRole.toLowerCase();
-              if (rawRoleLower.includes("faculty") || rawRoleLower.includes("advisor") || rawRoleLower.includes("coordinator")) {
+              if (rawRoleLower.includes("faculty") || rawRoleLower.includes("advisor") || rawRoleLower.includes("coordinator") || rawRoleLower.includes("admin") || rawRoleLower.includes("super")) {
                 navigate("/faculty/dashboard");
                 return;
               } else if (rawRoleLower.includes("organizer") || rawRoleLower.includes("lead") || rawRoleLower.includes("head")) {
                 navigate("/organizer/dashboard");
+                return;
+              } else {
+                // Role is "member" or unrecognized — send to admin setup to pick correct role
+                navigate("/admin-setup");
                 return;
               }
             }
@@ -78,15 +82,13 @@ const LoginPage: React.FC = () => {
           }
         }
 
-        // Fallback checks on email string if document doesn't exist
-        if (email.includes("faculty")) navigate("/faculty/dashboard");
-        else if (email.includes("organizer") || email.includes("admin")) navigate("/organizer/dashboard");
-        else navigate("/");
+        // Fallback: if Firestore doc doesn't exist or fetch failed, go to admin-setup
+        navigate("/admin-setup");
       } else {
         // Simple custom email routing mock
-        if (email.includes("faculty")) {
+        if (email.includes("faculty") || email.includes("admin") || email.includes("super")) {
           await handleRoleQuickLogin("faculty");
-        } else if (email.includes("organizer") || email.includes("admin")) {
+        } else if (email.includes("organizer")) {
           await handleRoleQuickLogin("organizer");
         } else {
           await handleRoleQuickLogin("member");

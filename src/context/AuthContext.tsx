@@ -53,7 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const profileData = docSnap.data();
             const rawRole = profileData.role || "member";
             const normalizedRole = 
-              rawRole.toLowerCase().includes("faculty") || rawRole.toLowerCase().includes("advisor") || rawRole.toLowerCase().includes("coordinator") ? "faculty" as const :
+              rawRole.toLowerCase().includes("faculty") || rawRole.toLowerCase().includes("advisor") || rawRole.toLowerCase().includes("coordinator") || rawRole.toLowerCase().includes("admin") || rawRole.toLowerCase().includes("super") ? "faculty" as const :
               rawRole.toLowerCase().includes("organizer") || rawRole.toLowerCase().includes("lead") || rawRole.toLowerCase().includes("head") ? "organizer" as const :
               "member" as const;
 
@@ -82,7 +82,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           setLoading(false);
         }, (error) => {
-          console.error("Error in onSnapshot listener:", error);
+          console.error("[AuthContext] Error in onSnapshot listener:", error);
           setLoading(false);
         });
 
@@ -120,17 +120,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         setUser(mockUser);
         localStorage.setItem("aether_mock_user", JSON.stringify(mockUser));
+        setLoading(false);
       } else {
         // Real Firebase Authentication login
         await signInWithEmailAndPassword(auth, email, roleOrPassword);
         // Clear any old mock sessions
         localStorage.removeItem("aether_mock_user");
+        // NOTE: Do NOT set loading=false here — onAuthStateChanged will handle it
+        // after the Firestore user profile snapshot arrives. This prevents the
+        // ProtectedRoute from seeing loading=false + user=null and redirecting to /404.
       }
     } catch (error) {
       console.error("Login failed:", error);
-      throw error;
-    } finally {
       setLoading(false);
+      throw error;
     }
   };
 

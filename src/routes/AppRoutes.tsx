@@ -15,6 +15,7 @@ import ContactPage from "../pages/public/ContactPage";
 import RegistrationPage from "../pages/public/RegistrationPage";
 import TicketPage from "../pages/public/TicketPage";
 import LoginPage from "../pages/auth/LoginPage";
+import AdminSetupPage from "../pages/auth/AdminSetupPage";
 import NotFoundPage from "../pages/errors/NotFoundPage";
 
 // Dashboards
@@ -45,6 +46,7 @@ const AppRoutes: React.FC = () => {
         <Route path="team" element={<TeamPage />} />
         <Route path="contact" element={<ContactPage />} />
         <Route path="login" element={<LoginPage />} />
+        <Route path="admin-setup" element={<AdminSetupPage />} />
         <Route path="404" element={<NotFoundPage />} />
       </Route>
 

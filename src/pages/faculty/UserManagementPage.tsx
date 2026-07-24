@@ -21,11 +21,13 @@ import {
   ClipboardList,
   AlertCircle
 } from "lucide-react";
-import { db, firebaseConfig } from "../../config/firebase";
+import { db, firebaseConfig, app } from "../../config/firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { collection, addDoc, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
 import Button from "../../components/ui/Button";
+import { useAuth } from "../../context/AuthContext";
 
 interface UserItem {
   id: string;
@@ -58,6 +60,7 @@ const getDisplayRole = (dbRole: string, rolesList: string[]) => {
 };
 
 const UserManagementPage: React.FC = () => {
+  const { user: currentUser } = useAuth();
   // Initial list of users for pagination/filtering
   const [users, setUsers] = useState<UserItem[]>([]);
 
@@ -368,12 +371,18 @@ const UserManagementPage: React.FC = () => {
   };
 
   const handleDeleteUser = async (id: string) => {
+    if (!window.confirm("Are you sure you want to permanently delete this user? This action cannot be undone.")) return;
+    
     try {
-      await deleteDoc(doc(db, "users", id));
+      const functions = getFunctions(app);
+      const deleteUserAccount = httpsCallable(functions, "deleteUserAccount");
+      await deleteUserAccount({ uid: id });
+      
       setUsers(users.filter(u => u.id !== id));
-    } catch (err) {
-      console.error("Error deleting user from database:", err);
-      alert("Failed to delete user.");
+      alert("User successfully deleted.");
+    } catch (err: any) {
+      console.error("Error deleting user:", err);
+      alert(`Failed to delete user: ${err.message}`);
     }
     setActiveMenuId(null);
   };
@@ -926,81 +935,87 @@ const UserManagementPage: React.FC = () => {
 
                     {/* Row Interactive Actions */}
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium relative">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {/* Quick Approve Pending Guest */}
-                        {user.status === "Pending" && (
-                          <button
-                            onClick={() => handleStatusChange(user.id, "Active")}
-                            title="Approve Member"
-                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-100/50 bg-emerald-50/20 transition-all"
-                          >
-                            <Check className="h-4 w-4" />
-                          </button>
-                        )}
-
-                        {/* Dropdown Menu Trigger */}
-                        <div className="relative">
-                          <button
-                            onClick={() => setActiveMenuId(activeMenuId === user.id ? null : user.id)}
-                            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-
-                          {/* Quick Edit Popup Context Menu */}
-                          {activeMenuId === user.id && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in duration-100">
-                              <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1">
-                                Change Role
-                              </div>
-                              {(() => {
-                                const options = [...availableRoles];
-                                const displayRole = getDisplayRole(user.role, availableRoles);
-                                if (displayRole && !options.includes(displayRole)) {
-                                  options.push(displayRole);
-                                }
-                                return options;
-                              })().map((role) => (
-                                <button
-                                  key={role}
-                                  onClick={() => handleRoleChange(user.id, role as any)}
-                                  className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
-                                >
-                                  {role}
-                                </button>
-                              ))}
-
-                              <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
-                                Quick Action
-                              </div>
-                              {user.status === "Active" ? (
-                                <button
-                                  onClick={() => handleStatusChange(user.id, "Deactivated")}
-                                  className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-50 text-red-600 flex items-center gap-2"
-                                >
-                                  <UserX className="h-3.5 w-3.5" />
-                                  Deactivate
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => handleStatusChange(user.id, "Active")}
-                                  className="w-full px-4 py-1.5 text-xs font-medium hover:bg-emerald-50 text-emerald-600 flex items-center gap-2"
-                                >
-                                  <UserCheck className="h-3.5 w-3.5" />
-                                  Activate
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleDeleteUser(user.id)}
-                                className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-100 text-red-700 border-t border-slate-50/80 mt-1 flex items-center gap-2"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Remove Member
-                              </button>
-                            </div>
-                          )}
+                      {currentUser?.uid === user.id ? (
+                        <div className="flex justify-end pr-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100">You</span>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Quick Approve Pending Guest */}
+                          {user.status === "Pending" && (
+                            <button
+                              onClick={() => handleStatusChange(user.id, "Active")}
+                              title="Approve Member"
+                              className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg border border-emerald-100/50 bg-emerald-50/20 transition-all"
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                          )}
+
+                          {/* Dropdown Menu Trigger */}
+                          <div className="relative">
+                            <button
+                              onClick={() => setActiveMenuId(activeMenuId === user.id ? null : user.id)}
+                              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+
+                            {/* Quick Edit Popup Context Menu */}
+                            {activeMenuId === user.id && (
+                              <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in duration-100">
+                                <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1">
+                                  Change Role
+                                </div>
+                                {(() => {
+                                  const options = [...availableRoles];
+                                  const displayRole = getDisplayRole(user.role, availableRoles);
+                                  if (displayRole && !options.includes(displayRole)) {
+                                    options.push(displayRole);
+                                  }
+                                  return options;
+                                })().map((role) => (
+                                  <button
+                                    key={role}
+                                    onClick={() => handleRoleChange(user.id, role as any)}
+                                    className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
+                                  >
+                                    {role}
+                                  </button>
+                                ))}
+
+                                <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
+                                  Quick Action
+                                </div>
+                                {user.status === "Active" ? (
+                                  <button
+                                    onClick={() => handleStatusChange(user.id, "Deactivated")}
+                                    className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-50 text-red-600 flex items-center gap-2"
+                                  >
+                                    <UserX className="h-3.5 w-3.5" />
+                                    Deactivate
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleStatusChange(user.id, "Active")}
+                                    className="w-full px-4 py-1.5 text-xs font-medium hover:bg-emerald-50 text-emerald-600 flex items-center gap-2"
+                                  >
+                                    <UserCheck className="h-3.5 w-3.5" />
+                                    Activate
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteUser(user.id)}
+                                  className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-100 text-red-700 border-t border-slate-50/80 mt-1 flex items-center gap-2"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Remove Member
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))

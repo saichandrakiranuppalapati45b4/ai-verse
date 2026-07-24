@@ -85,7 +85,7 @@ export const Navbar: React.FC = () => {
       <div className="hidden md:flex items-center gap-4">
         {user ? (
           <Link
-            to={user.role === "faculty" ? "/faculty/dashboard" : "/organizer/dashboard"}
+            to={user.role === "faculty" ? "/faculty/dashboard" : user.role === "organizer" ? "/organizer/dashboard" : "/admin-setup"}
             className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-aether-blue-600 transition-colors py-1.5 px-3 hover:bg-slate-50 rounded-xl"
           >
             <Shield className="h-4 w-4" />
@@ -132,7 +132,7 @@ export const Navbar: React.FC = () => {
           <div className="border-t border-slate-100 pt-4 flex flex-col gap-3">
             {user ? (
               <Link
-                to={user.role === "faculty" ? "/faculty/dashboard" : "/organizer/dashboard"}
+                to={user.role === "faculty" ? "/faculty/dashboard" : user.role === "organizer" ? "/organizer/dashboard" : "/admin-setup"}
                 className="w-full text-center py-2 bg-slate-50 font-bold rounded-xl text-slate-700 hover:bg-slate-100 transition-all text-xs flex items-center justify-center gap-1.5"
               >
                 <Shield className="h-4 w-4" />

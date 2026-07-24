@@ -118,6 +118,23 @@ const OrgDashboardPage: React.FC = () => {
     return null;
   }, [events]);
 
+  const eventStatus = useMemo(() => {
+    if (!happeningNowEvent || !happeningNowEvent.date || happeningNowEvent.date === "TBD") {
+       return { isLive: true, text: "Happening Now" };
+    }
+    const eventDate = new Date(happeningNowEvent.date);
+    if (isNaN(eventDate.getTime())) return { isLive: true, text: "Happening Now" };
+
+    const today = new Date();
+    eventDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return { isLive: true, text: "Happening Now" };
+    if (diffDays > 0) return { isLive: false, text: `${diffDays} Days To Go` };
+    return { isLive: false, text: "Past Event" };
+  }, [happeningNowEvent]);
+
   return (
     <div className="space-y-6 sm:space-y-8 pb-8 sm:pb-12 font-sans text-left">
       <SEO 
@@ -302,17 +319,23 @@ const OrgDashboardPage: React.FC = () => {
           {/* 1. Live Attendance Widget */}
           <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500 border border-white shrink-0 animate-ping"></span>
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">Live Attendance</h2>
+              {eventStatus.isLive && (
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 border border-white shrink-0 animate-ping"></span>
+              )}
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider">
+                {eventStatus.isLive ? "Live Attendance" : "Upcoming Attendance"}
+              </h2>
             </div>
 
             {/* Gradient Banner representing active block */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 sm:p-5 rounded-2xl text-white text-left space-y-4 shadow-sm relative overflow-hidden">
+            <div className={`p-4 sm:p-5 rounded-2xl text-white text-left space-y-4 shadow-sm relative overflow-hidden ${eventStatus.isLive ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gradient-to-r from-slate-600 to-slate-700'}`}>
               {/* background subtle styling decoration */}
               <div className="absolute right-0 bottom-0 w-24 h-24 bg-white/5 rounded-full blur-xl translate-x-4 translate-y-4"></div>
 
               <div className="space-y-1">
-                <span className="text-[9px] font-black tracking-widest text-blue-100 uppercase block">Happening Now</span>
+                <span className="text-[9px] font-black tracking-widest text-blue-100 uppercase block">
+                  {eventStatus.text}
+                </span>
                 <h3 className="font-extrabold text-sm sm:text-base tracking-tight leading-snug">
                   {happeningNowEvent ? happeningNowEvent.title : "Ethics in AI Symposium"}
                 </h3>
@@ -325,75 +348,16 @@ const OrgDashboardPage: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-3.5 w-3.5 text-blue-200 shrink-0" />
-                  <span>Until 4:00 PM</span>
+                  <span>{happeningNowEvent ? (happeningNowEvent.time || "TBD") : "Until 4:00 PM"}</span>
                 </div>
               </div>
 
               <button 
                 onClick={() => navigate("/organizer/attendance")}
-                className="w-full bg-white hover:bg-blue-50 text-blue-600 font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm"
+                className={`w-full bg-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow-sm ${eventStatus.isLive ? 'text-blue-600 hover:bg-blue-50' : 'text-slate-700 hover:bg-slate-50'}`}
               >
-                Mark Attendance
+                {eventStatus.isLive ? "Mark Attendance" : "View Details"}
               </button>
-            </div>
-          </div>
-
-          {/* 2. Recent Activity Widget */}
-          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5">
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider text-left">Recent Activity</h2>
-
-            <div className="space-y-4 text-left">
-              {/* Activity item 1 */}
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                  <Users className="h-3.5 w-3.5" />
-                </div>
-                <div className="leading-tight flex-grow">
-                  <p className="text-xs text-slate-500 font-medium">
-                    <span className="font-bold text-slate-800">Sarah Chen</span> registered for AI Workshop.
-                  </p>
-                  <span className="text-[10px] text-slate-400 font-bold block mt-1">2 minutes ago</span>
-                </div>
-              </div>
-
-              {/* Activity item 2 */}
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                </div>
-                <div className="leading-tight flex-grow">
-                  <p className="text-xs text-slate-500 font-medium">
-                    <span className="font-bold text-slate-800">Task Completed:</span> Logistics for Hackathon.
-                  </p>
-                  <span className="text-[10px] text-slate-400 font-bold block mt-1">45 minutes ago</span>
-                </div>
-              </div>
-
-              {/* Activity item 3 */}
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center text-amber-500 shrink-0">
-                  <Clock className="h-3.5 w-3.5" />
-                </div>
-                <div className="leading-tight flex-grow">
-                  <p className="text-xs text-slate-500 font-medium">
-                    <span className="font-bold text-slate-800">Schedule Update:</span> Symposium moved to Rm 4B.
-                  </p>
-                  <span className="text-[10px] text-slate-400 font-bold block mt-1">2 hours ago</span>
-                </div>
-              </div>
-
-              {/* Activity item 4 */}
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                  <ClipboardList className="h-3.5 w-3.5" />
-                </div>
-                <div className="leading-tight flex-grow">
-                  <p className="text-xs text-slate-500 font-medium">
-                    <span className="font-bold text-slate-800">Invitation Sent</span> to 15 speakers.
-                  </p>
-                  <span className="text-[10px] text-slate-400 font-bold block mt-1">4 hours ago</span>
-                </div>
-              </div>
             </div>
           </div>
 
