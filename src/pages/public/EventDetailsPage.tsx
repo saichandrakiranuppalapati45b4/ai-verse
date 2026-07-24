@@ -400,30 +400,11 @@ const EventDetailsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 2. Location & Venue */}
+            {/* 2. Venue */}
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
               <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50">
-                Location & Venue
+                Venue
               </h3>
-
-              {/* Styled Mock Map Box */}
-              <div className="relative h-44 rounded-2xl overflow-hidden border border-slate-100 shadow-inner bg-slate-50 flex items-center justify-center">
-                {/* Decorative map patterns */}
-                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:16px_16px]"></div>
-                
-                <div className="relative z-10 flex flex-col items-center gap-2">
-                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm border border-blue-100">
-                    <MapPin className="h-5 w-5" />
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={() => alert("Opening directions in Google Maps...")}
-                    className="px-3.5 py-1.5 bg-white text-slate-700 font-bold rounded-lg border border-slate-200 text-[10px] shadow hover:bg-slate-50 transition-colors mt-2"
-                  >
-                    Get Directions
-                  </button>
-                </div>
-              </div>
 
               <div className="space-y-1 leading-normal">
                 <span className="text-xs font-bold text-slate-700 block">{event.location}</span>

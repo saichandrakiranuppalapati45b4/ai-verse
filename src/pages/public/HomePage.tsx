@@ -71,18 +71,18 @@ const HomePage: React.FC = () => {
           if (data.status === "Draft") return;
 
           const title = (data.title || "").trim();
-          
+
           if (title && titlesSeen.has(title.toLowerCase())) return;
           if (title) titlesSeen.add(title.toLowerCase());
 
           let eventType = "Workshop";
           if (data.category === "HACKATHONS") eventType = "Hackathon";
           else if (data.category === "LECTURES") eventType = "Seminar";
-          
+
           let img = sparkImg;
           if (data.imageName === "hackathonImg" || data.category === "HACKATHONS") img = hackathonImg;
           else if (data.imageName === "seminarImg" || data.category === "LECTURES") img = seminarImg;
-          
+
           if (data.posterPreview) {
             img = data.posterPreview;
           }
@@ -153,9 +153,9 @@ const HomePage: React.FC = () => {
 
   return (
     <div className="overflow-hidden bg-[#F8FAFC]">
-      <SEO 
-        title="Home - Innovating the Future" 
-        description="Discover the AI Verse portal - where developers, researchers, and AI enthusiasts collaborate on cutting-edge machine learning and cognitive computing projects." 
+      <SEO
+        title="Home - Innovating the Future"
+        description="Discover the AI Verse portal - where developers, researchers, and AI enthusiasts collaborate on cutting-edge machine learning and cognitive computing projects."
         keywords="AI, Artificial Intelligence, ML, Cognitive Computing, Student Research Group, AI Verse"
       />
       {/* ================= HERO SECTION ================= */}
@@ -254,10 +254,10 @@ const HomePage: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-3xl font-extrabold text-aether-dark tracking-tight">2.5k+</div>
-                      <div className="text-[11px] sm:text-xs text-slate-500 font-semibold tracking-wide mt-1">Active Members</div>
+                      <div className="text-[11px] sm:text-xs text-slate-500 font-semibold tracking-wide mt-1">Participants</div>
                     </div>
                   </motion.div>
- 
+
                   {/* Card 2: Yearly Events */}
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -280,12 +280,12 @@ const HomePage: React.FC = () => {
                       <Calendar className="h-5 w-5" />
                     </div>
                     <div>
-                      <div className="text-3xl font-extrabold text-aether-dark tracking-tight">150+</div>
+                      <div className="text-3xl font-extrabold text-aether-dark tracking-tight">20+</div>
                       <div className="text-[11px] sm:text-xs text-slate-500 font-semibold tracking-wide mt-1">Yearly Events</div>
                     </div>
                   </motion.div>
                 </div>
- 
+
                 {/* Bottom Row: Wide Card */}
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -309,7 +309,7 @@ const HomePage: React.FC = () => {
                       <Beaker className="h-6 w-6" />
                     </div>
                     <div>
-                      <div className="text-2xl sm:text-3xl font-extrabold text-aether-dark tracking-tight">500+</div>
+                      <div className="text-2xl sm:text-3xl font-extrabold text-aether-dark tracking-tight">300+</div>
                       <div className="text-[11px] sm:text-xs text-slate-500 font-semibold tracking-wide mt-0.5">Innovative Projects Delivered</div>
                     </div>
                   </div>
@@ -477,8 +477,8 @@ const HomePage: React.FC = () => {
               >
                 {/* Event Thumbnail */}
                 <div className="w-full sm:w-40 h-40 rounded-2xl relative overflow-hidden shrink-0 bg-slate-50 flex items-center justify-center border border-slate-100">
-                  <img 
-                    src={event.image} 
+                  <img
+                    src={event.image}
                     alt={event.title}
                     className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
                   />
