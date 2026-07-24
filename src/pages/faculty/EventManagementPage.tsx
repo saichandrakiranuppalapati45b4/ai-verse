@@ -1477,12 +1477,18 @@ const EventManagementPage: React.FC = () => {
 
                 {/* Event Card preview styling */}
                 <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-inner bg-slate-50/20">
-                  <div className="relative h-32 bg-slate-150">
-                    <img
-                      src={formPosterPreview || (formCategory === "Hackathon" ? hackathonImg : formCategory === "Seminar" ? seminarImg : sparkImg)}
-                      alt="Preview"
-                      className="w-full h-full object-cover animate-in fade-in duration-200"
-                    />
+                  <div className="relative h-32 bg-slate-100/50">
+                    {formPosterPreview ? (
+                      <img
+                        src={formPosterPreview}
+                        alt="Preview"
+                        className="w-full h-full object-cover animate-in fade-in duration-200"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 border-b border-slate-100">
+                        <span className="text-[10px] font-semibold">Update banner to preview</span>
+                      </div>
+                    )}
                     <div className="absolute top-2.5 right-2.5">
                       <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-black tracking-wider uppercase text-white
                         ${formCategory === "Hackathon" ? "bg-[#2563EB]" : ""}
