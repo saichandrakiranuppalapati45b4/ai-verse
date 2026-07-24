@@ -51,6 +51,7 @@ const OrgAttendancePage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const requestRef = useRef<number | null>(null);
+  const isProcessingQR = useRef(false);
 
   const [assignedEvent, setAssignedEvent] = useState<any | null>(null);
   const [isEventDay, setIsEventDay] = useState(true);
@@ -203,16 +204,44 @@ const OrgAttendancePage: React.FC = () => {
   }, []);
 
   // Real QR code scanner frame loop and callbacks
-  const handleScannedCode = (decodedText: string) => {
-    const reg = registrations.find(r => r.id === decodedText || r.qrCodeData === decodedText);
-    if (reg) {
-      if (reg.eventId !== assignedEvent?.id && reg.eventTitle?.toLowerCase() !== assignedEvent?.title?.toLowerCase()) {
-        alert(`This registration is for "${reg.eventTitle}". You can only check-in attendees for your assigned event: "${assignedEvent?.title}".`);
-        return;
+  const handleScannedCode = async (decodedText: string) => {
+    if (isProcessingQR.current) return;
+    isProcessingQR.current = true;
+
+    try {
+      const cleanText = decodedText.trim();
+      let reg = registrations.find(r => r.id === cleanText || r.qrCodeData === cleanText);
+      
+      // Fallback: If not found locally, fetch directly from DB
+      // (Handles cases where registration was just created in another tab)
+      if (!reg) {
+        setScanLoading(true);
+        try {
+          const docRef = doc(db, "registrations", cleanText);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            reg = { id: docSnap.id, ...docSnap.data() } as any;
+            setRegistrations(prev => [...prev, reg]);
+          }
+        } catch (e) {
+          console.error("Fallback scan fetch failed:", e);
+        }
+        setScanLoading(false);
       }
-      setScannedTeamInfo(reg);
-    } else {
-      alert("Invalid ticket QR Code or registration ID.");
+
+      if (reg) {
+        if (reg.eventId !== assignedEvent?.id && reg.eventTitle?.toLowerCase() !== assignedEvent?.title?.toLowerCase()) {
+          alert(`This registration is for "${reg.eventTitle}". You can only check-in attendees for your assigned event: "${assignedEvent?.title}".`);
+        } else {
+          setScannedTeamInfo(reg);
+        }
+      } else {
+        alert(`Invalid ticket QR Code or registration ID. (Scanned data: "${cleanText}")`);
+      }
+    } finally {
+      setTimeout(() => {
+        isProcessingQR.current = false;
+      }, 1500); // Prevent rapid-fire scanning of the same invalid code
     }
   };
 
