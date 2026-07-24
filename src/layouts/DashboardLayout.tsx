@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   Calendar,
@@ -95,15 +96,23 @@ const DashboardLayout: React.FC = () => {
                 key={index}
                 to={item.path}
                 onClick={() => setIsMobileOpen(false)}
-                className={`flex items-center gap-3 py-3 px-4 rounded-xl font-semibold text-sm transition-all duration-200 group relative
+                className={`flex items-center gap-3 py-3 px-4 rounded-xl font-semibold text-sm transition-colors duration-200 group relative z-0
                   ${isActive
-                    ? "bg-[#2563EB] text-white shadow-md shadow-blue-600/10"
+                    ? "text-white"
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                   }`}
               >
-                <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-white" : "text-slate-400 group-hover:text-slate-600"}`} />
+                {isActive && (
+                  <motion.div
+                    layoutId="activeTabIndicator"
+                    className="absolute inset-0 bg-[#2563EB] rounded-xl shadow-md shadow-blue-600/10 -z-10"
+                    initial={false}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  />
+                )}
+                <Icon className={`relative z-10 h-5 w-5 shrink-0 transition-colors duration-200 ${isActive ? "text-white" : "text-slate-400 group-hover:text-slate-600"}`} />
                 {isSidebarOpen ? (
-                  <span>{item.label}</span>
+                  <span className="relative z-10">{item.label}</span>
                 ) : (
                   <span className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
                     {item.label}
