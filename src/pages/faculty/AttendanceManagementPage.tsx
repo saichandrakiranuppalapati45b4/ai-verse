@@ -45,6 +45,9 @@ const AttendanceManagementPage: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "info" } | null>(null);
 
+  const [viewMode, setViewMode] = useState<"Participants" | "Team Members">("Participants");
+  const [teamAttendees, setTeamAttendees] = useState<Attendee[]>([]);
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -103,6 +106,7 @@ const AttendanceManagementPage: React.FC = () => {
 
     const loadAttendees = async () => {
       try {
+        // 1. Fetch Participant Registrations
         const regsSnap = await getDocs(collection(db, "registrations"));
         const eventRegs = regsSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
@@ -121,6 +125,29 @@ const AttendanceManagementPage: React.FC = () => {
           }));
           setAttendees(list);
         }
+
+        // 2. Fetch Team Members and their Attendances
+        const teamSnap = await getDocs(collection(db, "team"));
+        const teamMembers = teamSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        const attSnap = await getDocs(collection(db, "attendances"));
+        const attendances = attSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as any))
+          .filter((a: any) => a.eventId === selectedEventId);
+
+        const teamList: Attendee[] = teamMembers.map((tm: any) => {
+          const attendanceRecord = attendances.find((a: any) => a.teamMemberId === tm.id);
+          return {
+            id: tm.id,
+            name: tm.name || tm.username || "Unnamed Team Member",
+            email: tm.email || "",
+            department: tm.role || "Organizer",
+            checkInTime: attendanceRecord?.checkInTime || "—",
+            status: (attendanceRecord?.status as any) || "Absent"
+          };
+        });
+        setTeamAttendees(teamList);
+
         setCurrentPage(1);
       } catch (err) {
         console.error("Error fetching attendees:", err);
@@ -129,6 +156,48 @@ const AttendanceManagementPage: React.FC = () => {
 
     loadAttendees();
   }, [selectedEventId, events]);
+
+  const handleTeamStatusChange = async (teamMemberId: string, newStatus: "Present" | "Late" | "Absent", teamMemberName: string, teamMemberRole: string) => {
+    if (!selectedEventId) return;
+    
+    const timeNow = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    const formattedCheckIn = newStatus === "Absent" ? "—" : `${timeNow} (Manual)`;
+    
+    setTeamAttendees(prev => prev.map(t => t.id === teamMemberId ? {
+      ...t,
+      status: newStatus,
+      checkInTime: formattedCheckIn
+    } : t));
+
+    try {
+      const attsSnap = await getDocs(collection(db, "attendances"));
+      const existingDoc = attsSnap.docs.find(d => {
+        const data = d.data();
+        return data.eventId === selectedEventId && data.teamMemberId === teamMemberId;
+      });
+
+      if (existingDoc) {
+        await setDoc(doc(db, "attendances", existingDoc.id), {
+          status: newStatus,
+          checkInTime: formattedCheckIn
+        }, { merge: true });
+      } else {
+        const newDocRef = doc(collection(db, "attendances"));
+        await setDoc(newDocRef, {
+          eventId: selectedEventId,
+          teamMemberId: teamMemberId,
+          name: teamMemberName,
+          role: teamMemberRole,
+          status: newStatus,
+          checkInTime: formattedCheckIn
+        });
+      }
+      showToast(`Updated attendance for ${teamMemberName}`);
+    } catch (err) {
+      console.error("Error updating team attendance:", err);
+      showToast("Failed to update team attendance.", "info");
+    }
+  };
 
   const handleExportCSV = () => {
     try {
@@ -199,10 +268,11 @@ const AttendanceManagementPage: React.FC = () => {
   const activeEvent = events.find(e => e.id === selectedEventId);
 
   // Pagination helper
+  const displayList = viewMode === "Participants" ? attendees : teamAttendees;
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentAttendees = attendees.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(attendees.length / itemsPerPage);
+  const currentAttendees = displayList.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(displayList.length / itemsPerPage);
 
   return (
     <div className="space-y-6 text-left relative">
@@ -409,7 +479,20 @@ const AttendanceManagementPage: React.FC = () => {
           <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1">
               <h2 className="text-xl font-bold text-slate-800 tracking-tight">{activeEvent.title}</h2>
-              <p className="text-xs text-slate-400 font-medium">Currently managing {activeEvent.currentReg} participants</p>
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  onClick={() => { setViewMode("Participants"); setCurrentPage(1); }}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${viewMode === "Participants" ? "bg-blue-50 text-blue-600" : "text-slate-400 hover:bg-slate-50"}`}
+                >
+                  Participants ({attendees.length})
+                </button>
+                <button
+                  onClick={() => { setViewMode("Team Members"); setCurrentPage(1); }}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${viewMode === "Team Members" ? "bg-blue-50 text-blue-600" : "text-slate-400 hover:bg-slate-50"}`}
+                >
+                  Team Members ({teamAttendees.length})
+                </button>
+              </div>
             </div>
 
             {/* Quick Actions */}
@@ -480,18 +563,38 @@ const AttendanceManagementPage: React.FC = () => {
 
                         {/* Action status tags */}
                         <td className="py-3.5 px-6 text-right">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider
-                            ${att.status === "Present" && "bg-emerald-50 text-emerald-600 border border-emerald-100/50"}
-                            ${att.status === "Late" && "bg-amber-50 text-amber-600 border border-amber-100/50"}
-                            ${att.status === "Absent" && "bg-red-50 text-red-600 border border-red-100/50"}
-                          `}>
-                            <span className={`w-1.5 h-1.5 rounded-full
-                              ${att.status === "Present" && "bg-emerald-500"}
-                              ${att.status === "Late" && "bg-amber-500"}
-                              ${att.status === "Absent" && "bg-red-500"}
-                            `} />
-                            {att.status}
-                          </span>
+                          {viewMode === "Team Members" ? (
+                            <button
+                              onClick={() => {
+                                const nextStatus = att.status === "Present" ? "Late" : att.status === "Late" ? "Absent" : "Present";
+                                handleTeamStatusChange(att.id, nextStatus, att.name, att.department);
+                              }}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all shadow-sm border hover:shadow-md
+                                ${att.status === "Present" && "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/30"}
+                                ${att.status === "Late" && "bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100/30"}
+                                ${att.status === "Absent" && "bg-red-50 text-red-600 border-red-100 hover:bg-red-100/30"}
+                              `}>
+                              <span className={`w-1.5 h-1.5 rounded-full
+                                ${att.status === "Present" && "bg-emerald-500"}
+                                ${att.status === "Late" && "bg-amber-500"}
+                                ${att.status === "Absent" && "bg-red-500"}
+                              `} />
+                              {att.status}
+                            </button>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wider
+                              ${att.status === "Present" && "bg-emerald-50 text-emerald-600 border border-emerald-100/50"}
+                              ${att.status === "Late" && "bg-amber-50 text-amber-600 border border-amber-100/50"}
+                              ${att.status === "Absent" && "bg-red-50 text-red-600 border border-red-100/50"}
+                            `}>
+                              <span className={`w-1.5 h-1.5 rounded-full
+                                ${att.status === "Present" && "bg-emerald-500"}
+                                ${att.status === "Late" && "bg-amber-500"}
+                                ${att.status === "Absent" && "bg-red-500"}
+                              `} />
+                              {att.status}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -505,7 +608,7 @@ const AttendanceManagementPage: React.FC = () => {
           {totalPages > 1 && (
             <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
               <span className="text-[10px] text-slate-400 font-bold tracking-wide uppercase">
-                Showing {indexOfFirstItem + 1}–{Math.min(indexOfLastItem, attendees.length)} of {attendees.length} participants
+                Showing {indexOfFirstItem + 1}–{Math.min(indexOfLastItem, displayList.length)} of {displayList.length} {viewMode.toLowerCase()}
               </span>
 
               <div className="flex items-center gap-1.5">

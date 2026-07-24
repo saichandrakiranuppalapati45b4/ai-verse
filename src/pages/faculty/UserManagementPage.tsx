@@ -25,7 +25,7 @@ import { db, firebaseConfig, app } from "../../config/firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { collection, addDoc, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import Button from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
 

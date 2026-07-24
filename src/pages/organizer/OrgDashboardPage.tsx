@@ -10,8 +10,7 @@ import {
   CheckCircle2, 
   MapPin, 
   ArrowRight, 
-  Loader2, 
-  ClipboardList,
+  Loader2,
   TrendingUp
 } from "lucide-react";
 
