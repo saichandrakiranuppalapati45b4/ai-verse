@@ -25,7 +25,7 @@ export const GrowthAnalytics: React.FC = () => {
   const areaPath = `${linePath} L 740 200 L 60 200 Z`;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-[0_8px_30px_rgba(0,0,0,0.015)] text-left flex flex-col justify-between">
+    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl transition-all duration-300 text-left flex flex-col justify-between">
       
       {/* Header controls row */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3">

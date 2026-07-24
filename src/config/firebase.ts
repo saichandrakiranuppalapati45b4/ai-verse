@@ -4,22 +4,25 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 // Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyB9eYytrVSNVbAMp58rrWxpNm730b68N6U",
-  authDomain: "ai-verse-54c65.firebaseapp.com",
-  projectId: "ai-verse-54c65",
-  storageBucket: "ai-verse-54c65.firebasestorage.app",
-  messagingSenderId: "457448123889",
-  appId: "1:457448123889:web:78c4c286d63f6227db2850",
-  measurementId: "G-VH65XQLDS2"
+export const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
 export const app = initializeApp(firebaseConfig);
 
+import { getStorage } from "firebase/storage";
+
 // Initialize Services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 
 // Initialize Analytics conditionally
 export const analyticsPromise = isSupported().then((supported) => {

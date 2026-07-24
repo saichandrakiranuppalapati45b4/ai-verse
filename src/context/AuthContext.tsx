@@ -5,7 +5,7 @@ import {
   signOut, 
   onAuthStateChanged
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 
 export interface UserProfile {
@@ -13,7 +13,8 @@ export interface UserProfile {
   email: string;
   name: string;
   role: "faculty" | "organizer" | "member" | null;
-  department?: string;
+  displayRole?: string;
+  image?: string;
   year?: string;
 }
 
@@ -32,24 +33,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Initialize and listen to real Firebase Auth state changes
+  // Initialize and listen to real Firebase Auth state changes with real-time Firestore sync
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubSnapshot: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
+      if (unsubSnapshot) {
+        unsubSnapshot();
+        unsubSnapshot = null;
+      }
+
       if (firebaseUser) {
-        try {
-          // Real Firebase User authenticated
-          const userDocRef = doc(db, "users", firebaseUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
-          
-          if (userDocSnap.exists()) {
-            const profileData = userDocSnap.data();
+        const userDocRef = doc(db, "users", firebaseUser.uid);
+        
+        // Setup real-time listener for user profile changes
+        unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const profileData = docSnap.data();
+            const rawRole = profileData.role || "member";
+            const normalizedRole = 
+              rawRole.toLowerCase().includes("faculty") || rawRole.toLowerCase().includes("advisor") || rawRole.toLowerCase().includes("coordinator") ? "faculty" as const :
+              rawRole.toLowerCase().includes("organizer") || rawRole.toLowerCase().includes("lead") || rawRole.toLowerCase().includes("head") ? "organizer" as const :
+              "member" as const;
+
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email || "",
               name: profileData.name || "Aether Member",
-              role: profileData.role || "member",
-              department: profileData.department,
+              role: normalizedRole,
+              displayRole: profileData.role || (normalizedRole === "faculty" ? "Faculty Advisor" : "Organizer"),
+              image: profileData.image || "",
               year: profileData.year
             });
           } else {
@@ -57,25 +71,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const defaultProfile = {
               name: firebaseUser.displayName || "Aether Member",
               email: firebaseUser.email || "",
-              role: "member" as const,
-              department: "AI & Data Science"
+              role: "member" as const
             };
-            await setDoc(userDocRef, defaultProfile);
-            setUser({
-              uid: firebaseUser.uid,
-              ...defaultProfile
+            setDoc(userDocRef, defaultProfile).then(() => {
+              setUser({
+                uid: firebaseUser.uid,
+                ...defaultProfile
+              });
             });
           }
-        } catch (error) {
-          console.error("Error loading user profile from Firestore:", error);
-          // Fallback to basic auth info
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || "",
-            name: firebaseUser.displayName || "Aether Member",
-            role: "member"
-          });
-        }
+          setLoading(false);
+        }, (error) => {
+          console.error("Error in onSnapshot listener:", error);
+          setLoading(false);
+        });
+
       } else {
         // If not authenticated via Firebase, check local mock session
         const savedUser = localStorage.getItem("aether_mock_user");
@@ -84,11 +94,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           setUser(null);
         }
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubSnapshot) unsubSnapshot();
+    };
   }, []);
 
   const login = async (email: string, roleOrPassword: string) => {
@@ -103,7 +116,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email,
           name: role === "faculty" ? "Dr. Sarah Jenkins" : role === "organizer" ? "Alex Rivera" : "Jordan Lee",
           role,
-          department: "AI & Data Science",
           year: role === "member" ? "3rd Year" : undefined,
         };
         setUser(mockUser);
@@ -130,8 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const profile = {
         name,
         email,
-        role,
-        department: "AI & Data Science"
+        role
       };
       await setDoc(userDocRef, profile);
       // Clear mock session
@@ -168,7 +179,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: `${role}@aetheric.ai`,
         name: role === "faculty" ? "Dr. Sarah Jenkins" : role === "organizer" ? "Alex Rivera" : "Jordan Lee",
         role,
-        department: "AI & Data Science",
       };
       setUser(updatedUser);
       localStorage.setItem("aether_mock_user", JSON.stringify(updatedUser));

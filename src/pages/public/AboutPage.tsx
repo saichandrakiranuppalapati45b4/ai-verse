@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
@@ -9,14 +9,89 @@ import {
 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
+import { db } from "../../config/firebase";
+import { collection, getDocs } from "firebase/firestore";
 
 // Import local assets
 import aetherHero from "../../assets/images/aether_hero.png";
 import sparkImg from "../../assets/images/spark.png";
 import sarahImg from "../../assets/images/sarah.png";
 import davidImg from "../../assets/images/david.png";
+import riyaImg from "../../assets/images/riya.png";
+
+interface LeaderItem {
+  id?: string;
+  name: string;
+  role: string;
+  image: string;
+  bio?: string;
+}
+
+const defaultLeaders: LeaderItem[] = [
+  {
+    name: "Dr. Sarah Chen",
+    role: "Faculty Advisor",
+    image: riyaImg,
+  },
+  {
+    name: "Sarah Jenkins",
+    role: "President & Founder",
+    image: sarahImg,
+  },
+  {
+    name: "David Chen",
+    role: "Head of Research",
+    image: davidImg,
+  }
+];
 
 const AboutPage: React.FC = () => {
+  const [leaders, setLeaders] = useState<LeaderItem[]>([]);
+  const [loadingTeam, setLoadingTeam] = useState(true);
+
+  useEffect(() => {
+    const loadTeam = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "organizers"));
+        const list: any[] = [];
+        querySnapshot.forEach((docSnap) => {
+          list.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        
+        // Filter for Faculty Coordinator or Student Lead
+        const filtered = list.filter(
+          m => m.roleType === "Faculty Coordinator" || m.roleType === "Student Lead"
+        );
+        
+        if (filtered.length > 0) {
+          // Sort so Faculty Coordinator comes first
+          filtered.sort((a, b) => {
+            if (a.roleType === "Faculty Coordinator" && b.roleType !== "Faculty Coordinator") return -1;
+            if (a.roleType !== "Faculty Coordinator" && b.roleType === "Faculty Coordinator") return 1;
+            return 0;
+          });
+          
+          const mapped = filtered.map(m => ({
+            id: m.id,
+            name: m.name || "Unnamed Member",
+            role: m.position || m.roleType || "Advisor",
+            image: m.image || riyaImg,
+            bio: m.bio || ""
+          }));
+          setLeaders(mapped);
+        } else {
+          setLeaders(defaultLeaders);
+        }
+      } catch (err) {
+        console.error("Error loading team in AboutPage:", err);
+        setLeaders(defaultLeaders);
+      } finally {
+        setLoadingTeam(false);
+      }
+    };
+    loadTeam();
+  }, []);
+
   // Animation variants
   const fadeInUp = {
     hidden: { opacity: 0, y: 35 },
@@ -238,51 +313,43 @@ const AboutPage: React.FC = () => {
             </Link>
           </div>
 
-          {/* Leaders Grid - Shrunk by 10% from max-w-4xl (896px) to max-w-[800px] */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-[800px] mx-auto">
-            {/* Leader 1: Sarah Jenkins */}
-            <motion.div
-              whileHover={{ y: -4, boxShadow: "0 15px 35px rgba(37,99,235,0.06)" }}
-              className="bg-white rounded-card border border-slate-100 overflow-hidden shadow-sm transition-all duration-300 flex flex-col text-left group"
-            >
-              {/* Leader Photo */}
-              <div className="aspect-[4/3] w-full bg-slate-50 overflow-hidden relative">
-                <img 
-                  src={sarahImg} 
-                  alt="Sarah Jenkins Headshot" 
-                  className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
-                />
-              </div>
-              {/* Leader Info */}
-              <div className="p-6">
-                <h3 className="text-lg font-bold text-aether-dark tracking-tight">Sarah Jenkins</h3>
-                <span className="text-[10px] font-extrabold tracking-wider text-aether-blue-600 uppercase block mt-1">
-                  President & Founder
-                </span>
-              </div>
-            </motion.div>
-
-            {/* Leader 2: David Chen */}
-            <motion.div
-              whileHover={{ y: -4, boxShadow: "0 15px 35px rgba(37,99,235,0.06)" }}
-              className="bg-white rounded-card border border-slate-100 overflow-hidden shadow-sm transition-all duration-300 flex flex-col text-left group"
-            >
-              {/* Leader Photo */}
-              <div className="aspect-[4/3] w-full bg-slate-50 overflow-hidden relative">
-                <img 
-                  src={davidImg} 
-                  alt="David Chen Headshot" 
-                  className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
-                />
-              </div>
-              {/* Leader Info */}
-              <div className="p-6">
-                <h3 className="text-lg font-bold text-aether-dark tracking-tight">David Chen</h3>
-                <span className="text-[10px] font-extrabold tracking-wider text-aether-blue-600 uppercase block mt-1">
-                  Head of Research
-                </span>
-              </div>
-            </motion.div>
+          {/* Leaders Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {loadingTeam ? (
+              Array.from({ length: 3 }).map((_, idx) => (
+                <div key={idx} className="bg-white rounded-card border border-slate-100 overflow-hidden shadow-sm h-[320px] animate-pulse flex flex-col text-left">
+                  <div className="aspect-[4/3] w-full bg-slate-100" />
+                  <div className="p-6 space-y-3">
+                    <div className="h-4 bg-slate-200 rounded w-2/3" />
+                    <div className="h-2.5 bg-slate-100 rounded w-1/3" />
+                  </div>
+                </div>
+              ))
+            ) : (
+              leaders.map((leader, index) => (
+                <motion.div
+                  key={leader.id || index}
+                  whileHover={{ y: -4, boxShadow: "0 15px 35px rgba(37,99,235,0.06)" }}
+                  className="bg-white rounded-card border border-slate-100 overflow-hidden shadow-sm transition-all duration-300 flex flex-col text-left group"
+                >
+                  {/* Leader Photo */}
+                  <div className="aspect-[4/3] w-full bg-slate-50 overflow-hidden relative">
+                    <img 
+                      src={leader.image} 
+                      alt={`${leader.name} Headshot`} 
+                      className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
+                    />
+                  </div>
+                  {/* Leader Info */}
+                  <div className="p-6">
+                    <h3 className="text-lg font-bold text-aether-dark tracking-tight">{leader.name}</h3>
+                    <span className="text-[10px] font-extrabold tracking-wider text-aether-blue-600 uppercase block mt-1">
+                      {leader.role}
+                    </span>
+                  </div>
+                </motion.div>
+              ))
+            )}
           </div>
 
         </div>

@@ -1,24 +1,21 @@
 import React, { useState } from "react";
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { 
-  LayoutDashboard, 
-  Calendar, 
-  Image, 
-  Users, 
-  ClipboardList, 
-  LogOut, 
-  Settings, 
-  Menu, 
-  X, 
-  ChevronLeft, 
+import {
+  LayoutDashboard,
+  Calendar,
+  Image,
+  Users,
+  ClipboardList,
+  LogOut,
+  Settings,
+  Menu,
+  X,
+  ChevronLeft,
   ChevronRight,
   Bell,
-  Network,
-  Megaphone,
-  FileText
+  ClipboardCheck
 } from "lucide-react";
-import riyaImg from "../assets/images/riya.png";
 
 const DashboardLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -34,15 +31,18 @@ const DashboardLayout: React.FC = () => {
     navigate("/login");
   };
 
-  const menuItems = [
+  const menuItems = user.role === "organizer" ? [
+    { path: "/organizer/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { path: "/organizer/events", label: "My Events", icon: Calendar },
+    { path: "/organizer/attendance", label: "Attendance", icon: ClipboardCheck },
+  ] : [
     { path: "/faculty/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { path: "/faculty/attendance", label: "Attendance", icon: ClipboardCheck },
     { path: "/faculty/users", label: "User Management", icon: Users },
     { path: "/faculty/team", label: "Organizers", icon: ClipboardList },
-    { path: "/faculty/content", label: "Content", icon: FileText },
     { path: "/faculty/events", label: "Events", icon: Calendar },
     { path: "/faculty/registrations", label: "Registrations", icon: ClipboardList },
     { path: "/faculty/gallery", label: "Gallery", icon: Image },
-    { path: "/faculty/announcements", label: "Announcements", icon: Megaphone },
     { path: "/faculty/settings", label: "Settings", icon: Settings },
   ];
 
@@ -50,14 +50,14 @@ const DashboardLayout: React.FC = () => {
     <div className="h-screen bg-slate-50 flex font-sans overflow-hidden">
       {/* Mobile Menu Backdrop */}
       {isMobileOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
           onClick={() => setIsMobileOpen(false)}
         ></div>
       )}
 
       {/* Sidebar Container - Light themed bg-white */}
-      <aside 
+      <aside
         className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-white text-slate-600 border-r border-slate-200 transition-all duration-300 h-full
           ${isSidebarOpen ? "w-64" : "w-20"} 
           ${isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"} 
@@ -66,10 +66,18 @@ const DashboardLayout: React.FC = () => {
         {/* Sidebar Header with AI Club Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100 bg-white">
           <Link to="/" className="flex items-center gap-2 font-black text-[#2563EB] text-xl">
-            <Network className="h-6 w-6 text-[#2563EB] shrink-0" />
-            {isSidebarOpen && <span className="tracking-tight font-sans">AI Verse</span>}
+            {isSidebarOpen && (
+              user.role === "organizer" ? (
+                <div className="leading-tight text-left">
+                  <span className="tracking-tight font-sans font-black block text-sm">AI Verse Club</span>
+                  <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Operational Hub</span>
+                </div>
+              ) : (
+                <span className="tracking-tight font-sans">AI Verse</span>
+              )
+            )}
           </Link>
-          <button 
+          <button
             onClick={() => setIsMobileOpen(false)}
             className="lg:hidden text-slate-400 hover:text-slate-600 p-1"
           >
@@ -88,8 +96,8 @@ const DashboardLayout: React.FC = () => {
                 to={item.path}
                 onClick={() => setIsMobileOpen(false)}
                 className={`flex items-center gap-3 py-3 px-4 rounded-xl font-semibold text-sm transition-all duration-200 group relative
-                  ${isActive 
-                    ? "bg-[#2563EB] text-white shadow-md shadow-blue-600/10" 
+                  ${isActive
+                    ? "bg-[#2563EB] text-white shadow-md shadow-blue-600/10"
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                   }`}
               >
@@ -106,21 +114,39 @@ const DashboardLayout: React.FC = () => {
           })}
         </nav>
 
-        {/* Sidebar Footer with Dr. Sarah Chen profile card */}
+        {/* Sidebar Footer with user profile card */}
         <div className="p-4 border-t border-slate-100 space-y-3 bg-white">
-          <div className="flex items-center gap-3 p-2.5 bg-slate-50/80 rounded-2xl border border-slate-100">
-            <img 
-              src={riyaImg} 
-              alt="Dr. Sarah Chen" 
-              className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0" 
-            />
-            {isSidebarOpen && (
-              <div className="text-left leading-tight">
-                <div className="text-xs font-bold text-slate-800">Dr. Sarah Chen</div>
-                <div className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wide">Faculty Advisor</div>
+          <Link
+            to={user.role === "faculty" ? "/faculty/profile" : "/organizer/profile"}
+            className="flex items-center gap-3 p-2.5 bg-slate-50/80 rounded-2xl border border-slate-100 hover:bg-slate-100/50 hover:border-slate-200/60 cursor-pointer transition-all duration-200 block"
+          >
+            {user.image ? (
+              <img
+                src={user.image}
+                alt={user.name || "User Avatar"}
+                className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-xs shadow-sm border border-slate-200 shrink-0 font-sans">
+                {(() => {
+                  if (!user.name) return "AV";
+                  const parts = user.name.trim().split(/\s+/);
+                  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+                  return parts[0].substring(0, 2).toUpperCase();
+                })()}
               </div>
             )}
-          </div>
+            {isSidebarOpen && (
+              <div className="text-left leading-tight">
+                <div className="text-xs font-bold text-slate-800">
+                  {user.name}
+                </div>
+                <div className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wide">
+                  {user.displayRole || (user.role === "organizer" ? "Senior Coordinator" : "Faculty Advisor")}
+                </div>
+              </div>
+            )}
+          </Link>
 
           <button
             onClick={handleLogout}
@@ -134,8 +160,8 @@ const DashboardLayout: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-grow flex flex-col min-w-0 h-full overflow-y-auto">
-        {/* Topbar / Header in mockup */}
-        <header className="h-16 bg-white border-b border-slate-100 flex items-center justify-between px-8 sticky top-0 z-30">
+        {/* Topbar / Header */}
+        <header className="h-14 flex items-center justify-between px-4 sm:px-6 lg:px-8 sticky top-0 z-30 bg-slate-50/80 backdrop-blur-md">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsMobileOpen(true)}
@@ -153,28 +179,50 @@ const DashboardLayout: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3 sm:gap-5">
             {/* Notification Bell with red dot */}
             <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl relative transition-colors">
-              <Bell className="h-5 w-5" />
+              <Bell className="h-5 w-5 animate-none" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
             </button>
 
             {/* Status indicator badge */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#E6F9F0] text-[#10B981] border border-[#B3F3D2]/30 text-xs font-bold font-sans">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-[#E6F9F0] text-[#10B981] border border-[#B3F3D2]/30 text-[10px] sm:text-xs font-bold font-sans shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse"></span>
-              Al Verse <span className="uppercase text-[9px] opacity-80">Online</span>
+              <span className="hidden sm:inline">Al Verse <span className="uppercase text-[9px] opacity-80">Online</span></span>
+              <span className="inline sm:hidden uppercase text-[9px] opacity-80">Online</span>
             </div>
 
-            {/* Admin Profile Circle */}
-            <div className="w-10 h-10 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-sm shadow-md border border-white shrink-0 font-sans">
-              AD
+            {/* Profile Avatar / Circle */}
+            <div className="flex items-center gap-3 animate-in fade-in duration-200">
+              <div className="text-right hidden sm:block leading-tight text-left">
+                <div className="text-xs font-bold text-slate-800">{user.name}</div>
+                <div className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wide">
+                  {user.displayRole || (user.role === "organizer" ? "Senior Coordinator" : "Faculty Advisor")}
+                </div>
+              </div>
+              {user.image ? (
+                <img
+                  src={user.image}
+                  alt={user.name || "User Avatar"}
+                  className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-md shrink-0"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-sm shadow-md border border-white shrink-0 font-sans">
+                  {(() => {
+                    if (!user.name) return "AV";
+                    const parts = user.name.trim().split(/\s+/);
+                    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+                    return parts[0].substring(0, 2).toUpperCase();
+                  })()}
+                </div>
+              )}
             </div>
           </div>
         </header>
 
         {/* Content Outlet */}
-        <main className="flex-grow p-6 sm:p-8 max-w-7xl w-full mx-auto bg-slate-50/50">
+        <main className="flex-grow p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto bg-slate-50/50">
           <Outlet />
         </main>
 

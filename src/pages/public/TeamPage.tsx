@@ -11,16 +11,6 @@ import { collection, getDocs } from "firebase/firestore";
 
 // Import local assets
 import heroImg from "../../assets/images/aether_hero.png";
-import sarahImg from "../../assets/images/sarah.png";
-import davidImg from "../../assets/images/david.png";
-import elenaImg from "../../assets/images/elena.png";
-import marcusImg from "../../assets/images/marcus.png";
-import aminaImg from "../../assets/images/amina.png";
-import satoshiImg from "../../assets/images/satoshi.png";
-import riyaImg from "../../assets/images/riya.png";
-import liamImg from "../../assets/images/liam.png";
-import sophieImg from "../../assets/images/sophie.png";
-import kenjiImg from "../../assets/images/kenji.png";
 
 interface Leader {
   name: string;
@@ -45,7 +35,7 @@ const TeamPage: React.FC = () => {
   useEffect(() => {
     const fetchTeam = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, "team"));
+        const querySnapshot = await getDocs(collection(db, "organizers"));
         const list: any[] = [];
         querySnapshot.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() });
@@ -58,116 +48,22 @@ const TeamPage: React.FC = () => {
     fetchTeam();
   }, []);
 
-  const leaders: Leader[] = [
-    {
-      name: "Sarah Jenkins",
-      role: "President & Founder",
-      image: sarahImg,
-      bio: "A former lead at OpenAI's cognitive division, Sarah envisions a world where AI doesn't just process information, but resonates with human intuition.",
-      github: "https://github.com",
-      linkedin: "https://linkedin.com",
-      twitter: "https://twitter.com"
-    },
-    {
-      name: "David Chen",
-      role: "Head of Research",
-      image: davidImg,
-      bio: "David leads our fundamental research initiatives, focusing on emergent neural architectures and self-correcting semantic frameworks.",
-      github: "https://github.com",
-      linkedin: "https://linkedin.com",
-      twitter: "https://twitter.com"
-    },
-    ...dbMembers.filter(m => m.roleType === "Faculty Coordinator" || m.roleType === "Student Lead").map(m => ({
-      name: m.name,
-      role: m.position || m.roleType,
-      image: m.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80",
-      bio: m.bio || "Active contributor helping drive AIVerse excellence.",
-      github: m.github || "",
-      linkedin: m.linkedin || "",
-      twitter: ""
-    }))
-  ];
+  const leaders: Leader[] = dbMembers.filter(m => m.roleType === "Faculty Coordinator" || m.roleType === "Student Lead").map(m => ({
+    name: m.name,
+    role: m.position || m.roleType,
+    image: m.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80",
+    bio: m.bio || "Active contributor helping drive AIVerse excellence.",
+    github: m.github || "",
+    linkedin: m.linkedin || "",
+    twitter: ""
+  }));
 
-  const rndTeam: Member[] = [
-    {
-      name: "Dr. Elena Vos",
-      role: "LLM Architect",
-      image: elenaImg,
-      pills: ["LLMS", "TRANSFORMER-XL"]
-    },
-    {
-      name: "Marcus Thorne",
-      role: "Neural Theorist",
-      image: marcusImg,
-      pills: ["PYTORCH", "DIFFUSION"]
-    },
-    {
-      name: "Amina Al-Fayed",
-      role: "NLP Specialist",
-      image: aminaImg,
-      pills: ["SEMANTICS", "BERT"]
-    },
-    {
-      name: "Julian Kent",
-      role: "Agentic Systems",
-      image: liamImg,
-      pills: ["AUTO-GPT", "RLHF"]
-    },
-    ...dbMembers.filter(m => m.roleType === "Organizer" && m.department === "Robotics & Vision").map(m => ({
-      name: m.name,
-      role: m.position || "Organizer",
-      image: m.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80",
-      pills: ["ROBOTICS", "VISION"]
-    }))
-  ];
-
-  const engineeringTeam: Member[] = [
-    {
-      name: "Satoshi Nakamoto",
-      role: "Core Systems",
-      image: satoshiImg,
-      pills: ["RUST", "CUDA", "DISTRIBUTED SYSTEMS"]
-    },
-    {
-      name: "Riya Sharma",
-      role: "MLOps Lead",
-      image: riyaImg,
-      pills: ["KUBERNETES", "NVIDIA-DOCKER"]
-    },
-    {
-      name: "Liam O'Connell",
-      role: "Storage Architect",
-      image: liamImg,
-      pills: ["POSTGRESQL", "REDIS"]
-    },
-    ...dbMembers.filter(m => m.roleType === "Organizer" && (m.department === "Computer Science" || m.department === "Data Science")).map(m => ({
-      name: m.name,
-      role: m.position || "Organizer",
-      image: m.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80",
-      pills: [m.department ? m.department.toUpperCase() : "COMPUTER SCIENCE"]
-    }))
-  ];
-
-  const creativeTeam: Member[] = [
-    {
-      name: "Sophie Dubois",
-      role: "Design Director",
-      image: sophieImg,
-      pills: ["UI/UX", "HUMAN FACTORS"]
-    },
-    {
-      name: "Kenji Tanaka",
-      role: "Motion Engineer",
-      image: kenjiImg,
-      pills: ["THREE.JS", "WEBGL"]
-    },
-    ...dbMembers.filter(m => m.roleType === "Organizer" && m.department === "Ethics & AI").map(m => ({
-      name: m.name,
-      role: m.position || "Organizer",
-      image: m.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80",
-      pills: ["ETHICS", "AI POLICY"]
-    }))
-  ];
+  const organizers: Member[] = dbMembers.filter(m => m.roleType === "Organizer").map(m => ({
+    name: m.name,
+    role: m.position || "Organizer",
+    image: m.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80",
+    pills: [m.position ? m.position.toUpperCase() : "ORGANIZER"]
+  }));
 
   const fadeInUp = {
     hidden: { opacity: 0, y: 25 },
@@ -308,143 +204,57 @@ const TeamPage: React.FC = () => {
         </div>
       </section>
 
-      {/* ================= RESEARCH & DEVELOPMENT ================= */}
-      <section className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100">
-        <div className="flex items-center gap-4 mb-10 text-left">
-          <h2 className="text-2xl font-extrabold text-aether-dark shrink-0">
-            Research & Development
-          </h2>
-          <div className="h-[2px] bg-slate-100 flex-grow" />
-        </div>
+      {/* ================= CLUB ORGANIZERS ================= */}
+      {organizers.length > 0 && (
+        <section className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100">
+          <div className="flex items-center gap-4 mb-10 text-left">
+            <h2 className="text-2xl font-extrabold text-aether-dark shrink-0">
+              Club Organizers
+            </h2>
+            <div className="h-[2px] bg-slate-100 flex-grow" />
+          </div>
 
-        <motion.div 
-          variants={staggerContainer}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-50px" }}
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6"
-        >
-          {rndTeam.map((member, idx) => (
-            <motion.div
-              key={idx}
-              variants={fadeInUp}
-              className="bg-white rounded-card shadow-sm border border-slate-100 p-5 text-center flex flex-col items-center justify-between hover:shadow-card hover:-translate-y-1 transition-all duration-300"
-            >
-              <div className="space-y-4">
-                {/* Round Avatar */}
-                <div className="w-16 h-16 rounded-full overflow-hidden border border-slate-100 shadow-inner bg-slate-50 mx-auto">
-                  <img src={member.image} alt={member.name} className="w-full h-full object-cover" />
+          <motion.div 
+            variants={staggerContainer}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-50px" }}
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6"
+          >
+            {organizers.map((member, idx) => (
+              <motion.div
+                key={idx}
+                variants={fadeInUp}
+                className="bg-white rounded-card shadow-sm border border-slate-100 p-5 text-center flex flex-col items-center justify-between hover:shadow-card hover:-translate-y-1 transition-all duration-300"
+              >
+                <div className="space-y-4">
+                  {/* Round Avatar */}
+                  <div className="w-16 h-16 rounded-full overflow-hidden border border-slate-100 shadow-inner bg-slate-50 mx-auto">
+                    <img 
+                      src={member.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80"} 
+                      alt={member.name} 
+                      className="w-full h-full object-cover" 
+                    />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-aether-dark">{member.name}</h3>
+                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{member.role}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-aether-dark">{member.name}</h3>
-                  <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{member.role}</p>
+
+                {/* Tag Pills */}
+                <div className="flex flex-wrap items-center justify-center gap-1.5 pt-4 mt-auto">
+                  {member.pills.map((pill, pIdx) => (
+                    <span key={pIdx} className="text-[9px] font-extrabold text-aether-blue-600 bg-aether-blue-50/50 border border-aether-blue-100/30 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                      {pill}
+                    </span>
+                  ))}
                 </div>
-              </div>
-
-              {/* Tag Pills */}
-              <div className="flex flex-wrap items-center justify-center gap-1.5 pt-4 mt-auto">
-                {member.pills.map((pill, pIdx) => (
-                  <span key={pIdx} className="text-[9px] font-extrabold text-aether-blue-600 bg-aether-blue-50/50 border border-aether-blue-100/30 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                    {pill}
-                  </span>
-                ))}
-              </div>
-            </motion.div>
-          ))}
-        </motion.div>
-      </section>
-
-      {/* ================= ENGINEERING & INFRASTRUCTURE ================= */}
-      <section className="py-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100">
-        <div className="flex items-center gap-4 mb-10 text-left">
-          <h2 className="text-2xl font-extrabold text-aether-dark shrink-0">
-            Engineering & Infrastructure
-          </h2>
-          <div className="h-[2px] bg-slate-100 flex-grow" />
-        </div>
-
-        <motion.div 
-          variants={staggerContainer}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-50px" }}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-6"
-        >
-          {engineeringTeam.map((member, idx) => (
-            <motion.div
-              key={idx}
-              variants={fadeInUp}
-              className="bg-white rounded-card shadow-sm border border-slate-100 p-5 text-center flex flex-col items-center justify-between hover:shadow-card hover:-translate-y-1 transition-all duration-300"
-            >
-              <div className="space-y-4">
-                {/* Round Avatar */}
-                <div className="w-16 h-16 rounded-full overflow-hidden border border-slate-100 shadow-inner bg-slate-50 mx-auto">
-                  <img src={member.image} alt={member.name} className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-aether-dark">{member.name}</h3>
-                  <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{member.role}</p>
-                </div>
-              </div>
-
-              {/* Tag Pills */}
-              <div className="flex flex-wrap items-center justify-center gap-1.5 pt-4 mt-auto">
-                {member.pills.map((pill, pIdx) => (
-                  <span key={pIdx} className="text-[9px] font-extrabold text-aether-blue-600 bg-aether-blue-50/50 border border-aether-blue-100/30 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                    {pill}
-                  </span>
-                ))}
-              </div>
-            </motion.div>
-          ))}
-        </motion.div>
-      </section>
-
-      {/* ================= CREATIVE & DESIGN ================= */}
-      <section className="py-12 pb-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-100">
-        <div className="flex items-center gap-4 mb-10 text-left">
-          <h2 className="text-2xl font-extrabold text-aether-dark shrink-0">
-            Creative & Design
-          </h2>
-          <div className="h-[2px] bg-slate-100 flex-grow" />
-        </div>
-
-        <motion.div 
-          variants={staggerContainer}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-50px" }}
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6"
-        >
-          {creativeTeam.map((member, idx) => (
-            <motion.div
-              key={idx}
-              variants={fadeInUp}
-              className="bg-white rounded-card shadow-sm border border-slate-100 p-5 text-center flex flex-col items-center justify-between hover:shadow-card hover:-translate-y-1 transition-all duration-300"
-            >
-              <div className="space-y-4">
-                {/* Round Avatar */}
-                <div className="w-16 h-16 rounded-full overflow-hidden border border-slate-100 shadow-inner bg-slate-50 mx-auto">
-                  <img src={member.image} alt={member.name} className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-aether-dark">{member.name}</h3>
-                  <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{member.role}</p>
-                </div>
-              </div>
-
-              {/* Tag Pills */}
-              <div className="flex flex-wrap items-center justify-center gap-1.5 pt-4 mt-auto">
-                {member.pills.map((pill, pIdx) => (
-                  <span key={pIdx} className="text-[9px] font-extrabold text-aether-blue-600 bg-aether-blue-50/50 border border-aether-blue-100/30 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                    {pill}
-                  </span>
-                ))}
-              </div>
-            </motion.div>
-          ))}
-        </motion.div>
-      </section>
+              </motion.div>
+            ))}
+          </motion.div>
+        </section>
+      )}
 
       {/* ================= VOLUNTEERS & CONTRIBUTORS ================= */}
       {dbMembers.some(m => m.roleType === "Volunteer") && (
@@ -487,7 +297,7 @@ const TeamPage: React.FC = () => {
                 {/* Tag Pills */}
                 <div className="flex flex-wrap items-center justify-center gap-1.5 pt-4 mt-auto">
                   <span className="text-[9px] font-extrabold text-aether-blue-600 bg-aether-blue-50/50 border border-aether-blue-100/30 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                    {member.department ? member.department.toUpperCase() : "VOLUNTEER"}
+                    {member.position ? member.position.toUpperCase() : "VOLUNTEER"}
                   </span>
                 </div>
               </motion.div>

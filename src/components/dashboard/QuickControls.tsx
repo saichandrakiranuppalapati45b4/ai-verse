@@ -7,7 +7,7 @@ export const QuickControls: React.FC = () => {
   const [maintenanceModeOn, setMaintenanceModeOn] = useState(false);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-[0_8px_30px_rgba(0,0,0,0.015)] text-left flex flex-col justify-between h-full">
+    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl transition-all duration-300 text-left flex flex-col justify-between h-full">
       <div>
         <div className="flex items-center gap-2 pb-3 border-b border-slate-50">
           <Zap className="h-4.5 w-4.5 text-blue-600" />

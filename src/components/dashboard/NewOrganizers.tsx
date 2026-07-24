@@ -1,39 +1,61 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Check, X } from "lucide-react";
-import kenjiImg from "../../assets/images/kenji.png";
-import riyaImg from "../../assets/images/riya.png";
+import { db } from "../../config/firebase";
+import { collection, getDocs, doc, setDoc } from "firebase/firestore";
 
 interface OrganizerRequest {
   id: string;
   name: string;
-  department: string;
-  image: string;
+  image?: string;
+  email: string;
 }
 
 export const NewOrganizers: React.FC = () => {
-  const [requests, setRequests] = useState<OrganizerRequest[]>([
-    {
-      id: "1",
-      name: "Alex Johnson",
-      department: "Computer Science",
-      image: kenjiImg
-    },
-    {
-      id: "2",
-      name: "Elena Rodriguez",
-      department: "Data Science Dept.",
-      image: riyaImg
-    }
-  ]);
+  const [requests, setRequests] = useState<OrganizerRequest[]>([]);
 
-  const handleAction = (id: string, action: "accept" | "reject") => {
-    // Dynamically filter out the handled request
-    setRequests(prev => prev.filter(req => req.id !== id));
-    console.log(`Organizer request ${id} was ${action}ed`);
+  const loadRequests = async () => {
+    try {
+      const snap = await getDocs(collection(db, "users"));
+      const pending: OrganizerRequest[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (data.status === "Pending" || data.status === "pending") {
+          pending.push({
+            id: d.id,
+            name: data.name || "Unnamed Candidate",
+            email: data.email || "",
+            image: data.image || ""
+          });
+        }
+      });
+      setRequests(pending);
+    } catch (e) {
+      console.error("Error loading candidate requests:", e);
+    }
+  };
+
+  useEffect(() => {
+    loadRequests();
+  }, []);
+
+  const handleAction = async (id: string, action: "accept" | "reject") => {
+    try {
+      const userRef = doc(db, "users", id);
+      if (action === "accept") {
+        await setDoc(userRef, { status: "Active" }, { merge: true });
+        alert("Registration approved!");
+      } else {
+        await setDoc(userRef, { status: "Deactivated" }, { merge: true });
+        alert("Registration rejected.");
+      }
+      await loadRequests();
+    } catch (err) {
+      console.error("Error updating registration action:", err);
+    }
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-[0_8px_30px_rgba(0,0,0,0.015)] text-left flex flex-col justify-between h-full">
+    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl transition-all duration-300 text-left flex flex-col justify-between h-full">
       <div>
         <div className="flex items-center justify-between pb-3 border-b border-slate-50">
           <h3 className="text-sm font-bold text-slate-800 tracking-tight">New Organizers</h3>
@@ -54,14 +76,20 @@ export const NewOrganizers: React.FC = () => {
             requests.map(req => (
               <div key={req.id} className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={req.image}
-                    alt={req.name}
-                    className="w-10 h-10 rounded-full object-cover border border-slate-100 shadow-sm"
-                  />
+                  {req.image ? (
+                    <img
+                      src={req.image}
+                      alt={req.name}
+                      className="w-10 h-10 rounded-full object-cover border border-slate-100 shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-xs text-slate-500">
+                      {req.name.split(" ").map(n => n[0]).join("")}
+                    </div>
+                  )}
                   <div>
                     <h4 className="text-sm font-semibold text-slate-800 leading-tight">{req.name}</h4>
-                    <p className="text-xs text-slate-400 font-medium mt-0.5">{req.department}</p>
+                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">{req.email}</p>
                   </div>
                 </div>
                 

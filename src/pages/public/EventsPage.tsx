@@ -6,12 +6,13 @@ import {
   Calendar, 
   MapPin, 
   TrendingUp, 
-  Lightbulb 
+  Lightbulb,
+  Users
 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, deleteDoc, doc } from "firebase/firestore";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -27,6 +28,9 @@ interface Event {
   location: string;
   description: string;
   image: string;
+  status: "Draft" | "Active" | "Opened";
+  currentReg: number;
+  maxReg: number;
 }
 
 const EventsPage: React.FC = () => {
@@ -41,8 +45,21 @@ const EventsPage: React.FC = () => {
         const q = query(collection(db, "events"), orderBy("createdAt", "desc"));
         const querySnapshot = await getDocs(q);
         const list: Event[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
+        const titlesSeen = new Set<string>();
+
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const title = (data.title || "").trim();
+          
+          if (title && titlesSeen.has(title.toLowerCase())) {
+            deleteDoc(doc(db, "events", docSnap.id)).catch(err =>
+              console.error("Failed to delete database duplicate:", err)
+            );
+            return;
+          }
+          if (title) {
+            titlesSeen.add(title.toLowerCase());
+          }
           
           let eventType: Event["type"] = "Workshop";
           if (data.category === "HACKATHONS") eventType = "Hackathon";
@@ -63,14 +80,17 @@ const EventsPage: React.FC = () => {
           }
 
           list.push({
-            id: doc.id,
-            title: data.title || "",
+            id: docSnap.id,
+            title: title,
             type: eventType,
             date: data.date || "Oct 24",
             time: timeText,
             location: data.location || "Virtual Hub",
             description: data.description || "",
-            image: img
+            image: img,
+            status: data.status || "Opened",
+            currentReg: Math.max(0, Number(data.currentReg) || 0),
+            maxReg: data.maxReg || 100
           });
         });
         setEvents(list);
@@ -89,8 +109,22 @@ const EventsPage: React.FC = () => {
     type: `${e.type} • ${e.location.split("/")[0].trim()}`
   }));
 
+  const getCategoryStyles = (category: string) => {
+    switch (category) {
+      case "Hackathon":
+        return "bg-rose-50/80 text-rose-600 border border-rose-100/50";
+      case "Seminar":
+        return "bg-amber-50/80 text-amber-600 border border-amber-100/50";
+      case "Networking":
+        return "bg-emerald-50/80 text-emerald-600 border border-emerald-100/50";
+      default: // Workshop
+        return "bg-blue-50/80 text-[#2563EB] border border-blue-100/50";
+    }
+  };
+
   // Filter events based on active tab and search query
   const filteredEvents = events.filter((event) => {
+    if (event.status === "Draft") return false;
     const matchesTab = activeTab === "All" || event.type === activeTab;
     const matchesSearch = event.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           event.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -130,7 +164,7 @@ const EventsPage: React.FC = () => {
             className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight text-aether-dark"
           >
             Discover the <br />
-            <span className="bg-gradient-to-r from-aether-blue-600 via-aether-blue-500 to-aether-blue-400 bg-clip-text text-transparent">Future of AI</span>
+            <span className="bg-gradient-to-r from-[#2563EB] via-blue-500 to-indigo-500 bg-clip-text text-transparent">Future of AI</span>
           </motion.h1>
           <motion.p 
             initial={{ opacity: 0 }}
@@ -148,7 +182,7 @@ const EventsPage: React.FC = () => {
             transition={{ duration: 0.6, delay: 0.3 }}
             className="max-w-md mx-auto pt-2"
           >
-            <div className="relative flex items-center bg-white border border-slate-200/80 shadow-md shadow-slate-100/60 rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-aether-blue-500 transition-all">
+            <div className="relative flex items-center bg-white border border-slate-200/80 shadow-md shadow-slate-100/60 rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-[#2563EB] transition-all">
               <Search className="absolute left-4 h-5 w-5 text-slate-400 pointer-events-none" />
               <input
                 type="text"
@@ -157,7 +191,7 @@ const EventsPage: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-transparent pl-11 pr-24 py-2.5 text-sm outline-none text-slate-800 font-sans placeholder-slate-400"
               />
-              <button className="absolute right-1.5 bg-aether-blue-600 hover:bg-aether-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-lg transition-colors select-none shadow-sm">
+              <button className="absolute right-1.5 bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-lg transition-colors select-none shadow-sm">
                 Search
               </button>
             </div>
@@ -182,15 +216,15 @@ const EventsPage: React.FC = () => {
                 onClick={() => setActiveTab(tab)}
                 className={`py-3 px-5 text-xs sm:text-sm font-semibold border-b-2 transition-all relative
                   ${isActive 
-                    ? "border-aether-blue-600 text-aether-blue-600" 
-                    : "border-transparent text-slate-500 hover:text-aether-blue-600"
+                    ? "border-[#2563EB] text-[#2563EB]" 
+                    : "border-transparent text-slate-500 hover:text-[#2563EB]"
                   }`}
               >
                 {labelMap[tab]}
                 {isActive && (
                   <motion.div 
                     layoutId="activeEventTab"
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-aether-blue-600"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#2563EB]"
                   />
                 )}
               </button>
@@ -217,17 +251,17 @@ const EventsPage: React.FC = () => {
                   initial="hidden"
                   whileInView="visible"
                   viewport={{ once: true, margin: "-50px" }}
-                  className="bg-white rounded-card shadow-sm border border-slate-100 p-4 sm:p-5 flex flex-col md:flex-row gap-5 items-stretch group hover:shadow-card transition-all duration-300"
+                  className="bg-white rounded-[24px] shadow-sm border border-slate-100 p-4 sm:p-5 flex flex-col md:flex-row gap-5 items-stretch group hover:shadow-card transition-all duration-300"
                 >
                   {/* Event Thumbnail */}
                   <div className="w-full md:w-56 aspect-[4/3] rounded-xl overflow-hidden relative shrink-0 bg-slate-100">
                     <img 
                       src={event.image} 
                       alt={event.title} 
-                      className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-500"
+                      className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
                     />
                     {/* Floating badge label */}
-                    <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm border border-aether-blue-100/50 text-aether-blue-700 text-[9px] font-extrabold tracking-widest px-2.5 py-1 rounded-full uppercase">
+                    <span className={`absolute top-3 left-3 bg-white/95 backdrop-blur-sm text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-lg uppercase shadow-sm ${getCategoryStyles(event.type)}`}>
                       {event.type}
                     </span>
                   </div>
@@ -235,36 +269,46 @@ const EventsPage: React.FC = () => {
                   {/* Event Copy Details */}
                   <div className="flex flex-col justify-between py-1 text-left flex-grow space-y-4">
                     <div className="space-y-2">
-                      <h3 className="text-lg font-bold text-aether-dark leading-tight group-hover:text-aether-blue-600 transition-colors">
+                      <h3 className="text-lg font-extrabold text-slate-800 leading-tight group-hover:text-[#2563EB] transition-colors line-clamp-1">
                         {event.title}
                       </h3>
                       
                       {/* Meta Details */}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 font-medium">
                         <span className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5 text-aether-blue-500" />
+                          <Calendar className="h-3.5 w-3.5 text-[#2563EB]" />
                           {event.date} • {event.time}
                         </span>
                         <span className="flex items-center gap-1.5">
-                          <MapPin className="h-3.5 w-3.5 text-sky-500" />
+                          <MapPin className="h-3.5 w-3.5 text-slate-400" />
                           {event.location}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5 text-slate-400" />
+                          {event.currentReg} / {event.maxReg} Registered
                         </span>
                       </div>
 
-                      <p className="text-slate-500 text-xs sm:text-sm font-normal leading-relaxed pt-1.5">
+                      <p className="text-slate-500 text-xs sm:text-sm font-normal leading-relaxed pt-1.5 line-clamp-2">
                         {event.description}
                       </p>
                     </div>
 
                     {/* Action Row */}
                     <div className="flex items-center gap-3 pt-2">
-                      <Link to="/contact">
-                        <Button variant="gradient" size="sm" className="rounded-lg font-bold text-xs px-5 py-2">
-                          Register Now
+                      {event.status === "Active" ? (
+                        <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                          Registration Closed
                         </Button>
-                      </Link>
+                      ) : (
+                        <Link to={`/events/${event.id}/register`}>
+                          <Button variant="gradient" size="sm" className="rounded-lg font-bold text-xs px-5 py-2 hover:scale-102 transition-transform">
+                            Register Now
+                          </Button>
+                        </Link>
+                      )}
                       <Link to={`/events/${event.id}`}>
-                        <Button variant="secondary" size="sm" className="rounded-lg font-bold text-xs bg-slate-50 border border-slate-200/50 hover:bg-slate-100 px-5 py-2 text-slate-600">
+                        <Button variant="secondary" size="sm" className="rounded-lg font-bold text-xs bg-slate-50 border border-slate-200/50 hover:bg-slate-100 hover:scale-102 transition-transform px-5 py-2 text-slate-600">
                           View Details
                         </Button>
                       </Link>

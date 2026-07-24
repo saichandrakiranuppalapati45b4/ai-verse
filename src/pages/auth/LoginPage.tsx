@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { auth, db } from "../../config/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import { useNavigate, Link } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, User, Box, Cpu, Network } from "lucide-react";
 import Button from "../../components/ui/Button";
@@ -46,6 +48,37 @@ const LoginPage: React.FC = () => {
       if (password) {
         // Real Firebase Authentication login
         await login(email, password);
+        // Check if it was a mock login (where the password is a role name)
+        const isMockRole = ["faculty", "organizer", "member"].includes(password);
+        if (isMockRole) {
+          if (password === "faculty") navigate("/faculty/dashboard");
+          else if (password === "organizer") navigate("/organizer/dashboard");
+          else navigate("/");
+          return;
+        }
+
+        // Real Firebase login redirect based on database role
+        const firebaseUser = auth.currentUser;
+        if (firebaseUser) {
+          try {
+            const userDocSnap = await getDoc(doc(db, "users", firebaseUser.uid));
+            if (userDocSnap.exists()) {
+              const rawRole = userDocSnap.data().role || "member";
+              const rawRoleLower = rawRole.toLowerCase();
+              if (rawRoleLower.includes("faculty") || rawRoleLower.includes("advisor") || rawRoleLower.includes("coordinator")) {
+                navigate("/faculty/dashboard");
+                return;
+              } else if (rawRoleLower.includes("organizer") || rawRoleLower.includes("lead") || rawRoleLower.includes("head")) {
+                navigate("/organizer/dashboard");
+                return;
+              }
+            }
+          } catch (fetchRoleErr) {
+            console.error("Error fetching user role on login:", fetchRoleErr);
+          }
+        }
+
+        // Fallback checks on email string if document doesn't exist
         if (email.includes("faculty")) navigate("/faculty/dashboard");
         else if (email.includes("organizer") || email.includes("admin")) navigate("/organizer/dashboard");
         else navigate("/");

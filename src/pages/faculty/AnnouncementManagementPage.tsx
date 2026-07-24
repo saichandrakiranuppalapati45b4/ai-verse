@@ -65,59 +65,25 @@ const AnnouncementManagementPage: React.FC = () => {
 
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
 
-  const initialAnnouncementsMock: AnnouncementItem[] = [
-    { id: "1", title: "AI Symposium Registration Open", category: "EVENT", status: "Pinned", date: "Published Oct 12, 2023", reach: 2400 },
-    { id: "2", title: "Neural Hackathon Winners", category: "CLUB UPDATE", status: "Published", date: "Published Oct 10, 2023", reach: 1800 },
-    { id: "3", title: "System Maintenance Schedule", category: "URGENT", status: "Scheduled", date: "For Oct 20, 2023", reach: 0 },
-    { id: "4", title: "Faculty Research Grants 2024", category: "ACADEMIC", status: "Draft", date: "Saved 2h ago", reach: 0 },
-    { id: "5", title: "Generative AI Bootcamp Registrations", category: "EVENT", status: "Published", date: "Published Oct 05, 2023", reach: 3200 },
-    { id: "6", title: "Venture Capitalist Guest Speaker", category: "EVENT", status: "Published", date: "Published Oct 01, 2023", reach: 1950 },
-    { id: "7", title: "Valkyrie Core Update Brief", category: "CLUB UPDATE", status: "Pinned", date: "Published Sep 28, 2023", reach: 4100 },
-    { id: "8", title: "Winter Semester Course Syllabus", category: "ACADEMIC", status: "Draft", date: "Saved Sep 26, 2023", reach: 0 },
-    { id: "9", title: "Winter Symposium Call for Speakers", category: "EVENT", status: "Scheduled", date: "For Nov 15, 2023", reach: 0 },
-    { id: "10", title: "Emergency Security Audit Results", category: "URGENT", status: "Published", date: "Published Sep 20, 2023", reach: 2200 },
-    { id: "11", title: "DeepMind Collaborative Workshop", category: "EVENT", status: "Published", date: "Published Sep 15, 2023", reach: 2800 },
-    { id: "12", title: "Undergraduate AI Research Fellowship", category: "ACADEMIC", status: "Published", date: "Published Sep 10, 2023", reach: 3500 }
-  ];
-
   // Fetch announcements from Firestore on mount
   useEffect(() => {
     const loadAnnouncements = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "announcements"));
-        if (querySnapshot.empty) {
-          // Seed initial mock records into Firestore
-          addToast("Initializing announcements database with mock data...", "info");
-          const createdItems: AnnouncementItem[] = [];
-          for (const item of initialAnnouncementsMock) {
-            const docRef = await addDoc(collection(db, "announcements"), {
-              title: item.title,
-              category: item.category,
-              status: item.status,
-              date: item.date,
-              reach: item.reach,
-              createdAt: Date.now() - Number(item.id) * 60000 // preserve sort order
-            });
-            createdItems.push({ ...item, id: docRef.id });
-          }
-          setAnnouncements(createdItems);
-          setTotalAnnouncements(createdItems.length);
-        } else {
-          const list: AnnouncementItem[] = [];
-          querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            list.push({
-              id: doc.id,
-              title: data.title || "",
-              category: data.category || "EVENT",
-              status: data.status || "Published",
-              date: data.date || "",
-              reach: data.reach || 0
-            });
+        const list: AnnouncementItem[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          list.push({
+            id: doc.id,
+            title: data.title || "",
+            category: data.category || "EVENT",
+            status: data.status || "Published",
+            date: data.date || "",
+            reach: data.reach || 0
           });
-          setAnnouncements(list);
-          setTotalAnnouncements(list.length);
-        }
+        });
+        setAnnouncements(list);
+        setTotalAnnouncements(list.length);
       } catch (err) {
         console.error("Error reading announcements from Firestore:", err);
         addToast("Failed to fetch announcements from Firestore. Using fallback.", "warning");

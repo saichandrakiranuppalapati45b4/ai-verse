@@ -14,14 +14,14 @@ import {
   Search, 
   ChevronLeft, 
   ChevronRight, 
-  CheckSquare, 
-  Square,
   MapPin,
   Trash2,
   Upload,
   Info,
   Settings2,
-  Pencil
+  Pencil,
+  CheckSquare,
+  MessageSquare
 } from "lucide-react";
 
 // Import local assets
@@ -35,18 +35,10 @@ interface EventItem {
   date: string;
   location: string;
   category: "HACKATHONS" | "LECTURES" | "WORKSHOPS";
-  status: "Published" | "Draft" | "Done";
+  status: "Draft" | "Active" | "Opened";
   currentReg: number;
   maxReg: number;
   image?: string;
-}
-
-interface TaskItem {
-  id: string;
-  text: string;
-  dueText: string;
-  completed: boolean;
-  isUrgent?: boolean;
 }
 
 const EventManagementPage: React.FC = () => {
@@ -78,92 +70,36 @@ const EventManagementPage: React.FC = () => {
     }
   };
 
-  const initialEventsMock: EventItem[] = [
-    {
-      id: "1",
-      title: "AI Innovators Hackathon",
-      date: "Oct 24",
-      location: "Lab 402",
-      category: "HACKATHONS",
-      status: "Published",
-      currentReg: 245,
-      maxReg: 300,
-      image: hackathonImg
-    },
-    {
-      id: "2",
-      title: "Guest Lecture: NLP Frontiers",
-      date: "Nov 02",
-      location: "Auditorium B",
-      category: "LECTURES",
-      status: "Draft",
-      currentReg: 0,
-      maxReg: 150,
-      image: seminarImg
-    },
-    {
-      id: "3",
-      title: "TensorFlow Advanced Workshop",
-      date: "Oct 12",
-      location: "Virtual Hub",
-      category: "WORKSHOPS",
-      status: "Done",
-      currentReg: 100,
-      maxReg: 100,
-      image: sparkImg
-    }
-  ];
-
   // Fetch events from Firestore on mount
   useEffect(() => {
     const loadEvents = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "events"));
-        if (querySnapshot.empty) {
-          console.log("Seeding events into Firestore...");
-          const seededEvents: EventItem[] = [];
-          for (const item of initialEventsMock) {
-            const docRef = await addDoc(collection(db, "events"), {
-              title: item.title,
-              date: item.date,
-              location: item.location,
-              category: item.category,
-              status: item.status,
-              currentReg: item.currentReg,
-              maxReg: item.maxReg,
-              imageName: item.category === "HACKATHONS" ? "hackathonImg" : item.category === "LECTURES" ? "seminarImg" : "sparkImg",
-              createdAt: Date.now() - Number(item.id) * 60000
-            });
-            seededEvents.push({ ...item, id: docRef.id });
+        const list: EventItem[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          let image = sparkImg;
+          if (data.posterPreview) {
+            image = data.posterPreview;
+          } else if (data.imageName === "hackathonImg" || data.category === "HACKATHONS") {
+            image = hackathonImg;
+          } else if (data.imageName === "seminarImg" || data.category === "LECTURES") {
+            image = seminarImg;
           }
-          setEvents(seededEvents);
-        } else {
-          const list: EventItem[] = [];
-          querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            let image = sparkImg;
-            if (data.posterPreview) {
-              image = data.posterPreview;
-            } else if (data.imageName === "hackathonImg" || data.category === "HACKATHONS") {
-              image = hackathonImg;
-            } else if (data.imageName === "seminarImg" || data.category === "LECTURES") {
-              image = seminarImg;
-            }
 
-            list.push({
-              id: doc.id,
-              title: data.title || "",
-              date: data.date || "",
-              location: data.location || "",
-              category: data.category || "WORKSHOPS",
-              status: data.status || "Draft",
-              currentReg: data.currentReg || 0,
-              maxReg: data.maxReg || 100,
-              image: image
-            });
+          list.push({
+            id: doc.id,
+            title: data.title || "",
+            date: data.date || data.startDate || "",
+            location: data.location || "",
+            category: data.category || "WORKSHOPS",
+            status: data.status || "Draft",
+            currentReg: Math.max(0, Number(data.currentReg) || 0),
+            maxReg: data.maxReg || 100,
+            image: image
           });
-          setEvents(list);
-        }
+        });
+        setEvents(list);
       } catch (err) {
         console.error("Error reading events from Firestore:", err);
       }
@@ -171,29 +107,6 @@ const EventManagementPage: React.FC = () => {
 
     loadEvents();
   }, []);
-
-  // Mock State for Active Tasks
-  const [tasks, setTasks] = useState<TaskItem[]>([
-    {
-      id: "1",
-      text: "Review hackathon speakers",
-      dueText: "Due in 4 hours",
-      completed: true,
-      isUrgent: true
-    },
-    {
-      id: "2",
-      text: "Send Lab 402 reminder",
-      dueText: "Due Tomorrow",
-      completed: false
-    },
-    {
-      id: "3",
-      text: "Approve marketing spend",
-      dueText: "Oct 26, 2023",
-      completed: false
-    }
-  ]);
 
   // States
   const [searchQuery, setSearchQuery] = useState("");
@@ -219,6 +132,7 @@ const EventManagementPage: React.FC = () => {
   const [formMaxTeamSize, setFormMaxTeamSize] = useState("4");
   const [formRegistrationFee, setFormRegistrationFee] = useState("0");
   const [formPosterFilename, setFormPosterFilename] = useState("");
+  const [formWhatsGroupLink, setFormWhatsGroupLink] = useState("");
   const [formPosterPreview, setFormPosterPreview] = useState("");
   const [formVisibility, setFormVisibility] = useState<"Public" | "Internal Only">("Public");
 
@@ -238,11 +152,7 @@ const EventManagementPage: React.FC = () => {
   ]);
   const [formIsFeatured, setFormIsFeatured] = useState(false);
   const [formSendEmail, setFormSendEmail] = useState(true);
-
-  // New Task Form State
-  const [isAddingTask, setIsAddingTask] = useState(false);
-  const [newTaskText, setNewTaskText] = useState("");
-  const [newTaskDue, setNewTaskDue] = useState("");
+  const [formStatus, setFormStatus] = useState<"Draft" | "Active" | "Opened">("Draft");
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -299,7 +209,6 @@ const EventManagementPage: React.FC = () => {
       date: displayDate,
       location: formLocation || "Virtual Hub",
       category: mappedCategory,
-      status: "Draft" as const,
       currentReg: 0,
       maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
       imageName: imageName,
@@ -336,6 +245,8 @@ const EventManagementPage: React.FC = () => {
       minTeamSize: formMinTeamSize ? Number(formMinTeamSize) : 1,
       maxTeamSize: formMaxTeamSize ? Number(formMaxTeamSize) : 4,
       registrationFee: formRegistrationFee ? Number(formRegistrationFee) : 0,
+      status: formStatus,
+      whatsGroupLink: formWhatsGroupLink,
       createdAt: Date.now()
     };
 
@@ -348,7 +259,7 @@ const EventManagementPage: React.FC = () => {
           date: displayDate,
           location: formLocation || "Virtual Hub",
           category: mappedCategory,
-          status: "Draft",
+          status: formStatus,
           currentReg: 0,
           maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
           image: formPosterPreview || imageFile
@@ -363,7 +274,7 @@ const EventManagementPage: React.FC = () => {
           date: displayDate,
           location: formLocation || "Virtual Hub",
           category: mappedCategory,
-          status: "Draft",
+          status: formStatus,
           currentReg: 0,
           maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
           image: formPosterPreview || imageFile
@@ -390,9 +301,11 @@ const EventManagementPage: React.FC = () => {
       setFormVisibility("Public");
       setFormIsFeatured(false);
       setFormSendEmail(true);
+      setFormStatus("Draft");
       setFormMinTeamSize("1");
       setFormMaxTeamSize("4");
       setFormRegistrationFee("0");
+      setFormWhatsGroupLink("");
 
       setFormSpeakerName("");
       setFormSpeakerRole("");
@@ -459,9 +372,11 @@ const EventManagementPage: React.FC = () => {
         setFormVisibility(data.visibility || "Public");
         setFormIsFeatured(data.isFeatured || false);
         setFormSendEmail(data.sendEmail !== undefined ? data.sendEmail : true);
+        setFormStatus(data.status || "Draft");
         setFormMinTeamSize(data.minTeamSize ? String(data.minTeamSize) : "1");
         setFormMaxTeamSize(data.maxTeamSize ? String(data.maxTeamSize) : "4");
         setFormRegistrationFee(data.registrationFee !== undefined ? String(data.registrationFee) : "0");
+        setFormWhatsGroupLink(data.whatsGroupLink || "");
         
         setFormSpeakerName(data.speakerName || "");
         setFormSpeakerRole(data.speakerRole || "");
@@ -491,26 +406,18 @@ const EventManagementPage: React.FC = () => {
     }
   };
 
-  const handleToggleTask = (id: string) => {
-    setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  const handleStatusChange = async (id: string, newStatus: "Draft" | "Active" | "Opened") => {
+    try {
+      const docRef = doc(db, "events", id);
+      await setDoc(docRef, { status: newStatus }, { merge: true });
+      setEvents(prev => prev.map(e => e.id === id ? { ...e, status: newStatus } : e));
+    } catch (err) {
+      console.error("Error updating status:", err);
+      alert("Failed to update status.");
+    }
   };
 
-  const handleAddTask = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskText) return;
 
-    const newTask: TaskItem = {
-      id: Date.now().toString(),
-      text: newTaskText,
-      dueText: newTaskDue || "No due date",
-      completed: false
-    };
-
-    setTasks([...tasks, newTask]);
-    setNewTaskText("");
-    setNewTaskDue("");
-    setIsAddingTask(false);
-  };
 
   const handleNextPage = () => {
     if (currentPage < totalPages) {
@@ -571,6 +478,7 @@ const EventManagementPage: React.FC = () => {
               setFormVisibility("Public");
               setFormIsFeatured(false);
               setFormSendEmail(true);
+              setFormStatus("Draft");
               setFormMinTeamSize("1");
               setFormMaxTeamSize("4");
               setFormRegistrationFee("0");
@@ -612,7 +520,7 @@ const EventManagementPage: React.FC = () => {
             </div>
             <div className="mt-3">
               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Total Events</span>
-              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">42</h3>
+              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">{events.length}</h3>
             </div>
           </div>
           {/* Sparkline chart bar visual */}
@@ -638,7 +546,9 @@ const EventManagementPage: React.FC = () => {
             </div>
             <div className="mt-3">
               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Registrations</span>
-              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">1,284</h3>
+              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
+                {events.reduce((sum, e) => sum + (e.currentReg || 0), 0).toLocaleString()}
+              </h3>
             </div>
           </div>
           {/* Sparkline chart bar visual */}
@@ -688,12 +598,14 @@ const EventManagementPage: React.FC = () => {
             </div>
             <div className="mt-3">
               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Weekly Sessions</span>
-              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">08</h3>
+              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
+                {String(events.filter(e => e.status === "Opened" || e.status === "Active").length).padStart(2, '0')}
+              </h3>
             </div>
           </div>
           <div className="mt-4 text-[9px] text-slate-500 font-bold flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-            3 Scheduled for today
+            {events.filter(e => e.status === "Opened" || e.status === "Active").length} Scheduled for this week
           </div>
         </div>
       </div>
@@ -701,8 +613,8 @@ const EventManagementPage: React.FC = () => {
       {/* ================= CONTENT GRID ================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* LEFT COLUMN: Event Directory (65% / 8 grid cols) */}
-        <div className="lg:col-span-8 space-y-6">
+        {/* LEFT COLUMN: Event Directory (100% / 12 grid cols) */}
+        <div className="lg:col-span-12 space-y-6">
           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden text-left">
             {/* Header / Filter row */}
             <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -715,7 +627,10 @@ const EventManagementPage: React.FC = () => {
                     type="text"
                     placeholder="Search events..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setCurrentPage(1);
+                    }}
                     className="w-full pl-10 pr-4 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-700 placeholder-slate-400 text-xs focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium"
                   />
                 </div>
@@ -725,104 +640,104 @@ const EventManagementPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Table */}
+            {/* Table Container */}
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-sm text-slate-600">
-                <thead className="bg-slate-50/70 text-[9px] font-bold text-slate-400 tracking-wider uppercase border-b border-slate-100">
-                  <tr>
-                    <th scope="col" className="px-6 py-3">Event Details</th>
-                    <th scope="col" className="px-6 py-3">Category</th>
-                    <th scope="col" className="px-6 py-3">Status</th>
-                    <th scope="col" className="px-6 py-3">Progress</th>
-                    <th scope="col" className="px-6 py-3 text-right">Actions</th>
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                    <th className="px-6 py-4">Event Details</th>
+                    <th className="px-6 py-4">Category</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Progress</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
+                <tbody>
                   {paginatedEvents.length > 0 ? (
-                    paginatedEvents.map(event => {
-                      const pct = Math.round((event.currentReg / event.maxReg) * 100) || 0;
+                    paginatedEvents.map((event) => {
+                      const progressPercent = Math.min(100, Math.round(((event.currentReg || 0) / (event.maxReg || 50)) * 100));
                       return (
-                        <tr key={event.id} className="hover:bg-slate-50/50 transition-colors">
-                          {/* Details */}
-                          <td className="px-6 py-3.5">
+                        <tr 
+                          key={event.id} 
+                          className="border-b border-slate-150/40 hover:bg-slate-50/50 transition-colors group/row"
+                        >
+                          <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              {event.image ? (
+                              <div className="w-12 h-12 rounded-xl bg-slate-55 overflow-hidden shrink-0 border border-slate-100 flex items-center justify-center">
                                 <img
-                                  src={event.image}
+                                  src={event.image || sparkImg}
                                   alt={event.title}
-                                  className="w-12 h-10 rounded-lg object-cover border border-slate-100 shrink-0"
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = sparkImg;
+                                  }}
                                 />
-                              ) : (
-                                <div className="w-12 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-slate-100 font-black text-xs shrink-0">
-                                  AI
-                                </div>
-                              )}
-                              <div>
-                                <h4 className="font-bold text-slate-800 text-xs leading-normal">{event.title}</h4>
-                                <div className="flex items-center gap-1.5 text-[9px] text-slate-450 mt-1 font-semibold">
-                                  <span>{event.date}</span>
+                              </div>
+                              <div className="leading-tight">
+                                <span className="font-extrabold text-slate-800 text-xs line-clamp-1">
+                                  {event.title}
+                                </span>
+                                <div className="flex items-center gap-x-2 gap-y-0.5 mt-1.5 flex-wrap text-[9px] font-bold text-slate-450">
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3 text-blue-500" />
+                                    {event.date}
+                                  </span>
                                   <span>•</span>
-                                  <span className="flex items-center gap-0.5 text-slate-400">
-                                    <MapPin className="h-2.5 w-2.5 inline" />
+                                  <span className="flex items-center gap-1">
+                                    <MapPin className="h-3 w-3 text-sky-500" />
                                     {event.location}
                                   </span>
                                 </div>
                               </div>
                             </div>
                           </td>
-
-                          {/* Category Badge */}
-                          <td className="px-6 py-3.5 whitespace-nowrap">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-bold tracking-wide
-                              ${event.category === "HACKATHONS" ? "bg-blue-50 text-blue-700 border border-blue-100/30" : ""}
-                              ${event.category === "LECTURES" ? "bg-sky-50 text-sky-700 border border-sky-100/30" : ""}
-                              ${event.category === "WORKSHOPS" ? "bg-emerald-50 text-emerald-700 border border-emerald-100/30" : ""}
-                            `}>
-                              {event.category}
+                          <td className="px-6 py-4">
+                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border
+                              ${event.category === "HACKATHONS" 
+                                ? "bg-rose-50 text-rose-600 border-rose-100/50" 
+                                : event.category === "LECTURES"
+                                  ? "bg-amber-50 text-amber-600 border-amber-100/50"
+                                  : "bg-blue-50 text-[#2563EB] border-blue-100/50"
+                              }`}
+                            >
+                              {event.category || "WORKSHOPS"}
                             </span>
                           </td>
-
-                          {/* Status Badge */}
-                          <td className="px-6 py-3.5 whitespace-nowrap">
-                            {event.status === "Published" && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100/30">
-                                <span className="w-1 h-1 rounded-full bg-emerald-600"></span>
-                                Published
-                              </span>
-                            )}
-                            {event.status === "Draft" && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200/50">
-                                <span className="w-1 h-1 rounded-full bg-slate-450"></span>
-                                Draft
-                              </span>
-                            )}
-                            {event.status === "Done" && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-100/30">
-                                <span className="w-1 h-1 rounded-full bg-blue-600"></span>
-                                Done
-                              </span>
-                            )}
+                          <td className="px-6 py-4">
+                            <select
+                              value={event.status}
+                              onChange={(e) => handleStatusChange(event.id, e.target.value as any)}
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border bg-white focus:outline-none cursor-pointer tracking-wider uppercase
+                                ${event.status === "Opened"
+                                  ? "text-emerald-650 bg-emerald-50 border-emerald-100"
+                                  : event.status === "Active"
+                                    ? "text-[#2563EB] bg-blue-50 border-blue-100"
+                                    : "text-slate-500 bg-slate-50 border-slate-200/60"
+                                }`}
+                            >
+                              <option value="Draft">Draft</option>
+                              <option value="Active">Active</option>
+                              <option value="Opened">Opened</option>
+                            </select>
                           </td>
-
-                          {/* Progress bar */}
-                          <td className="px-6 py-3.5 whitespace-nowrap">
-                            <div className="w-32">
-                              <div className="flex justify-between items-center text-[10px] font-bold text-slate-800 mb-1">
-                                <span>{event.currentReg}/{event.maxReg}</span>
-                                <span className="text-slate-400 font-medium">{pct}%</span>
+                          <td className="px-6 py-4 w-44">
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between items-center text-[9px] font-bold text-slate-400">
+                                <span>{event.currentReg || 0} / {event.maxReg || 50}</span>
+                                <span>{progressPercent}%</span>
                               </div>
-                              <div className="w-full bg-slate-100 rounded-full h-1.5">
+                              <div className="w-full bg-slate-100 rounded-full h-1">
                                 <div 
-                                  className={`h-1.5 rounded-full ${event.status === 'Done' ? 'bg-emerald-500' : 'bg-blue-600'}`} 
-                                  style={{ width: `${pct}%` }}
+                                  className="bg-[#2563EB] h-1 rounded-full" 
+                                  style={{ width: `${progressPercent}%` }}
                                 ></div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-3.5 text-right whitespace-nowrap space-x-1.5">
+                          <td className="px-6 py-4 text-right">
                             <button
                               onClick={() => handleStartEditEvent(event.id)}
-                              className="p-1.5 text-slate-405 hover:text-[#2563EB] hover:bg-blue-50 rounded-xl transition-all"
+                              className="p-1.5 text-slate-400 hover:text-[#2563EB] hover:bg-blue-50 rounded-xl transition-all mr-1.5"
                               title="Edit Event"
                             >
                               <Pencil className="h-4 w-4" />
@@ -840,7 +755,7 @@ const EventManagementPage: React.FC = () => {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={4} className="px-6 py-10 text-center text-xs font-semibold text-slate-400">
+                      <td colSpan={5} className="px-6 py-10 text-center text-xs font-semibold text-slate-400">
                         No events found matching search query.
                       </td>
                     </tr>
@@ -854,14 +769,14 @@ const EventManagementPage: React.FC = () => {
               <button
                 onClick={handlePrevPage}
                 disabled={currentPage === 1}
-                className={`p-1.5 border border-slate-200 rounded-lg bg-white text-slate-650 font-bold hover:bg-slate-50 transition-all ${currentPage === 1 ? 'opacity-40 pointer-events-none' : ''}`}
+                className="p-1.5 border border-slate-200 rounded-lg bg-white text-slate-650 font-bold hover:bg-slate-50 transition-all disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
                 onClick={handleNextPage}
                 disabled={currentPage === totalPages}
-                className={`p-1.5 border border-slate-200 rounded-lg bg-white text-slate-655 font-bold hover:bg-slate-50 transition-all ${currentPage === totalPages ? 'opacity-40 pointer-events-none' : ''}`}
+                className="p-1.5 border border-slate-200 rounded-lg bg-white text-slate-655 font-bold hover:bg-slate-50 transition-all disabled:opacity-40"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -869,160 +784,9 @@ const EventManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Pulse & Tasks (35% / 4 grid cols) */}
-        <div className="lg:col-span-4 space-y-6 text-left">
-          
-          {/* Registration Pulse */}
-          <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-50 mb-4">
-              <h3 className="text-sm font-bold text-slate-800 tracking-tight">Registration Pulse</h3>
-              <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded tracking-wider uppercase">
-                Live
-              </span>
-            </div>
-
-            {/* Bar chart mockup */}
-            <div className="flex items-end justify-between h-20 pt-2 px-2 border-b border-slate-100">
-              <div className="flex flex-col items-center gap-1 w-full">
-                <div className="bg-blue-100/50 hover:bg-[#2563EB] w-5 h-8 rounded-t-sm transition-all duration-200"></div>
-                <span className="text-[8px] font-bold text-slate-400">MON</span>
-              </div>
-              <div className="flex flex-col items-center gap-1 w-full">
-                <div className="bg-blue-100/50 hover:bg-[#2563EB] w-5 h-10 rounded-t-sm transition-all duration-200"></div>
-                <span className="text-[8px] font-bold text-slate-400">TUE</span>
-              </div>
-              <div className="flex flex-col items-center gap-1 w-full">
-                <div className="bg-[#2563EB] w-5 h-16 rounded-t-sm shadow-md transition-all duration-200"></div>
-                <span className="text-[8px] font-bold text-[#2563EB]">WED</span>
-              </div>
-              <div className="flex flex-col items-center gap-1 w-full">
-                <div className="bg-blue-100/50 hover:bg-[#2563EB] w-5 h-12 rounded-t-sm transition-all duration-200"></div>
-                <span className="text-[8px] font-bold text-slate-400">THU</span>
-              </div>
-              <div className="flex flex-col items-center gap-1 w-full">
-                <div className="bg-blue-100/50 hover:bg-[#2563EB] w-5 h-14 rounded-t-sm transition-all duration-200"></div>
-                <span className="text-[8px] font-bold text-slate-400">FRI</span>
-              </div>
-            </div>
-
-            <div className="mt-4 p-3 bg-blue-50/50 border border-blue-100/30 rounded-2xl flex gap-2">
-              <HelpCircle className="h-4.5 w-4.5 text-blue-600 shrink-0 mt-0.5" />
-              <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
-                Registration activity is <span className="text-blue-600 font-bold">24% higher</span> on Wednesday afternoons. Consider scheduling your event blasts then.
-              </p>
-            </div>
-          </div>
-
-          {/* Active Tasks Card */}
-          <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-50">
-              <h3 className="text-sm font-bold text-slate-800 tracking-tight">Active Tasks</h3>
-              <button 
-                onClick={() => alert("Open settings...")}
-                className="text-[10px] font-bold text-slate-400 hover:text-slate-650 transition-colors"
-              >
-                Settings
-              </button>
-            </div>
-
-            {/* Checklist */}
-            <div className="space-y-3.5 pt-4">
-              {tasks.map(t => (
-                <div 
-                  key={t.id} 
-                  onClick={() => handleToggleTask(t.id)}
-                  className="flex items-start gap-3 cursor-pointer group"
-                >
-                  {t.completed ? (
-                    <CheckSquare className="h-4.5 w-4.5 text-[#2563EB] shrink-0 mt-0.5" />
-                  ) : (
-                    <Square className="h-4.5 w-4.5 text-slate-300 group-hover:text-slate-450 shrink-0 mt-0.5" />
-                  )}
-                  <div className="leading-tight">
-                    <span className={`text-xs font-bold ${t.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-                      {t.text}
-                    </span>
-                    <div className={`text-[9px] font-bold mt-1 
-                      ${t.isUrgent && !t.completed ? 'text-red-500' : 'text-slate-400'}
-                    `}>
-                      {t.dueText}
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {isAddingTask ? (
-                <form onSubmit={handleAddTask} className="pt-2 border-t border-slate-50 space-y-2">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Task description..."
-                    value={newTaskText}
-                    onChange={(e) => setNewTaskText(e.target.value)}
-                    className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-medium text-xs text-slate-850"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Due date (e.g. Due Tomorrow)"
-                    value={newTaskDue}
-                    onChange={(e) => setNewTaskDue(e.target.value)}
-                    className="w-full px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-medium text-xs text-slate-850"
-                  />
-                  <div className="flex gap-2 justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setIsAddingTask(false)}
-                      className="px-2.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-lg text-[10px]"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-2.5 py-1.5 bg-[#2563EB] text-white hover:bg-blue-700 font-bold rounded-lg text-[10px]"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <button
-                  onClick={() => setIsAddingTask(true)}
-                  className="w-full mt-2 py-2.5 text-center text-xs font-bold border border-dashed border-slate-250 hover:border-slate-350 rounded-xl text-slate-500 hover:text-slate-700 bg-white hover:bg-slate-50/50 transition-all select-none"
-                >
-                  + New Action Item
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Concierge Support Card */}
-          <div className="p-5 bg-gradient-to-br from-[#2563EB] to-blue-700 text-white rounded-3xl shadow-lg relative overflow-hidden group">
-            {/* Soft decorative blur */}
-            <div className="absolute top-0 right-0 w-24 h-24 rounded-full bg-white/10 blur-xl pointer-events-none"></div>
-            
-            <div className="relative z-10 space-y-4">
-              <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center">
-                <HelpCircle className="h-4.5 w-4.5 text-white" />
-              </div>
-              <div className="space-y-1.5">
-                <h3 className="text-sm font-bold tracking-tight">Concierge Support</h3>
-                <p className="text-[10px] text-white/80 leading-relaxed font-semibold">
-                  Need help with logistics or event planning? Our team is standing by to assist you.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsSupportModalOpen(true)}
-                className="w-full py-2.5 text-center text-xs font-bold bg-white text-blue-600 rounded-xl shadow hover:bg-blue-50 transition-all select-none"
-              >
-                Open Support Ticket
-              </button>
-            </div>
-          </div>        </div>
-
       </div>
       </>
       )}
-
       {/* ================= CREATE EVENT FULL PAGE FORM ================= */}
       {view === "create" && (
         <div className="space-y-6 pb-12 text-left font-sans animate-in fade-in duration-200">
@@ -1299,12 +1063,33 @@ const EventManagementPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setFormEnableWaitlist(!formEnableWaitlist)}
-                    className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formEnableWaitlist ? "bg-[#2563EB]" : "bg-slate-200"}`}
+                    className="w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 bg-slate-200"
                   >
                     <div 
-                      className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formEnableWaitlist ? "translate-x-4" : "translate-x-0"}`}
+                      className="w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform translate-x-0"
                     />
                   </button>
+                </div>
+              </div>
+
+              {/* WhatsApp Integration Card */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center text-emerald-600">
+                    <MessageSquare className="h-4 w-4" />
+                  </div>
+                  WhatsApp Group Link
+                </h3>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">WhatsApp Group URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://chat.whatsapp.com/..."
+                    value={formWhatsGroupLink}
+                    onChange={(e) => setFormWhatsGroupLink(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-green-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                  />
                 </div>
               </div>
 
@@ -1619,6 +1404,34 @@ const EventManagementPage: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Status configuration segments */}
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Status</label>
+                    <div className="grid grid-cols-3 gap-1 border border-slate-100 bg-slate-50/50 p-1 rounded-2xl">
+                      <button
+                        type="button"
+                        onClick={() => setFormStatus("Draft")}
+                        className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Draft" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                      >
+                        Draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormStatus("Active")}
+                        className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Active" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                      >
+                        Active
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormStatus("Opened")}
+                        className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Opened" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                      >
+                        Opened
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Featured Event toggle */}
                   <div className="flex items-center justify-between pt-1">
                     <div className="text-left">
@@ -1655,14 +1468,14 @@ const EventManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* 2. Event Preview Mockup */}
+              {/* 2. Event Preview */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4 text-left">
                 <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex justify-between items-center">
-                  <span>Event Preview Mockup</span>
+                  <span>Event Preview</span>
                   <span className="text-[9px] font-black text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider">Live</span>
                 </h3>
 
-                {/* Event Card mockup matching the exact card styling */}
+                {/* Event Card preview styling */}
                 <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-inner bg-slate-50/20">
                   <div className="relative h-32 bg-slate-150">
                     <img
@@ -1705,7 +1518,7 @@ const EventManagementPage: React.FC = () => {
                     </div>
 
                     <div className="flex justify-between items-center pt-2.5 border-t border-dashed border-slate-100/80">
-                      {/* Avatars mockup */}
+                      {/* Registered Attendees Avatars Preview */}
                       <div className="flex -space-x-1.5 overflow-hidden">
                         <div className="w-5 h-5 rounded-full bg-slate-200 border border-white"></div>
                         <div className="w-5 h-5 rounded-full bg-slate-300 border border-white"></div>

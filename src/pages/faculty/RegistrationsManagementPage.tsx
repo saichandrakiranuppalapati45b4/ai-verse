@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   ClipboardList, 
   Search, 
@@ -9,11 +9,8 @@ import {
   FileSpreadsheet,
   User,
   Users as UsersIcon,
-  CheckCircle,
-  Settings,
-  Mail,
-  Zap,
-  X
+  X,
+  RefreshCw
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
@@ -28,7 +25,7 @@ interface RegistrationItem {
   teamLeadEmail: string;
   teamLeadStudentId: string;
   teamSize: number;
-  members: Array<{ name: string; email: string; studentId: string; role?: string; department?: string }>;
+  members: Array<{ name: string; email: string; studentId: string; role?: string }>;
   status?: "Confirmed" | "Pending" | "Waitlisted";
   createdAt: number;
 }
@@ -45,36 +42,85 @@ const RegistrationsManagementPage: React.FC = () => {
   const [selectedReg, setSelectedReg] = useState<RegistrationItem | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<RegistrationItem | null>(null);
+  const [activeLongPressRegId, setActiveLongPressRegId] = useState<string | null>(null);
+  const longPressTimer = useRef<any>(null);
+  const isLongPressActive = useRef(false);
+  const [deleteModeOption, setDeleteModeOption] = useState<"single" | "group" | "event">("single");
+
+  const handleDeleteGroupRegistrations = async (groupName: string) => {
+    if (!groupName || groupName === "Individual RSVP") return;
+    try {
+      const targets = registrations.filter(r => r.groupName === groupName);
+      for (const reg of targets) {
+        await deleteDoc(doc(db, "registrations", reg.id));
+        try {
+          await updateDoc(doc(db, "events", reg.eventId), {
+            currentReg: increment(-reg.teamSize)
+          });
+        } catch (e) {
+          console.error("Error updating event counter:", e);
+        }
+      }
+      setRegistrations(prev => prev.filter(r => r.groupName !== groupName));
+      alert(`Successfully deleted all registrations from group "${groupName}".`);
+    } catch (err) {
+      console.error("Error deleting group registrations:", err);
+      alert("Failed to delete group registrations.");
+    }
+  };
+
+  const handleDeleteEventRegistrations = async (eventId: string) => {
+    if (!eventId) return;
+    try {
+      const targets = registrations.filter(r => r.eventId === eventId);
+      for (const reg of targets) {
+        await deleteDoc(doc(db, "registrations", reg.id));
+        try {
+          await updateDoc(doc(db, "events", reg.eventId), {
+            currentReg: increment(-reg.teamSize)
+          });
+        } catch (e) {
+          console.error("Error updating event counter:", e);
+        }
+      }
+      setRegistrations(prev => prev.filter(r => r.eventId !== eventId));
+      alert("Successfully deleted all registrations for this event.");
+    } catch (err) {
+      console.error("Error deleting event registrations:", err);
+      alert("Failed to delete event registrations.");
+    }
+  };
+
+  const fetchRegistrations = async () => {
+    try {
+      setLoading(true);
+      const querySnapshot = await getDocs(collection(db, "registrations"));
+      const list: RegistrationItem[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        list.push({
+          id: docSnap.id,
+          eventId: data.eventId || "",
+          eventTitle: data.eventTitle || "Unknown Event",
+          groupName: data.groupName || "Individual RSVP",
+          teamLeadName: data.teamLeadName || "",
+          teamLeadEmail: data.teamLeadEmail || "",
+          teamLeadStudentId: data.teamLeadStudentId || "",
+          teamSize: data.teamSize || 1,
+          members: data.members || [],
+          status: data.status || "Confirmed",
+          createdAt: data.createdAt || Date.now()
+        });
+      });
+      setRegistrations(list.sort((a, b) => b.createdAt - a.createdAt));
+    } catch (err) {
+      console.error("Error fetching registrations:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchRegistrations = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, "registrations"));
-        const list: RegistrationItem[] = [];
-        querySnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          list.push({
-            id: docSnap.id,
-            eventId: data.eventId || "",
-            eventTitle: data.eventTitle || "Unknown Event",
-            groupName: data.groupName || "Individual RSVP",
-            teamLeadName: data.teamLeadName || "",
-            teamLeadEmail: data.teamLeadEmail || "",
-            teamLeadStudentId: data.teamLeadStudentId || "",
-            teamSize: data.teamSize || 1,
-            members: data.members || [],
-            status: data.status || "Confirmed",
-            createdAt: data.createdAt || Date.now()
-          });
-        });
-        setRegistrations(list.sort((a, b) => b.createdAt - a.createdAt));
-      } catch (err) {
-        console.error("Error fetching registrations:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchRegistrations();
   }, []);
 
@@ -172,10 +218,10 @@ const RegistrationsManagementPage: React.FC = () => {
     const individualCount = total - groupCount;
 
     return {
-      total: total * 3 + 124, // Scaling for display context to look high fidelity
-      pending: pending + 5,
-      group: groupCount * 2 + 30,
-      individual: individualCount * 3 + 94
+      total: total,
+      pending: pending,
+      group: groupCount,
+      individual: individualCount
     };
   }, [registrations]);
 
@@ -272,8 +318,8 @@ const RegistrationsManagementPage: React.FC = () => {
       {/* ================= MAIN COLUMN WORKSPACE ================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
-        {/* Left Table Section (span 9) */}
-        <div className="lg:col-span-9 bg-white rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] overflow-hidden">
+        {/* Left Table Section (span 12) */}
+        <div className="lg:col-span-12 bg-white rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] overflow-hidden">
           
           {/* Controls Bar */}
           <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -323,6 +369,15 @@ const RegistrationsManagementPage: React.FC = () => {
                 <option value="Pending">Pending</option>
                 <option value="Waitlisted">Waitlisted</option>
               </select>
+
+              <button
+                onClick={fetchRegistrations}
+                disabled={loading}
+                className="p-2 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 text-slate-600 transition-all flex items-center justify-center shadow-sm disabled:opacity-55"
+                title="Refresh Directory"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              </button>
 
               <button
                 onClick={() => alert("Exporting spreadsheet reports...")}
@@ -441,12 +496,101 @@ const RegistrationsManagementPage: React.FC = () => {
                               </button>
                             )}
                             <button
-                              onClick={() => handleDeleteRegistration(reg.id, reg.eventId, reg.teamSize)}
-                              className="p-1 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-lg transition-all"
-                              title="Delete Registration"
+                              onMouseDown={() => {
+                                isLongPressActive.current = false;
+                                longPressTimer.current = setTimeout(() => {
+                                  isLongPressActive.current = true;
+                                  setActiveLongPressRegId(reg.id);
+                                }, 600);
+                              }}
+                              onMouseUp={() => {
+                                if (longPressTimer.current) {
+                                  clearTimeout(longPressTimer.current);
+                                  longPressTimer.current = null;
+                                }
+                                if (!isLongPressActive.current) {
+                                  handleDeleteRegistration(reg.id, reg.eventId, reg.teamSize);
+                                }
+                              }}
+                              onMouseLeave={() => {
+                                if (longPressTimer.current) {
+                                  clearTimeout(longPressTimer.current);
+                                  longPressTimer.current = null;
+                                }
+                              }}
+                              onTouchStart={() => {
+                                isLongPressActive.current = false;
+                                longPressTimer.current = setTimeout(() => {
+                                  isLongPressActive.current = true;
+                                  setActiveLongPressRegId(reg.id);
+                                }, 600);
+                              }}
+                              onTouchEnd={() => {
+                                if (longPressTimer.current) {
+                                  clearTimeout(longPressTimer.current);
+                                  longPressTimer.current = null;
+                                }
+                                if (!isLongPressActive.current) {
+                                  handleDeleteRegistration(reg.id, reg.eventId, reg.teamSize);
+                                }
+                              }}
+                              className="p-1 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-lg transition-all relative"
+                              title="Hold for Multiple Delete Options"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
+
+                            {activeLongPressRegId === reg.id && (
+                              <div className="absolute right-12 top-10 bg-slate-950 text-white rounded-xl shadow-xl border border-slate-800 p-4.5 z-40 w-64 space-y-4 text-left animate-in fade-in slide-in-from-top-1 duration-150 select-none">
+                                <span className="text-[10px] font-black uppercase text-red-500 tracking-wider block">Delete Options</span>
+                                
+                                <select
+                                  value={deleteModeOption}
+                                  onChange={(e) => setDeleteModeOption(e.target.value as "single" | "group" | "event")}
+                                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs font-bold rounded-lg px-3 py-2.5 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/30 transition-all cursor-pointer appearance-auto"
+                                >
+                                  <option value="single">Delete this registration only</option>
+                                  {reg.groupName && reg.groupName !== "Individual RSVP" && (
+                                    <option value="group">Delete all from group "{reg.groupName}"</option>
+                                  )}
+                                  <option value="event">Delete all for this event</option>
+                                </select>
+
+                                <div className="flex gap-2.5 pt-2.5 border-t border-slate-900">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setActiveLongPressRegId(null);
+                                      setDeleteModeOption("single");
+                                    }}
+                                    className="flex-1 border border-slate-800 hover:bg-slate-900 hover:border-slate-700 text-slate-300 font-extrabold text-[10px] py-2 rounded-lg transition-all text-center uppercase tracking-wider"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      setActiveLongPressRegId(null);
+                                      if (deleteModeOption === "single") {
+                                        await handleDeleteRegistration(reg.id, reg.eventId, reg.teamSize);
+                                      } else if (deleteModeOption === "group") {
+                                        if (confirm(`Delete all registrations from group "${reg.groupName}"?`)) {
+                                          await handleDeleteGroupRegistrations(reg.groupName);
+                                        }
+                                      } else if (deleteModeOption === "event") {
+                                        if (confirm(`Delete all registrations for event "${reg.eventTitle}"?`)) {
+                                          await handleDeleteEventRegistrations(reg.eventId);
+                                        }
+                                      }
+                                      setDeleteModeOption("single");
+                                    }}
+                                    className="flex-1 bg-red-650 hover:bg-red-750 text-white font-extrabold text-[10px] py-2 rounded-lg transition-all text-center uppercase tracking-wider shadow-md shadow-red-950/40"
+                                  >
+                                    Confirm
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -466,99 +610,6 @@ const RegistrationsManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Sidebar Activity Logs (span 3) */}
-        <div className="lg:col-span-3 space-y-6 text-left">
-          
-          {/* Waitlist Alerts */}
-          <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-50">
-              <h3 className="text-xs font-bold text-slate-800 tracking-tight">Waitlist Alerts</h3>
-              <span className="text-[8px] font-extrabold bg-red-100 text-red-600 px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
-            </div>
-
-            <div className="space-y-3.5">
-              <div className="p-3 bg-red-50/20 border border-red-100/30 rounded-2xl text-left leading-normal space-y-2">
-                <span className="text-[10px] font-extrabold text-slate-800 block">Workshop Capacity Full</span>
-                <p className="text-[9px] text-slate-500 font-semibold">Deep Learning 101 has 15 participants on the waitlist.</p>
-                <button onClick={() => alert("Navigate to event capacity configuration...")} className="text-[9px] text-[#2563EB] font-bold hover:underline">Increase Seats</button>
-              </div>
-
-              <div className="p-3 bg-slate-50/50 border border-slate-100 rounded-2xl text-left leading-normal space-y-2">
-                <span className="text-[10px] font-extrabold text-slate-800 block">Priority Overload</span>
-                <p className="text-[9px] text-slate-500 font-semibold">3 Sponsors requested priority group access.</p>
-                <button onClick={() => alert("Navigate to organizer messages...")} className="text-[9px] text-[#2563EB] font-bold hover:underline">Review Requests</button>
-              </div>
-            </div>
-          </div>
-
-          {/* Recent Activity Log */}
-          <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
-            <h3 className="text-xs font-bold text-slate-800 tracking-tight pb-3 border-b border-slate-50">Recent Activity</h3>
-            
-            <div className="space-y-4">
-              <div className="flex gap-2.5">
-                <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
-                  <CheckCircle className="h-3.5 w-3.5" />
-                </div>
-                <div className="leading-tight text-left">
-                  <span className="text-[10px] font-bold text-slate-800 block">Team Approved</span>
-                  <span className="text-[9px] text-slate-450 font-semibold block mt-0.5">confirmed registration for Neural Hackathon</span>
-                  <span className="text-[8px] text-slate-400 font-bold block mt-1">2 minutes ago</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2.5">
-                <div className="w-6 h-6 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shrink-0">
-                  <User className="h-3.5 w-3.5" />
-                </div>
-                <div className="leading-tight text-left">
-                  <span className="text-[10px] font-bold text-slate-800 block">Jane Doe</span>
-                  <span className="text-[9px] text-slate-450 font-semibold block mt-0.5">submitted individual registration</span>
-                  <span className="text-[8px] text-slate-400 font-bold block mt-1">18 minutes ago</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2.5">
-                <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shrink-0">
-                  <Settings className="h-3.5 w-3.5" />
-                </div>
-                <div className="leading-tight text-left">
-                  <span className="text-[10px] font-bold text-slate-800 block">Registration Rules</span>
-                  <span className="text-[9px] text-slate-450 font-semibold block mt-0.5">updated rules for Robo-Workshop</span>
-                  <span className="text-[8px] text-slate-400 font-bold block mt-1">1 hour ago</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2.5">
-                <div className="w-6 h-6 rounded-full bg-slate-50 text-slate-500 flex items-center justify-center border border-slate-100 shrink-0">
-                  <Mail className="h-3.5 w-3.5" />
-                </div>
-                <div className="leading-tight text-left">
-                  <span className="text-[10px] font-bold text-slate-800 block">Bulk Invite</span>
-                  <span className="text-[9px] text-slate-450 font-semibold block mt-0.5">sent to Freshman list</span>
-                  <span className="text-[8px] text-slate-400 font-bold block mt-1">4 hours ago</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Ad Card */}
-          <div className="relative p-5 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-3xl overflow-hidden shadow-md text-white">
-            <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:12px_12px]"></div>
-            <div className="relative z-10 space-y-3.5 text-left">
-              <span className="inline-block bg-white/25 text-white text-[8px] font-bold tracking-widest px-2.5 py-0.5 rounded-full uppercase">Dashboard</span>
-              <div className="space-y-1">
-                <h4 className="text-xs font-black">New AI Analytics</h4>
-                <p className="text-[9px] text-white/80 font-semibold leading-relaxed">Generate attendance prediction reports for upcoming events instantly.</p>
-              </div>
-              <button onClick={() => alert("Accessing Analytics beta...")} className="w-full py-1.5 bg-white text-[#2563EB] font-black rounded-xl text-[9px] hover:bg-slate-50 transition-colors flex items-center justify-center gap-1">
-                <Zap className="h-3 w-3 fill-current" />
-                Try Beta
-              </button>
-            </div>
-          </div>
-
-        </div>
 
       </div>
 

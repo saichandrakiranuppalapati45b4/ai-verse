@@ -50,6 +50,7 @@ const RegistrationPage: React.FC = () => {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [createdRegId, setCreatedRegId] = useState("");
 
   // Step 1 Form States
   const [groupName, setGroupName] = useState("");
@@ -87,7 +88,7 @@ const RegistrationPage: React.FC = () => {
             location: data.location || "Virtual Hub",
             minTeamSize: minT,
             maxTeamSize: maxT,
-            currentReg: data.currentReg || 0,
+            currentReg: Math.max(0, Number(data.currentReg) || 0),
             maxReg: data.maxReg || 100,
             posterPreview: data.posterPreview || "",
             registrationFee: data.registrationFee !== undefined ? data.registrationFee : 0,
@@ -185,7 +186,11 @@ const RegistrationPage: React.FC = () => {
       };
 
       // Add document to registrations collection
-      await addDoc(collection(db, "registrations"), payload);
+      const regDocRef = await addDoc(collection(db, "registrations"), payload);
+      await updateDoc(doc(db, "registrations", regDocRef.id), {
+        qrCodeData: regDocRef.id
+      });
+      setCreatedRegId(regDocRef.id);
 
       // Increment registrations counter on event
       const docRef = doc(db, "events", id);
@@ -313,7 +318,7 @@ const RegistrationPage: React.FC = () => {
           <div className="lg:col-span-5 space-y-6 text-left">
             {/* Event Logistics card */}
             <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
-              {/* Image banner mockup with "In Person" badge */}
+              {/* Image banner with "In Person" badge */}
               <div className="relative rounded-2xl overflow-hidden h-32 bg-slate-150 border border-slate-100 flex items-center justify-center">
                 {event.posterPreview ? (
                   <img 
@@ -366,9 +371,9 @@ const RegistrationPage: React.FC = () => {
 
             {/* Actions layout button mapping */}
             <div className="space-y-2">
-              <Link to="/">
+              <Link to={`/ticket/${createdRegId}`}>
                 <Button variant="gradient" className="w-full rounded-2xl py-3.5 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-blue-600/10">
-                  Go to Home Page
+                  View Ticket
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -710,19 +715,14 @@ const RegistrationPage: React.FC = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role / Department</label>
-                          <select
-                            value={member.role || "Computer Science"}
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</label>
+                          <input
+                            type="tel"
+                            placeholder="e.g. +1 (555) 000-0000"
+                            value={member.role || ""}
                             onChange={(e) => handleMemberChange(idx, "role", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-700 bg-white"
-                          >
-                            <option value="Computer Science">Computer Science</option>
-                            <option value="Information Technology">Information Technology</option>
-                            <option value="Artificial Intelligence">Artificial Intelligence</option>
-                            <option value="Data Science">Data Science</option>
-                            <option value="Electronics & Communication">Electronics & Communication</option>
-                            <option value="Other">Other</option>
-                          </select>
+                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
+                          />
                         </div>
                       </div>
                     </div>
@@ -831,7 +831,7 @@ const RegistrationPage: React.FC = () => {
                         <tr className="border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           <th className="pb-3 pr-4 font-bold text-left">Name</th>
                           <th className="pb-3 px-4 font-bold text-left">Email</th>
-                          <th className="pb-3 px-4 font-bold text-left">Department</th>
+                          <th className="pb-3 px-4 font-bold text-left">Phone Number</th>
                           <th className="pb-3 pl-4 font-bold text-right">Role</th>
                         </tr>
                       </thead>
@@ -850,7 +850,7 @@ const RegistrationPage: React.FC = () => {
                             <tr key={idx} className="hover:bg-slate-50/20">
                               <td className="py-3.5 pr-4 font-bold text-slate-800">{m.name}</td>
                               <td className="py-3.5 px-4 font-semibold text-slate-550">{m.email}</td>
-                              <td className="py-3.5 px-4 text-slate-500 font-bold">{m.role || "Computer Science"}</td>
+                              <td className="py-3.5 px-4 text-slate-500 font-bold">{m.role || "N/A"}</td>
                               <td className="py-3.5 pl-4 text-right">
                                 <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-black border tracking-wide uppercase ${badgeStyle}`}>
                                   {roleName}
@@ -877,7 +877,7 @@ const RegistrationPage: React.FC = () => {
                 </h3>
 
                 <div className="space-y-4">
-                  {/* Premium illustration or map badge as mockup banner */}
+                  {/* Premium illustration or map badge banner */}
                   <div className="relative rounded-2xl overflow-hidden h-28 bg-slate-150 border border-slate-100 flex items-center justify-center">
                     {event.posterPreview ? (
                       <img 

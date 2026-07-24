@@ -21,145 +21,74 @@ import {
   ClipboardList,
   AlertCircle
 } from "lucide-react";
-import { db } from "../../config/firebase";
-import { collection, addDoc, doc, getDoc } from "firebase/firestore";
+import { db, firebaseConfig } from "../../config/firebase";
+import { initializeApp, deleteApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { collection, addDoc, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
 import Button from "../../components/ui/Button";
-
-// Import local assets
-import elenaImg from "../../assets/images/elena.png";
-import marcusImg from "../../assets/images/marcus.png";
-import sophieImg from "../../assets/images/sophie.png";
-import sarahImg from "../../assets/images/sarah.png";
-import liamImg from "../../assets/images/liam.png";
-import aminaImg from "../../assets/images/amina.png";
-import satoshiImg from "../../assets/images/satoshi.png";
-import kenjiImg from "../../assets/images/kenji.png";
-import davidImg from "../../assets/images/david.png";
 
 interface UserItem {
   id: string;
   name: string;
   email: string;
   role: "Student Member" | "Student Organizer" | "Faculty Coordinator" | "Guest";
-  department: "Robotics & Vision" | "Computer Science" | "Ethics & AI" | "Data Science";
   status: "Active" | "Pending" | "Deactivated";
   image?: string;
 }
 
+// Helper to resolve legacy/db roles to settings configuration roles
+const getDisplayRole = (dbRole: string, rolesList: string[]) => {
+  if (!dbRole) return "Guest";
+  const dbRoleLower = dbRole.toLowerCase();
+  if (dbRoleLower === "faculty") {
+    return rolesList.find(r => r.toLowerCase().includes("faculty")) || "Faculty Coordinator";
+  }
+  if (dbRoleLower === "organizer") {
+    return rolesList.find(r => r.toLowerCase().includes("organizer")) || "student Organizer";
+  }
+  if (dbRoleLower === "member") {
+    return rolesList.find(r => r.toLowerCase().includes("member") || r.toLowerCase().includes("volunteer")) || "Volunteer";
+  }
+  if (dbRoleLower === "guest") {
+    return rolesList.find(r => r.toLowerCase().includes("guest")) || "Guest";
+  }
+  const match = rolesList.find(r => r.toLowerCase() === dbRoleLower);
+  if (match) return match;
+  return dbRole;
+};
+
 const UserManagementPage: React.FC = () => {
-  // Mock initial list matching the mockup plus extra candidates for pagination/filtering
-  const [users, setUsers] = useState<UserItem[]>([
-    {
-      id: "1",
-      name: "Elena Rodriguez",
-      email: "elena.r@university.edu",
-      role: "Student Organizer",
-      department: "Robotics & Vision",
-      status: "Active",
-      image: elenaImg
-    },
-    {
-      id: "2",
-      name: "Marcus Chen",
-      email: "m.chen@university.edu",
-      role: "Faculty Coordinator",
-      department: "Computer Science",
-      status: "Active",
-      image: marcusImg
-    },
-    {
-      id: "3",
-      name: "Julian Smith",
-      email: "j.smith@candidate.com",
-      role: "Guest",
-      department: "Ethics & AI",
-      status: "Pending"
-    },
-    {
-      id: "4",
-      name: "Sofia Al-Fayed",
-      email: "sofia.af@university.edu",
-      role: "Student Member",
-      department: "Data Science",
-      status: "Deactivated",
-      image: sophieImg
-    },
-    {
-      id: "5",
-      name: "Sarah Jenkins",
-      email: "s.jenkins@university.edu",
-      role: "Faculty Coordinator",
-      department: "Ethics & AI",
-      status: "Active",
-      image: sarahImg
-    },
-    {
-      id: "6",
-      name: "Liam O'Connor",
-      email: "l.oconnor@university.edu",
-      role: "Student Member",
-      department: "Computer Science",
-      status: "Active",
-      image: liamImg
-    },
-    {
-      id: "7",
-      name: "Amina Patel",
-      email: "a.patel@university.edu",
-      role: "Student Organizer",
-      department: "Data Science",
-      status: "Active",
-      image: aminaImg
-    },
-    {
-      id: "8",
-      name: "Satoshi Nakamoto",
-      email: "satoshin@university.edu",
-      role: "Student Member",
-      department: "Robotics & Vision",
-      status: "Active",
-      image: satoshiImg
-    },
-    {
-      id: "9",
-      name: "Kenji Sato",
-      email: "k.sato@university.edu",
-      role: "Student Member",
-      department: "Data Science",
-      status: "Deactivated",
-      image: kenjiImg
-    },
-    {
-      id: "10",
-      name: "David Miller",
-      email: "d.miller@candidate.com",
-      role: "Guest",
-      department: "Computer Science",
-      status: "Pending",
-      image: davidImg
-    },
-    {
-      id: "11",
-      name: "Zara Vance",
-      email: "z.vance@university.edu",
-      role: "Student Organizer",
-      department: "Ethics & AI",
-      status: "Active"
-    },
-    {
-      id: "12",
-      name: "Oliver Quinn",
-      email: "o.quinn@university.edu",
-      role: "Student Member",
-      department: "Robotics & Vision",
-      status: "Pending"
-    }
-  ]);
+  // Initial list of users for pagination/filtering
+  const [users, setUsers] = useState<UserItem[]>([]);
+
+  // Fetch users from database
+  React.useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "users"));
+        const list: UserItem[] = [];
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          list.push({
+            id: docSnap.id,
+            name: data.name || "Unnamed User",
+            email: data.email || "",
+            role: data.role || "Guest",
+            status: data.status || "Active",
+            image: data.image || ""
+          });
+        });
+        setUsers(list);
+      } catch (err) {
+        console.error("Error fetching users from database:", err);
+      }
+    };
+    fetchUsers();
+  }, []);
 
   // States
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("All");
-  const [deptFilter, setDeptFilter] = useState<string>("All");
   const [statusFilter, setStatusFilter] = useState<string>("All");
   
   // Pagination
@@ -171,7 +100,6 @@ const UserManagementPage: React.FC = () => {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserItem["role"]>("Student Member");
-  const [inviteDept, setInviteDept] = useState<UserItem["department"]>("Computer Science");
   
   // Dropdown actions states
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
@@ -180,13 +108,14 @@ const UserManagementPage: React.FC = () => {
   const [showAddMemberForm, setShowAddMemberForm] = useState(false);
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
-  const [formDept, setFormDept] = useState("Computer Science");
   const [formRoleType, setFormRoleType] = useState<string>("Organizer");
   const [formPosition, setFormPosition] = useState("");
   const [formBio, setFormBio] = useState("");
   const [formLinkedin, setFormLinkedin] = useState("");
   const [formGithub, setFormGithub] = useState("");
   const [formPhotoPreview, setFormPhotoPreview] = useState("");
+  const [formPassword, setFormPassword] = useState("");
+  const [formConfirmPassword, setFormConfirmPassword] = useState("");
   const [addingToTeam, setAddingToTeam] = useState(false);
 
   const [availableRoles, setAvailableRoles] = useState<string[]>([
@@ -218,26 +147,28 @@ const UserManagementPage: React.FC = () => {
   }, [showAddMemberForm]);
 
   // Stats derived from all current users
-  const totalCount = 1284 + (users.length - 12); // Keep offset to match mockup base totals
-  const pendingCount = 42 + users.filter(u => u.status === "Pending").length - 2;
-  const activeOrganizersCount = 18 + users.filter(u => u.role === "Student Organizer" && u.status === "Active").length - 2;
-  const deactivatedCount = 9 + users.filter(u => u.status === "Deactivated").length - 2;
+  const totalCount = users.length;
+  const pendingCount = users.filter(u => u.status === "Pending").length;
+  const activeOrganizersCount = users.filter(u => {
+    const r = getDisplayRole(u.role, availableRoles).toLowerCase();
+    return (r.includes("organizer") || r.includes("lead")) && u.status === "Active";
+  }).length;
+  const deactivatedCount = users.filter(u => u.status === "Deactivated").length;
 
   // Filters logic
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
       const matchesSearch = 
         user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        user.email.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        user.department.toLowerCase().includes(searchQuery.toLowerCase());
+        user.email.toLowerCase().includes(searchQuery.toLowerCase());
       
-      const matchesRole = roleFilter === "All" || user.role === roleFilter;
-      const matchesDept = deptFilter === "All" || user.department === deptFilter;
+      const displayRole = getDisplayRole(user.role, availableRoles);
+      const matchesRole = roleFilter === "All" || displayRole === roleFilter;
       const matchesStatus = statusFilter === "All" || user.status === statusFilter;
 
-      return matchesSearch && matchesRole && matchesDept && matchesStatus;
+      return matchesSearch && matchesRole && matchesStatus;
     });
-  }, [users, searchQuery, roleFilter, deptFilter, statusFilter]);
+  }, [users, searchQuery, roleFilter, statusFilter, availableRoles]);
 
   // Paginated users
   const paginatedUsers = useMemo(() => {
@@ -250,7 +181,7 @@ const UserManagementPage: React.FC = () => {
   // Reset pagination if filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, roleFilter, deptFilter, statusFilter]);
+  }, [searchQuery, roleFilter, statusFilter]);
 
   // Actions handlers
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -278,12 +209,40 @@ const UserManagementPage: React.FC = () => {
       return;
     }
 
+    if (formRoleType === "Faculty Coordinator") {
+      if (!formPassword) {
+        alert("Password is required for Faculty Coordinators!");
+        return;
+      }
+      if (formPassword !== formConfirmPassword) {
+        alert("Passwords do not match!");
+        return;
+      }
+    }
+
     setAddingToTeam(true);
     try {
+      let authUserUid = "";
+      if (formRoleType === "Faculty Coordinator") {
+        // Create user in firebase auth using secondary app so administrator isn't logged out
+        const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+        const secondaryAuth = getAuth(secondaryApp);
+        try {
+          const userCred = await createUserWithEmailAndPassword(secondaryAuth, formEmail, formPassword);
+          authUserUid = userCred.user.uid;
+        } catch (authErr: any) {
+          console.error("Auth creation failed:", authErr);
+          alert(`Authentication setup failed: ${authErr.message || authErr}`);
+          setAddingToTeam(false);
+          await deleteApp(secondaryApp);
+          return;
+        }
+        await deleteApp(secondaryApp);
+      }
+
       const payload = {
         name: formName,
         email: formEmail,
-        department: formDept,
         roleType: formRoleType,
         position: formPosition,
         bio: formBio,
@@ -293,21 +252,43 @@ const UserManagementPage: React.FC = () => {
         createdAt: Date.now()
       };
 
-      await addDoc(collection(db, "team"), payload);
+      const payloadWithCreds = {
+        ...payload,
+        username: formEmail,
+        tempPassword: formRoleType === "Faculty Coordinator" ? formPassword : "organizer"
+      };
+
+      await addDoc(collection(db, "organizers"), payloadWithCreds);
+
+      let userDocId = "";
+      if (authUserUid) {
+        await setDoc(doc(db, "users", authUserUid), {
+          name: formName,
+          email: formEmail,
+          role: formRoleType,
+          image: formPhotoPreview || "",
+          status: "Active"
+        });
+        userDocId = authUserUid;
+      } else {
+        const userDocRef = await addDoc(collection(db, "users"), {
+          name: formName,
+          email: formEmail,
+          role: formRoleType,
+          image: formPhotoPreview || "",
+          status: "Active"
+        });
+        userDocId = userDocRef.id;
+      }
+
       alert("Member successfully added to team!");
       
-      // Add member locally to user management table list too
-      const localRoleMapping = 
-        formRoleType === "Faculty Coordinator" ? "Faculty Coordinator" as const : 
-        formRoleType === "Student Lead" ? "Student Organizer" as const : 
-        formRoleType === "Organizer" ? "Student Organizer" as const : "Guest" as const;
-        
       const newUser: UserItem = {
-        id: Date.now().toString(),
+        id: userDocId,
         name: formName,
         email: formEmail,
-        role: localRoleMapping,
-        department: formDept as any,
+        role: formRoleType as any,
+        image: formPhotoPreview || "",
         status: "Active"
       };
       setUsers(prev => [newUser, ...prev]);
@@ -315,13 +296,14 @@ const UserManagementPage: React.FC = () => {
       // Reset state and return to user list view
       setFormName("");
       setFormEmail("");
-      setFormDept("Computer Science");
       setFormRoleType("Organizer");
       setFormPosition("");
       setFormBio("");
       setFormLinkedin("");
       setFormGithub("");
       setFormPhotoPreview("");
+      setFormPassword("");
+      setFormConfirmPassword("");
       setShowAddMemberForm(false);
     } catch (err) {
       console.error("Error adding team member:", err);
@@ -331,69 +313,120 @@ const UserManagementPage: React.FC = () => {
     }
   };
 
-  // Actions handlers
-  const handleAddMember = (e: React.FormEvent) => {
+  const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteName || !inviteEmail) return;
 
-    const newUser: UserItem = {
-      id: Date.now().toString(),
+    const newUserDoc = {
       name: inviteName,
       email: inviteEmail,
       role: inviteRole,
-      department: inviteDept,
-      status: "Active" // Invites defaults to Active or Pending based on role
+      status: "Active"
     };
 
-    setUsers([newUser, ...users]);
-    setInviteName("");
-    setInviteEmail("");
-    setIsInviteModalOpen(false);
-  };
-
-  const handleStatusChange = (id: string, newStatus: UserItem["status"]) => {
-    setUsers(users.map(u => u.id === id ? { ...u, status: newStatus } : u));
-    setActiveMenuId(null);
-  };
-
-  const handleRoleChange = (id: string, newRole: UserItem["role"]) => {
-    setUsers(users.map(u => u.id === id ? { ...u, role: newRole } : u));
-    setActiveMenuId(null);
-  };
-
-  const handleDeleteUser = (id: string) => {
-    setUsers(users.filter(u => u.id !== id));
-    setActiveMenuId(null);
-  };
-
-  // Helper to render beautiful initials avatar
-  const renderAvatar = (user: UserItem) => {
-    if (user.image) {
-      return (
-        <img 
-          src={user.image} 
-          alt={user.name} 
-          className="w-10 h-10 rounded-full object-cover border border-slate-100" 
-        />
-      );
+    try {
+      const docRef = await addDoc(collection(db, "users"), newUserDoc);
+      const newUser: UserItem = {
+        id: docRef.id,
+        name: inviteName,
+        email: inviteEmail,
+        role: inviteRole,
+        status: "Active"
+      };
+      setUsers([newUser, ...users]);
+      setInviteName("");
+      setInviteEmail("");
+      setIsInviteModalOpen(false);
+    } catch (err) {
+      console.error("Error adding user to database:", err);
+      alert("Failed to add user to database.");
     }
-    const initials = user.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
-    // Unique color palette based on name hash
-    const colors = [
-      "bg-blue-100 text-blue-600 border-blue-200",
-      "bg-indigo-100 text-indigo-600 border-indigo-200",
-      "bg-emerald-100 text-emerald-600 border-emerald-200",
-      "bg-purple-100 text-purple-600 border-purple-200",
-      "bg-rose-100 text-rose-600 border-rose-200",
-      "bg-amber-100 text-amber-600 border-amber-200"
-    ];
-    const code = user.name.charCodeAt(0) + (user.name.charCodeAt(1) || 0);
-    const selectedColor = colors[code % colors.length];
+  };
+
+  const handleStatusChange = async (id: string, newStatus: UserItem["status"]) => {
+    try {
+      const docRef = doc(db, "users", id);
+      await setDoc(docRef, { status: newStatus }, { merge: true });
+      setUsers(users.map(u => u.id === id ? { ...u, status: newStatus } : u));
+    } catch (err) {
+      console.error("Error updating user status:", err);
+      alert("Failed to update status.");
+    }
+    setActiveMenuId(null);
+  };
+
+  const handleRoleChange = async (id: string, newRole: UserItem["role"]) => {
+    try {
+      const docRef = doc(db, "users", id);
+      await setDoc(docRef, { role: newRole }, { merge: true });
+      setUsers(users.map(u => u.id === id ? { ...u, role: newRole } : u));
+    } catch (err) {
+      console.error("Error updating user role:", err);
+      alert("Failed to update role.");
+    }
+    setActiveMenuId(null);
+  };
+
+  const handleDeleteUser = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, "users", id));
+      setUsers(users.filter(u => u.id !== id));
+    } catch (err) {
+      console.error("Error deleting user from database:", err);
+      alert("Failed to delete user.");
+    }
+    setActiveMenuId(null);
+  };
+
+
+
+  // Helper to render beautiful role badge dynamically
+  const renderRoleBadge = (role: string) => {
+    const rLower = role.toLowerCase();
+    let bg = "bg-slate-100 text-slate-750 border-slate-205";
+    if (rLower.includes("faculty") || rLower.includes("advisor") || rLower.includes("coordinator")) {
+      bg = "bg-emerald-50 text-emerald-700 border-emerald-100";
+    } else if (rLower.includes("organizer") || rLower.includes("lead") || rLower.includes("head") || rLower.includes("manager") || rLower.includes("conviner")) {
+      bg = "bg-blue-50 text-blue-700 border-blue-100";
+    } else if (rLower.includes("volunteer") || rLower.includes("guest")) {
+      bg = "bg-slate-100 text-slate-600 border-slate-200";
+    } else {
+      bg = "bg-purple-50 text-purple-700 border-purple-100";
+    }
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${bg}`}>
+        {role}
+      </span>
+    );
+  };
+
+  // Helper to render beautiful initials avatar / placeholder
+  const renderAvatar = (user: UserItem) => {
+    let avatarUrl = user.image;
+    if (!avatarUrl || avatarUrl.trim() === "") {
+      const placeholders = [
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80",
+        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&h=150&q=80",
+        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&h=150&q=80",
+        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&h=150&q=80",
+        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&h=150&q=80",
+        "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=150&h=150&q=80"
+      ];
+      let hash = 0;
+      const str = user.email || user.name || "";
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const index = Math.abs(hash) % placeholders.length;
+      avatarUrl = placeholders[index];
+    }
 
     return (
-      <div className={`w-10 h-10 rounded-full border flex items-center justify-center font-bold text-sm tracking-wider ${selectedColor}`}>
-        {initials}
-      </div>
+      <img 
+        src={avatarUrl} 
+        alt={user.name} 
+        className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm" 
+      />
     );
   };
 
@@ -452,19 +485,34 @@ const UserManagementPage: React.FC = () => {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Department</label>
-                <select
-                  value={formDept}
-                  onChange={(e) => setFormDept(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-700 bg-slate-50/20 focus:bg-white transition-all cursor-pointer"
-                >
-                  <option value="Computer Science">Computer Science</option>
-                  <option value="Robotics & Vision">Robotics & Vision</option>
-                  <option value="Ethics & AI">Ethics & AI</option>
-                  <option value="Data Science">Data Science</option>
-                </select>
-              </div>
+
+              {formRoleType === "Faculty Coordinator" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100 mt-4 text-left">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Enter Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={formPassword}
+                      onChange={(e) => setFormPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/20 focus:bg-white transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Confirm Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={formConfirmPassword}
+                      onChange={(e) => setFormConfirmPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/20 focus:bg-white transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Role & Position Card */}
@@ -780,33 +828,20 @@ const UserManagementPage: React.FC = () => {
               className="appearance-none w-full sm:w-44 px-4 py-2 pr-10 bg-slate-50 border border-slate-200/80 rounded-2xl text-slate-700 text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium cursor-pointer"
             >
               <option value="All">Role: All</option>
-              <option value="Student Member">Student Member</option>
-              <option value="Student Organizer">Student Organizer</option>
-              <option value="Faculty Coordinator">Faculty Coordinator</option>
-              <option value="Guest">Guest</option>
+              {availableRoles.map(role => (
+                <option key={role} value={role}>{role}</option>
+              ))}
+              {!availableRoles.includes("Student Member") && <option value="Student Member">Student Member</option>}
+              {!availableRoles.includes("Student Organizer") && <option value="Student Organizer">Student Organizer</option>}
+              {!availableRoles.includes("Faculty Coordinator") && <option value="Faculty Coordinator">Faculty Coordinator</option>}
+              {!availableRoles.includes("Guest") && <option value="Guest">Guest</option>}
             </select>
             <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
               <Filter className="h-3.5 w-3.5" />
             </div>
           </div>
 
-          {/* Department Filter */}
-          <div className="relative w-full sm:w-auto">
-            <select
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-              className="appearance-none w-full sm:w-48 px-4 py-2 pr-10 bg-slate-50 border border-slate-200/80 rounded-2xl text-slate-700 text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium cursor-pointer"
-            >
-              <option value="All">Department: All</option>
-              <option value="Robotics & Vision">Robotics & Vision</option>
-              <option value="Computer Science">Computer Science</option>
-              <option value="Ethics & AI">Ethics & AI</option>
-              <option value="Data Science">Data Science</option>
-            </select>
-            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-              <Filter className="h-3.5 w-3.5" />
-            </div>
-          </div>
+
 
           {/* Status Filter */}
           <div className="relative w-full sm:w-auto">
@@ -843,7 +878,6 @@ const UserManagementPage: React.FC = () => {
               <tr>
                 <th scope="col" className="px-6 py-4">User</th>
                 <th scope="col" className="px-6 py-4">Role</th>
-                <th scope="col" className="px-6 py-4">Department</th>
                 <th scope="col" className="px-6 py-4">Status</th>
                 <th scope="col" className="px-6 py-4 text-right">Actions</th>
               </tr>
@@ -865,31 +899,7 @@ const UserManagementPage: React.FC = () => {
 
                     {/* Role Badge */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {user.role === "Student Organizer" && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                          Student Organizer
-                        </span>
-                      )}
-                      {user.role === "Faculty Coordinator" && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
-                          Faculty Coordinator
-                        </span>
-                      )}
-                      {user.role === "Student Member" && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">
-                          Student Member
-                        </span>
-                      )}
-                      {user.role === "Guest" && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                          Guest
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Department */}
-                    <td className="px-6 py-4 whitespace-nowrap text-slate-500 font-medium text-sm">
-                      {user.department}
+                      {renderRoleBadge(getDisplayRole(user.role, availableRoles))}
                     </td>
 
                     {/* Status Dot */}
@@ -943,30 +953,22 @@ const UserManagementPage: React.FC = () => {
                               <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1">
                                 Change Role
                               </div>
-                              <button
-                                onClick={() => handleRoleChange(user.id, "Student Member")}
-                                className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${user.role === 'Student Member' ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
-                              >
-                                Student Member
-                              </button>
-                              <button
-                                onClick={() => handleRoleChange(user.id, "Student Organizer")}
-                                className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${user.role === 'Student Organizer' ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
-                              >
-                                Student Organizer
-                              </button>
-                              <button
-                                onClick={() => handleRoleChange(user.id, "Faculty Coordinator")}
-                                className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${user.role === 'Faculty Coordinator' ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
-                              >
-                                Faculty Coordinator
-                              </button>
-                              <button
-                                onClick={() => handleRoleChange(user.id, "Guest")}
-                                className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${user.role === 'Guest' ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
-                              >
-                                Guest
-                              </button>
+                              {(() => {
+                                const options = [...availableRoles];
+                                const displayRole = getDisplayRole(user.role, availableRoles);
+                                if (displayRole && !options.includes(displayRole)) {
+                                  options.push(displayRole);
+                                }
+                                return options;
+                              })().map((role) => (
+                                <button
+                                  key={role}
+                                  onClick={() => handleRoleChange(user.id, role as any)}
+                                  className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
+                                >
+                                  {role}
+                                </button>
+                              ))}
 
                               <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
                                 Quick Action
@@ -1110,34 +1112,21 @@ const UserManagementPage: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role</label>
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value as UserItem["role"])}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 cursor-pointer"
-                  >
-                    <option value="Student Member">Student Member</option>
-                    <option value="Student Organizer">Student Organizer</option>
-                    <option value="Faculty Coordinator">Faculty Coordinator</option>
-                    <option value="Guest">Guest</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Department</label>
-                  <select
-                    value={inviteDept}
-                    onChange={(e) => setInviteDept(e.target.value as UserItem["department"])}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 cursor-pointer"
-                  >
-                    <option value="Computer Science">Computer Science</option>
-                    <option value="Robotics & Vision">Robotics & Vision</option>
-                    <option value="Ethics & AI">Ethics & AI</option>
-                    <option value="Data Science">Data Science</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role</label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as UserItem["role"])}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 cursor-pointer"
+                >
+                  {availableRoles.map(role => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                  {!availableRoles.includes("Student Member") && <option value="Student Member">Student Member</option>}
+                  {!availableRoles.includes("Student Organizer") && <option value="Student Organizer">Student Organizer</option>}
+                  {!availableRoles.includes("Faculty Coordinator") && <option value="Faculty Coordinator">Faculty Coordinator</option>}
+                  {!availableRoles.includes("Guest") && <option value="Guest">Guest</option>}
+                </select>
               </div>
 
               <div className="flex items-center gap-3 pt-4 border-t border-slate-50">

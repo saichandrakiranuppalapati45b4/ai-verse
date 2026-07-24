@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { Menu, X, Shield } from "lucide-react";
-import Button from "../ui/Button";
+import { motion } from "framer-motion";
 
 export const Navbar: React.FC = () => {
   const { user } = useAuth();
@@ -34,86 +34,86 @@ export const Navbar: React.FC = () => {
     { path: "/events", label: "Events" },
     { path: "/gallery", label: "Gallery" },
     { path: "/team", label: "Team" },
+    { path: "/contact", label: "Contact" },
   ];
 
 
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 flex items-center w-full h-20 border-b border-slate-100/80
+      className={`fixed left-1/2 -translate-x-1/2 z-40 transition-all duration-300 flex items-center justify-between
+        w-[92%] sm:w-[90%] max-w-7xl h-16 rounded-full border border-slate-200/50 shadow-[0_8px_30px_rgba(0,0,0,0.03)] px-6 sm:px-8
         ${isScrolled 
-          ? "bg-white/95 backdrop-blur-md shadow-md" 
-          : "bg-white/80 backdrop-blur-md"
+          ? "top-4 bg-white/90 backdrop-blur-md shadow-md border-slate-200/70" 
+          : "top-6 bg-white/70 backdrop-blur-md"
         }`}
     >
-      <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-full">
-        {/* Brand Logo */}
-        <Link to="/" className="flex items-center gap-1.5 group font-extrabold text-aether-dark text-xl tracking-tight select-none">
-          <span className="text-aether-blue-600 font-sans text-2xl font-black">AI</span>
-          <span className="text-slate-900 font-sans text-2xl font-black">Verse</span>
-        </Link>
+      {/* Brand Logo */}
+      <Link to="/" className="flex items-center gap-1.5 group font-extrabold text-aether-dark text-lg tracking-tight select-none">
+        <span className="text-aether-blue-600 font-sans text-xl font-black">AI</span>
+        <span className="text-slate-900 font-sans text-xl font-black">Verse</span>
+      </Link>
 
-        {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-7">
-          {navLinks.map((link) => {
-            const isActive = location.pathname === link.path;
-            return (
-              <Link
-                key={link.path}
-                to={link.path}
-                className={`text-sm font-semibold tracking-wide transition-colors relative py-1.5
-                  ${isActive 
-                    ? "text-aether-blue-600" 
-                    : "text-slate-600 hover:text-aether-blue-600"
-                  }`}
-              >
-                {link.label}
-                {isActive && (
-                  <span className="absolute bottom-0 left-0 w-full h-0.5 bg-aether-blue-600 rounded-full"></span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Action Button Area */}
-        <div className="hidden md:flex items-center gap-4">
-          {user ? (
+      {/* Desktop Navigation */}
+      <nav className="hidden md:flex items-center gap-6">
+        {navLinks.map((link) => {
+          const isActive = location.pathname === link.path;
+          return (
             <Link
-              to={user.role === "faculty" ? "/faculty/dashboard" : "/organizer/dashboard"}
-              className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-aether-blue-600 transition-colors py-2 px-3 hover:bg-slate-50 rounded-lg"
+              key={link.path}
+              to={link.path}
+              className={`text-xs font-bold tracking-wide transition-colors relative py-1
+                ${isActive 
+                  ? "text-aether-blue-600 font-extrabold" 
+                  : "text-slate-500 hover:text-aether-blue-600"
+                }`}
             >
-              <Shield className="h-4 w-4" />
-              Portal
+              {link.label}
+              {isActive && (
+                <motion.span
+                  layoutId="activeDesktopNavLink"
+                  transition={{ type: "spring", stiffness: 60, damping: 15 }}
+                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-aether-blue-600 rounded-full"
+                />
+              )}
             </Link>
-          ) : (
-            <Link
-              to="/login"
-              className="text-sm font-semibold text-slate-600 hover:text-aether-blue-600 transition-colors px-3 py-2"
-            >
-              Login
-            </Link>
-          )}
+          );
+        })}
+      </nav>
 
-          <Link to="/events">
-            <Button variant="gradient" size="sm" className="rounded-full font-bold shadow-button px-5 py-2">
-              Join Club
-            </Button>
+      {/* Action Button Area */}
+      <div className="hidden md:flex items-center gap-4">
+        {user ? (
+          <Link
+            to={user.role === "faculty" ? "/faculty/dashboard" : "/organizer/dashboard"}
+            className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-aether-blue-600 transition-colors py-1.5 px-3 hover:bg-slate-50 rounded-xl"
+          >
+            <Shield className="h-4 w-4" />
+            Portal
           </Link>
-        </div>
+        ) : (
+          <Link
+            to="/login"
+            className="text-xs font-bold text-slate-500 hover:text-aether-blue-600 transition-colors px-3 py-1.5"
+          >
+            Login
+          </Link>
+        )}
 
-        {/* Mobile Toggle Button */}
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="md:hidden p-2 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors"
-        >
-          {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-        </button>
+
       </div>
+
+      {/* Mobile Toggle Button */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="md:hidden p-1.5 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors"
+      >
+        {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+      </button>
 
       {/* Mobile Navigation Drawer */}
       {isMobileMenuOpen && (
-        <div className="md:hidden absolute top-full left-0 w-full bg-white border border-slate-200/50 shadow-lg px-6 py-6 space-y-4 flex flex-col font-sans animate-fade-in mt-2 rounded-2xl"
+        <div className="md:hidden absolute top-[calc(100%+8px)] left-0 w-full bg-white border border-slate-200/50 shadow-lg px-6 py-6 space-y-4 flex flex-col font-sans animate-fade-in rounded-3xl"
         >
           {navLinks.map((link) => {
             const isActive = location.pathname === link.path;
@@ -121,8 +121,8 @@ export const Navbar: React.FC = () => {
               <Link
                 key={link.path}
                 to={link.path}
-                className={`text-base font-bold py-1.5 transition-colors
-                  ${isActive ? "text-aether-blue-600" : "text-slate-700 hover:text-aether-blue-600"}`}
+                className={`text-sm font-bold py-1.5 transition-colors text-left
+                  ${isActive ? "text-[#2563EB]" : "text-slate-600 hover:text-[#2563EB]"}`}
               >
                 {link.label}
               </Link>
@@ -133,7 +133,7 @@ export const Navbar: React.FC = () => {
             {user ? (
               <Link
                 to={user.role === "faculty" ? "/faculty/dashboard" : "/organizer/dashboard"}
-                className="w-full text-center py-2.5 bg-slate-50 font-bold rounded-xl text-slate-700 hover:bg-slate-100 transition-all text-sm flex items-center justify-center gap-1.5"
+                className="w-full text-center py-2 bg-slate-50 font-bold rounded-xl text-slate-700 hover:bg-slate-100 transition-all text-xs flex items-center justify-center gap-1.5"
               >
                 <Shield className="h-4 w-4" />
                 Go to Portal
@@ -141,17 +141,13 @@ export const Navbar: React.FC = () => {
             ) : (
               <Link
                 to="/login"
-                className="w-full text-center py-2.5 bg-slate-50 font-bold rounded-xl text-slate-700 hover:bg-slate-100 transition-all text-sm"
+                className="w-full text-center py-2 bg-slate-50 font-bold rounded-xl text-slate-700 hover:bg-slate-100 transition-all text-xs"
               >
                 Login
               </Link>
             )}
 
-            <Link to="/events" className="w-full">
-              <Button variant="gradient" className="w-full py-3 rounded-xl font-bold shadow-button text-sm">
-                Join Club
-              </Button>
-            </Link>
+
           </div>
         </div>
       )}

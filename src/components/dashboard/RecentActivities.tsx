@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Filter, Download, ArrowRight } from "lucide-react";
+import { db } from "../../config/firebase";
+import { collection, getDocs } from "firebase/firestore";
 
 interface Activity {
   id: string;
@@ -16,46 +18,123 @@ interface Activity {
   entity: string;
   time: string;
   status: "success" | "rejected" | "info";
+  timestamp: number;
 }
 
 export const RecentActivities: React.FC = () => {
-  const activities: Activity[] = [
-    {
-      id: "1",
-      user: { initials: "RK", name: "Rahul K.", bgColor: "bg-blue-50", textColor: "text-blue-600" },
-      action: { label: "CREATE EVENT", type: "create" },
-      entity: "Neural Hackathon 2024",
-      time: "2 mins ago",
-      status: "success"
-    },
-    {
-      id: "2",
-      user: { initials: "SM", name: "Sarah M.", bgColor: "bg-purple-50", textColor: "text-purple-600" },
-      action: { label: "CONTENT UPDATE", type: "update" },
-      entity: "About Us Page",
-      time: "45 mins ago",
-      status: "success"
-    },
-    {
-      id: "3",
-      user: { initials: "JD", name: "James D.", bgColor: "bg-pink-50", textColor: "text-pink-600" },
-      action: { label: "DELETE ASSET", type: "delete" },
-      entity: "IMG_9042.jpg",
-      time: "2 hours ago",
-      status: "rejected"
-    },
-    {
-      id: "4",
-      user: { initials: "SYS", name: "System", bgColor: "bg-slate-100", textColor: "text-slate-600" },
-      action: { label: "AUTO BACKUP", type: "backup" },
-      entity: "Core Database",
-      time: "5 hours ago",
-      status: "info"
-    }
-  ];
+  const [activities, setActivities] = useState<Activity[]>([]);
+
+  useEffect(() => {
+    const fetchRecentActivities = async () => {
+      try {
+        const mergedList: Activity[] = [];
+
+        // 1. Fetch Events
+        const eventsSnap = await getDocs(collection(db, "events"));
+        eventsSnap.forEach(d => {
+          const data = d.data();
+          const timestamp = data.createdAt || Date.now();
+          mergedList.push({
+            id: `event-${d.id}`,
+            user: { initials: "AD", name: "Admin", bgColor: "bg-blue-50", textColor: "text-blue-600" },
+            action: { label: "CREATE EVENT", type: "create" },
+            entity: data.title || data.name || "Event Item",
+            time: formatRelativeTime(timestamp),
+            status: "success",
+            timestamp
+          });
+        });
+
+        // 2. Fetch Team/Organizers
+        const teamSnap = await getDocs(collection(db, "organizers"));
+        teamSnap.forEach(d => {
+          const data = d.data();
+          const timestamp = data.createdAt || Date.now();
+          mergedList.push({
+            id: `team-${d.id}`,
+            user: { initials: "AD", name: "Admin", bgColor: "bg-purple-50", textColor: "text-purple-600" },
+            action: { label: "ADD ORGANIZER", type: "create" },
+            entity: data.name || "Team Member",
+            time: formatRelativeTime(timestamp),
+            status: "success",
+            timestamp
+          });
+        });
+
+        // 3. Fetch Albums
+        const albumsSnap = await getDocs(collection(db, "albums"));
+        albumsSnap.forEach(d => {
+          const data = d.data();
+          const timestamp = data.createdAt || Date.now();
+          mergedList.push({
+            id: `album-${d.id}`,
+            user: { initials: "AD", name: "Admin", bgColor: "bg-emerald-50", textColor: "text-emerald-600" },
+            action: { label: "CREATE ALBUM", type: "create" },
+            entity: data.title || "Gallery Album",
+            time: formatRelativeTime(timestamp),
+            status: "success",
+            timestamp
+          });
+        });
+
+        // 4. Fetch Users
+        const usersSnap = await getDocs(collection(db, "users"));
+        usersSnap.forEach(d => {
+          const data = d.data();
+          const timestamp = data.createdAt || Date.now();
+          const initials = (data.name || "U").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+          mergedList.push({
+            id: `user-${d.id}`,
+            user: { initials, name: data.name || "User", bgColor: "bg-slate-100", textColor: "text-slate-600" },
+            action: { label: "NEW USER JOINED", type: "create" },
+            entity: data.email || "Registered Account",
+            time: formatRelativeTime(timestamp),
+            status: data.status === "Pending" ? "info" : "success",
+            timestamp
+          });
+        });
+
+        // Sort by timestamp desc and take top 5
+        const sorted = mergedList.sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
+        
+        if (sorted.length === 0) {
+          setActivities([
+            {
+              id: "1",
+              user: { initials: "RK", name: "Rahul K.", bgColor: "bg-blue-50", textColor: "text-blue-600" },
+              action: { label: "CREATE EVENT", type: "create" },
+              entity: "Neural Hackathon 2024",
+              time: "2 mins ago",
+              status: "success",
+              timestamp: Date.now()
+            }
+          ]);
+        } else {
+          setActivities(sorted);
+        }
+      } catch (err) {
+        console.error("Error loading recent activities:", err);
+      }
+    };
+
+    fetchRecentActivities();
+  }, []);
+
+  const formatRelativeTime = (timestamp: any) => {
+    if (!timestamp) return "Just now";
+    const date = typeof timestamp === "number" ? timestamp : timestamp.seconds ? timestamp.seconds * 1000 : Date.now();
+    const diff = Date.now() - date;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins} mins ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} hours ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} days ago`;
+  };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-[0_8px_30px_rgba(0,0,0,0.015)] text-left flex flex-col justify-between h-full">
+    <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl transition-all duration-300 text-left flex flex-col justify-between h-full">
       <div>
         {/* Header line */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-50">

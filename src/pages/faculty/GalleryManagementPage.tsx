@@ -8,19 +8,21 @@ import {
   Folder, 
   Image as ImageIcon, 
   Clock, 
-  HardDrive, 
   Search, 
   LayoutGrid, 
   List, 
   Plus, 
   Upload, 
   X, 
-  ChevronRight, 
   Sparkles, 
   Trash2, 
-  Zap, 
-  Layers, 
-  CheckCircle
+  CheckCircle,
+  ArrowLeft,
+  Save,
+  Info,
+  Cloud,
+  Settings as SettingsIcon,
+  Bell
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -43,6 +45,7 @@ interface AlbumItem {
   status: "Published" | "Draft";
   coverImage: string;
   category: "Workshops" | "Hackathons" | "Symposiums" | "Socials";
+  createdAt?: number;
 }
 
 interface ToastMessage {
@@ -53,86 +56,47 @@ interface ToastMessage {
 
 const GalleryManagementPage: React.FC = () => {
   // Page stats states
-  const [totalImages, setTotalImages] = useState(1284);
-  const [recentUploads, setRecentUploads] = useState(84);
-  const [storageUsed, setStorageUsed] = useState(14.8);
-  const [storageLimit] = useState(20.0);
-  const [isOptimized, setIsOptimized] = useState(false);
   const [toastQueue, setToastQueue] = useState<ToastMessage[]>([]);
 
   const [albums, setAlbums] = useState<AlbumItem[]>([]);
 
-  const initialAlbumsMock: AlbumItem[] = [
-    {
-      id: "1",
-      title: "Neural Hackathon 2024",
-      photosCount: 142,
-      date: "Oct 12, 2023",
-      status: "Published",
-      coverImage: galleryCoding,
-      category: "Hackathons"
-    },
-    {
-      id: "2",
-      title: "AI Winter Symposium",
-      photosCount: 86,
-      date: "Jan 05, 2024",
-      status: "Published",
-      coverImage: gallerySymposium,
-      category: "Symposiums"
-    },
-    {
-      id: "3",
-      title: "Guest Lectures - Series II",
-      photosCount: 24,
-      date: "Jul 04, 2026",
-      status: "Draft",
-      coverImage: galleryLab,
-      category: "Workshops"
-    }
-  ];
+  const totalImages = useMemo(() => {
+    return albums.reduce((sum, a) => sum + (a.photosCount || 0), 0);
+  }, [albums]);
+
+  const recentUploads = useMemo(() => {
+    return albums
+      .filter(a => {
+        const created = a.createdAt || 0;
+        return (Date.now() - created) < 604800000;
+      })
+      .reduce((sum, a) => sum + (a.photosCount || 0), 0);
+  }, [albums]);
 
   // Fetch albums from Firestore on mount
   useEffect(() => {
     const loadAlbums = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "albums"));
-        if (querySnapshot.empty) {
-          addToast("Initializing albums database with mock data...", "info");
-          const seededAlbums: AlbumItem[] = [];
-          for (const item of initialAlbumsMock) {
-            const docRef = await addDoc(collection(db, "albums"), {
-              title: item.title,
-              photosCount: item.photosCount,
-              date: item.date,
-              status: item.status,
-              coverImage: item.category === "Hackathons" ? "galleryCoding" : item.category === "Symposiums" ? "gallerySymposium" : "galleryLab",
-              category: item.category
-            });
-            seededAlbums.push({ ...item, id: docRef.id });
-          }
-          setAlbums(seededAlbums);
-        } else {
-          const list: AlbumItem[] = [];
-          querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            let cover = galleryLab;
-            if (data.coverImage === "galleryCoding" || data.category === "Hackathons") cover = galleryCoding;
-            else if (data.coverImage === "gallerySymposium" || data.category === "Symposiums") cover = gallerySymposium;
-            else if (data.coverImage === "galleryCoworking" || data.category === "Socials") cover = galleryCoworking;
+        const list: AlbumItem[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          let cover = galleryLab;
+          if (data.coverImage === "galleryCoding" || data.category === "Hackathons") cover = galleryCoding;
+          else if (data.coverImage === "gallerySymposium" || data.category === "Symposiums") cover = gallerySymposium;
+          else if (data.coverImage === "galleryCoworking" || data.category === "Socials") cover = galleryCoworking;
 
-            list.push({
-              id: doc.id,
-              title: data.title || "",
-              photosCount: data.photosCount || 0,
-              date: data.date || "",
-              status: data.status || "Published",
-              coverImage: cover,
-              category: data.category || "Workshops"
-            });
+          list.push({
+            id: doc.id,
+            title: data.title || "",
+            photosCount: data.photosCount || 0,
+            date: data.date || "",
+            status: data.status || "Published",
+            coverImage: cover,
+            category: data.category || "Workshops"
           });
-          setAlbums(list);
-        }
+        });
+        setAlbums(list);
       } catch (err) {
         console.error("Error loading albums from Firestore:", err);
         addToast("Failed to load albums from Firestore.", "warning");
@@ -141,6 +105,7 @@ const GalleryManagementPage: React.FC = () => {
 
     loadAlbums();
   }, []);
+
 
   // Interactive UI states
   const [searchQuery, setSearchQuery] = useState("");
@@ -159,6 +124,163 @@ const GalleryManagementPage: React.FC = () => {
   // Upload Form state
   const [uploadAlbumId, setUploadAlbumId] = useState(albums[0]?.id || "1");
   const [selectedFileCount, setSelectedFileCount] = useState(0);
+
+  // New Album Full Page View states
+  const [showCreateAlbumView, setShowCreateAlbumView] = useState(false);
+  const [albumTitle, setAlbumTitle] = useState("");
+  const [albumCategory, setAlbumCategory] = useState("Workshops");
+  const [albumDescription, setAlbumDescription] = useState("");
+  const [isPublicVisible, setIsPublicVisible] = useState(true);
+  const [isFeaturedOnHome, setIsFeaturedOnHome] = useState(false);
+  const [isCommentsEnabled, setIsCommentsEnabled] = useState(true);
+  const [searchTags, setSearchTags] = useState<string[]>(["Symposium", "AI Lab"]);
+  const [newTagText, setNewTagText] = useState("");
+  const [selectedPhotos, setSelectedPhotos] = useState<{ name: string; size: string; preview: string }[]>([]);
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const readAndAppendFiles = (files: File[]) => {
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64Str = reader.result as string;
+        setSelectedPhotos(prev => [
+          ...prev,
+          {
+            name: file.name,
+            size: (file.size / (1024 * 1024)).toFixed(1) + " MB",
+            preview: base64Str
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const compressImage = (base64Str: string, maxWidth = 500, quality = 0.6): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL("image/jpeg", quality);
+          resolve(compressed);
+        } else {
+          resolve(base64Str);
+        }
+      };
+      img.onerror = () => {
+        resolve(base64Str);
+      };
+    });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArr = Array.from(e.target.files);
+      readAndAppendFiles(filesArr);
+      addToast(`Selected ${filesArr.length} photos!`);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files) {
+      const filesArr = Array.from(e.dataTransfer.files);
+      readAndAppendFiles(filesArr);
+      addToast(`Selected ${filesArr.length} photos!`);
+    }
+  };
+
+  const handleSaveAlbum = async (status: "Published" | "Draft") => {
+    if (!albumTitle.trim()) {
+      addToast("Album title is required!", "warning");
+      return;
+    }
+
+    let coverName = "galleryLab";
+    if (albumCategory === "Hackathons") {
+      coverName = "galleryCoding";
+    } else if (albumCategory === "Symposiums" || albumCategory === "Symposium") {
+      coverName = "gallerySymposium";
+    } else if (albumCategory === "Socials") {
+      coverName = "galleryCoworking";
+    }
+
+    const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    addToast("Compressing gallery images...", "info");
+    const compressedImages = await Promise.all(
+      selectedPhotos.map(photo => compressImage(photo.preview))
+    );
+
+    const payload = {
+      title: albumTitle,
+      photosCount: selectedPhotos.length || 12,
+      date: dateStr,
+      status: status,
+      coverImage: coverName,
+      category: albumCategory,
+      description: albumDescription,
+      isPublic: isPublicVisible,
+      isFeatured: isFeaturedOnHome,
+      allowComments: isCommentsEnabled,
+      tags: searchTags,
+      images: compressedImages,
+      createdAt: Date.now()
+    };
+
+    addToast("Saving album to Firestore...", "info");
+
+    try {
+      await addDoc(collection(db, "albums"), payload);
+      
+      const querySnapshot = await getDocs(collection(db, "albums"));
+      const list: AlbumItem[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        let cov = galleryLab;
+        if (data.coverImage === "galleryCoding" || data.category === "Hackathons") cov = galleryCoding;
+        else if (data.coverImage === "gallerySymposium" || data.category === "Symposiums") cov = gallerySymposium;
+        else if (data.coverImage === "galleryCoworking" || data.category === "Socials") cov = galleryCoworking;
+
+        list.push({
+          id: doc.id,
+          title: data.title || "",
+          photosCount: data.photosCount || 0,
+          date: data.date || "",
+          status: data.status || "Published",
+          coverImage: cov,
+          category: data.category || "Workshops"
+        });
+      });
+      setAlbums(list);
+
+      setAlbumTitle("");
+      setAlbumDescription("");
+      setSelectedPhotos([]);
+      setShowCreateAlbumView(false);
+
+      addToast("Album created successfully!", "success");
+    } catch (err) {
+      console.error("Error creating album:", err);
+      addToast("Failed to create album.", "warning");
+    }
+  };
 
   // Mock library of recently uploaded files (lightbox view)
   const [recentImages, setRecentImages] = useState([
@@ -285,13 +407,6 @@ const GalleryManagementPage: React.FC = () => {
         }));
       }
 
-      setTotalImages(prev => prev + selectedFileCount);
-      setRecentUploads(prev => prev + selectedFileCount);
-      
-      const simulatedMB = parseFloat((selectedFileCount * 2.1).toFixed(1));
-      const addedGB = simulatedMB / 1024;
-      setStorageUsed(prev => parseFloat(Math.min(prev + addedGB, storageLimit).toFixed(2)));
-
       setIsUploadModalOpen(false);
       setSelectedFileCount(0);
       addToast(`Successfully uploaded ${selectedFileCount} images!`);
@@ -348,22 +463,7 @@ const GalleryManagementPage: React.FC = () => {
     }
   };
 
-  // Optimize Storage simulations
-  const handleOptimizeStorage = () => {
-    if (isOptimized) {
-      addToast("Storage is already fully optimized!", "info");
-      return;
-    }
 
-    addToast("Compressing images & removing duplicates...", "info");
-    
-    // Simulation loading timeout
-    setTimeout(() => {
-      setStorageUsed(12.4); // Reduced from 14.8 GB
-      setIsOptimized(true);
-      addToast("Optimization complete! Saved 2.4 GB of storage.");
-    }, 1500);
-  };
 
   // Add AI tag
   const handleAddTag = (e: React.FormEvent) => {
@@ -385,6 +485,369 @@ const GalleryManagementPage: React.FC = () => {
       return t;
     }));
   };
+
+  if (showCreateAlbumView) {
+    return (
+      <div className="space-y-6 text-left relative">
+        <SEO 
+          title="Create New Album - Gallery Portal" 
+          description="Draft and configure a new visual album for Azure Intelligence."
+        />
+
+        {/* Toast Notification Container */}
+        <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 max-w-sm">
+          <AnimatePresence>
+            {toastQueue.map(toast => (
+              <motion.div
+                key={toast.id}
+                initial={{ opacity: 0, y: -20, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+                className={`p-4 rounded-xl shadow-lg flex items-center gap-3 border text-sm font-semibold 
+                  ${toast.type === "success" ? "bg-green-50 border-green-200 text-green-800" : ""}
+                  ${toast.type === "info" ? "bg-blue-50 border-blue-200 text-blue-800" : ""}
+                  ${toast.type === "warning" ? "bg-yellow-50 border-yellow-200 text-yellow-800" : ""}`}
+              >
+                <CheckCircle className="h-4.5 w-4.5 shrink-0" />
+                <span>{toast.text}</span>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+
+        <div className="space-y-6 text-left animate-in fade-in slide-in-from-bottom-3 duration-200">
+          {/* Creation Header bar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setShowCreateAlbumView(false)}
+                className="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-colors flex items-center justify-center text-slate-450 hover:text-slate-700 shadow-sm"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div>
+                <h1 className="text-xl font-bold text-slate-800 tracking-tight leading-none">Create New Album</h1>
+                <p className="text-[10px] text-slate-450 font-bold tracking-wider mt-1.5 uppercase">
+                  Drafting: <span className="text-slate-700 normal-case font-extrabold">{albumTitle || "Untitled Album"}</span> • Last saved Just now
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="relative hidden md:block">
+                <Search className="h-4 w-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="text" 
+                  disabled
+                  placeholder="Search faculty assets..."
+                  className="pl-10 pr-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 w-56 font-semibold"
+                />
+              </div>
+
+              <button className="p-2 text-slate-450 hover:text-slate-600 bg-white rounded-xl border border-slate-200 shadow-sm relative">
+                <Bell className="h-5 w-5" />
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
+              </button>
+
+              <button 
+                onClick={() => handleSaveAlbum("Draft")}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#2563EB] hover:bg-blue-700 text-white rounded-2xl text-xs font-bold shadow-sm shadow-blue-600/10 hover:shadow transition-all"
+              >
+                <Save className="h-4 w-4" />
+                Save Album
+              </button>
+            </div>
+          </div>
+
+          {/* Creation Grid Layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* Left side: Album Details & Image Dropzone */}
+            <div className="lg:col-span-8 space-y-6">
+              
+              {/* Card 1: Album Details */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)]">
+                <div className="flex items-center gap-2 pb-4 border-b border-slate-50">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                    <Info className="h-4 w-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight">Album Details</h3>
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Album Title</label>
+                      <input 
+                        type="text"
+                        placeholder="e.g. Winter Symposium 2026"
+                        value={albumTitle}
+                        onChange={(e) => setAlbumTitle(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold text-slate-800 placeholder-slate-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Event Category</label>
+                      <select 
+                        value={albumCategory}
+                        onChange={(e) => setAlbumCategory(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold text-slate-800"
+                      >
+                        <option value="Workshops">Workshops</option>
+                        <option value="Hackathons">Hackathons</option>
+                        <option value="Symposiums">Symposiums</option>
+                        <option value="Socials">Socials</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Album Description</label>
+                    <textarea 
+                      placeholder="Briefly describe the context and objectives of this media album..."
+                      value={albumDescription}
+                      onChange={(e) => setAlbumDescription(e.target.value)}
+                      rows={4}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold text-slate-800 placeholder-slate-400 resize-none"
+                    ></textarea>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Photo Upload dropzone */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)]">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-50">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                      <Cloud className="h-4 w-4" />
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight">Photo Upload</h3>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border px-2 py-0.5 rounded-lg">
+                    Max: 25MB / Image
+                  </span>
+                </div>
+
+                {/* Dropzone design */}
+                <div className="mt-5 space-y-4">
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleDrop}
+                    className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-3xl p-10 text-center cursor-pointer hover:bg-slate-50/50 transition-all duration-300 flex flex-col items-center justify-center space-y-4"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-[#E6F9F0] text-[#10B981] flex items-center justify-center shadow-inner">
+                      <Upload className="h-5 w-5 stroke-[2.5]" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-800 tracking-tight">Drag & drop photos here</h4>
+                      <p className="text-xs text-slate-400 font-semibold mt-1">
+                        or <span className="text-[#2563EB] hover:underline font-bold">browse files</span> from your secure workstation
+                      </p>
+                    </div>
+                  </div>
+
+                  <input 
+                    type="file" 
+                    multiple
+                    accept="image/*"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+
+                  {/* Previews panel */}
+                  {selectedPhotos.length > 0 && (
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600">{selectedPhotos.length} photos selected</span>
+                        <button 
+                          onClick={() => setSelectedPhotos([])}
+                          className="text-xs font-bold text-red-500 hover:underline"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-56 overflow-y-auto pr-1">
+                        {selectedPhotos.map((photo, index) => (
+                          <div key={index} className="group relative h-20 bg-slate-50 border rounded-xl overflow-hidden shadow-sm">
+                            <img src={photo.preview} className="w-full h-full object-cover" alt="" />
+                            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all p-1.5 flex flex-col justify-between text-left">
+                              <span className="text-[9px] text-white font-medium truncate block">{photo.name}</span>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[8px] text-white/70 font-bold">{photo.size}</span>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedPhotos(prev => prev.filter((_, idx) => idx !== index));
+                                  }}
+                                  className="w-4 h-4 rounded bg-red-500 hover:bg-red-600 text-white flex items-center justify-center"
+                                >
+                                  <X className="h-2.5 w-2.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Right side: Gallery settings, tags, actions */}
+            <div className="lg:col-span-4 space-y-6">
+              
+              {/* Card 3: Gallery Settings */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)]">
+                <div className="flex items-center gap-2 pb-4 border-b border-slate-50">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+                    <SettingsIcon className="h-4 w-4" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight">Gallery Settings</h3>
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  {/* Public Visibility Toggle */}
+                  <div className="flex items-center justify-between gap-4 p-1">
+                    <div className="text-left leading-tight">
+                      <h4 className="text-xs font-bold text-slate-800">Public Visibility</h4>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Visible to all students & faculty</p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setIsPublicVisible(!isPublicVisible)}
+                      className={`w-10 h-5.5 rounded-full relative transition-colors focus:outline-none shrink-0
+                        ${isPublicVisible ? "bg-[#2563EB]" : "bg-slate-200"}`}
+                    >
+                      <span className={`w-4 h-4 rounded-full bg-white absolute top-0.75 left-0.75 transition-transform
+                        ${isPublicVisible ? "translate-x-4.5" : ""}`}
+                      ></span>
+                    </button>
+                  </div>
+
+                  {/* Feature on Home Toggle */}
+                  <div className="flex items-center justify-between gap-4 p-1">
+                    <div className="text-left leading-tight">
+                      <h4 className="text-xs font-bold text-slate-800">Feature on Home</h4>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Promote in main dashboard feed</p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setIsFeaturedOnHome(!isFeaturedOnHome)}
+                      className={`w-10 h-5.5 rounded-full relative transition-colors focus:outline-none shrink-0
+                        ${isFeaturedOnHome ? "bg-[#2563EB]" : "bg-slate-200"}`}
+                    >
+                      <span className={`w-4 h-4 rounded-full bg-white absolute top-0.75 left-0.75 transition-transform
+                        ${isFeaturedOnHome ? "translate-x-4.5" : ""}`}
+                      ></span>
+                    </button>
+                  </div>
+
+                  {/* Enable Comments Toggle */}
+                  <div className="flex items-center justify-between gap-4 p-1">
+                    <div className="text-left leading-tight">
+                      <h4 className="text-xs font-bold text-slate-800">Enable Comments</h4>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Allow community feedback</p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setIsCommentsEnabled(!isCommentsEnabled)}
+                      className={`w-10 h-5.5 rounded-full relative transition-colors focus:outline-none shrink-0
+                        ${isCommentsEnabled ? "bg-[#2563EB]" : "bg-slate-200"}`}
+                    >
+                      <span className={`w-4 h-4 rounded-full bg-white absolute top-0.75 left-0.75 transition-transform
+                        ${isCommentsEnabled ? "translate-x-4.5" : ""}`}
+                      ></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4: Search Tags */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)]">
+                <div className="flex items-center gap-2 pb-4 border-b border-slate-50">
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Search Tags</h3>
+                </div>
+
+                <div className="mt-4 space-y-4">
+                  {/* Tag list */}
+                  {searchTags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {searchTags.map(tg => (
+                        <span key={tg} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-50 text-blue-600 text-[10px] font-bold uppercase tracking-wider">
+                          {tg}
+                          <button 
+                            onClick={() => setSearchTags(prev => prev.filter(t => t !== tg))}
+                            className="text-blue-500 hover:text-blue-700"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add Tag row */}
+                  <div className="relative flex items-center gap-2">
+                    <input 
+                      type="text"
+                      placeholder="Add tag..."
+                      value={newTagText}
+                      onChange={(e) => setNewTagText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (newTagText.trim() && !searchTags.includes(newTagText.trim())) {
+                            setSearchTags(prev => [...prev, newTagText.trim()]);
+                            setNewTagText("");
+                          }
+                        }
+                      }}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold text-slate-800 placeholder-slate-450"
+                    />
+                    <button 
+                      onClick={() => {
+                        if (newTagText.trim() && !searchTags.includes(newTagText.trim())) {
+                          setSearchTags(prev => [...prev, newTagText.trim()]);
+                          setNewTagText("");
+                        }
+                      }}
+                      className="w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-600 font-bold shrink-0 shadow-inner"
+                    >
+                      <Plus className="h-4.5 w-4.5 stroke-[2.5]" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons card */}
+              <div className="space-y-2 pt-2">
+                <button 
+                  onClick={() => handleSaveAlbum("Published")}
+                  className="w-full py-3 bg-[#2563EB] hover:bg-blue-700 text-white rounded-2xl text-xs font-bold transition-all shadow-sm shadow-blue-600/10 hover:shadow-md"
+                >
+                  Create Album & Publish
+                </button>
+
+                <button 
+                  onClick={() => setShowCreateAlbumView(false)}
+                  className="w-full py-3 border border-slate-200 hover:bg-slate-50 text-slate-650 rounded-2xl text-xs font-bold transition-all bg-white"
+                >
+                  Discard Draft
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 text-left relative">
@@ -436,7 +899,7 @@ const GalleryManagementPage: React.FC = () => {
           <Button 
             variant="primary" 
             size="md" 
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={() => setShowCreateAlbumView(true)}
             className="flex items-center gap-2 bg-[#2563EB] hover:bg-blue-700 text-white"
           >
             <Plus className="h-4 w-4" />
@@ -495,30 +958,21 @@ const GalleryManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 4: STORAGE USED */}
+        {/* Card 4: DRAFT ALBUMS */}
         <div className="bg-white p-6 rounded-card border border-slate-100 shadow-card flex flex-col justify-between h-[130px]">
           <div className="flex items-center justify-between">
-            <div className="p-3 bg-slate-800 text-white rounded-xl">
-              <HardDrive className="h-6 w-6" />
+            <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center">
+              <LayoutGrid className="h-6 w-6" />
             </div>
             <Badge variant="gray" className="font-bold text-slate-500">
-              {((storageUsed / storageLimit) * 100).toFixed(0)}% Full
+              Review
             </Badge>
           </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              <span>Storage Used</span>
-              <span className="text-slate-600 lowercase font-medium text-xs font-sans">
-                {storageUsed.toFixed(1)} GB / {storageLimit} GB
-              </span>
-            </div>
-            {/* Storage Progress bar */}
-            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-              <div 
-                className="bg-[#2563EB] h-full rounded-full transition-all duration-500"
-                style={{ width: `${(storageUsed / storageLimit) * 100}%` }}
-              ></div>
-            </div>
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Draft Albums</span>
+            <span className="text-2xl font-black text-slate-800 leading-none">
+              {albums.filter(a => a.status === "Draft").length} <span className="text-xs text-slate-400 font-bold normal-case">pending</span>
+            </span>
           </div>
         </div>
 
@@ -527,8 +981,8 @@ const GalleryManagementPage: React.FC = () => {
       {/* Main Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* Left Column: Gallery Directory (8 / 12) */}
-        <div className="lg:col-span-8 space-y-6">
+        {/* Left Column: Gallery Directory (12 / 12) */}
+        <div className="lg:col-span-12 space-y-6">
           <div className="bg-white p-6 rounded-card border border-slate-100 shadow-card">
             
             {/* Gallery Directory Header Controls */}
@@ -648,7 +1102,7 @@ const GalleryManagementPage: React.FC = () => {
 
                 {/* Dotted "Create New Album" card */}
                 <div 
-                  onClick={() => setIsCreateModalOpen(true)}
+                  onClick={() => setShowCreateAlbumView(true)}
                   className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-card flex flex-col items-center justify-center p-8 cursor-pointer hover:bg-slate-50/50 transition-all duration-300 min-h-[300px]"
                 >
                   <div className="p-4 bg-slate-100 rounded-full group-hover:bg-blue-50 text-slate-400 group-hover:text-blue-500 transition-colors">
@@ -734,120 +1188,6 @@ const GalleryManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column: Sidebar Widgets (4 / 12) */}
-        <div className="lg:col-span-4 space-y-6">
-          
-          {/* Widget 1: Recently Uploaded Grid */}
-          <div className="bg-white p-6 rounded-card border border-slate-100 shadow-card space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-800">Recently Uploaded</h2>
-              <button 
-                onClick={() => setIsViewAllModalOpen(true)}
-                className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
-              >
-                View All
-              </button>
-            </div>
-
-            {/* 2x2 Image Thumbnail Grid */}
-            <div className="grid grid-cols-2 gap-3">
-              <div 
-                className="h-20 bg-slate-100 rounded-xl overflow-hidden cursor-pointer group relative border"
-                onClick={() => setIsViewAllModalOpen(true)}
-              >
-                <img src={recentImages[0].url} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" />
-                <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-transparent transition-colors"></div>
-              </div>
-              <div 
-                className="h-20 bg-slate-100 rounded-xl overflow-hidden cursor-pointer group relative border"
-                onClick={() => setIsViewAllModalOpen(true)}
-              >
-                <img src={recentImages[1].url} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" />
-                <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-transparent transition-colors"></div>
-              </div>
-              <div 
-                className="h-20 bg-slate-100 rounded-xl overflow-hidden cursor-pointer group relative border"
-                onClick={() => setIsViewAllModalOpen(true)}
-              >
-                <img src={recentImages[2].url} className="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="" />
-                <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-transparent transition-colors"></div>
-              </div>
-              <div 
-                className="h-20 bg-slate-100 rounded-xl flex items-center justify-center cursor-pointer group bg-slate-100 hover:bg-slate-200 transition-colors relative border"
-                onClick={() => setIsViewAllModalOpen(true)}
-              >
-                <span className="text-slate-600 font-extrabold text-sm tracking-tight">+12</span>
-              </div>
-            </div>
-
-            {/* Smart Organizing Card */}
-            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100/50 text-left space-y-2">
-              <div className="flex items-center gap-2 text-blue-600 font-bold text-xs">
-                <Sparkles className="h-4 w-4 shrink-0" />
-                <span>Smart Organizing</span>
-              </div>
-              <p className="text-[11px] font-medium text-slate-500 leading-relaxed">
-                AI has tagged 42 recent images with 'Workshop' and 'Hardware'.
-              </p>
-              <button 
-                onClick={() => setIsTagModalOpen(true)}
-                className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
-              >
-                Review Tags <ChevronRight className="h-3 w-3" />
-              </button>
-            </div>
-          </div>
-
-          {/* Widget 2: Insights */}
-          <div className="bg-white p-6 rounded-card border border-slate-100 shadow-card space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-800">Insights</h2>
-            </div>
-
-            <div className="space-y-4 text-left">
-              {/* Insight Item 1: Compress files */}
-              <div 
-                onClick={handleOptimizeStorage}
-                className="flex gap-3.5 items-start p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors"
-              >
-                <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600 mt-0.5 shrink-0">
-                  <Zap className="h-4.5 w-4.5" />
-                </div>
-                <div className="leading-tight">
-                  <h4 className="text-xs font-bold text-slate-800">Compress Large Files</h4>
-                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                    Save up to 2.4 GB by compressing images from 2023.
-                  </p>
-                </div>
-              </div>
-
-              {/* Insight Item 2: Duplicate cleanup */}
-              <div className="flex gap-3.5 items-start p-2.5 rounded-xl">
-                <div className="p-2 bg-blue-50 rounded-xl text-blue-600 mt-0.5 shrink-0">
-                  <Layers className="h-4.5 w-4.5" />
-                </div>
-                <div className="leading-tight">
-                  <h4 className="text-xs font-bold text-slate-800">Duplicate Cleanup</h4>
-                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                    12 similar photos found in 'Research Fair'.
-                  </p>
-                </div>
-              </div>
-
-              {/* Optimize Storage CTA Button */}
-              <Button 
-                variant="outline" 
-                size="md" 
-                onClick={handleOptimizeStorage}
-                disabled={isOptimized}
-                className={`w-full py-2 bg-white text-[#2563EB] border border-[#2563EB]/20 hover:bg-blue-50/50 hover:border-[#2563EB] disabled:opacity-60 disabled:cursor-not-allowed`}
-              >
-                {isOptimized ? "Optimized" : "Optimize Storage"}
-              </Button>
-            </div>
-          </div>
-
-        </div>
 
       </div>
 
@@ -1049,7 +1389,6 @@ const GalleryManagementPage: React.FC = () => {
                           e.stopPropagation();
                           if (confirm("Delete this photo?")) {
                             setRecentImages(prev => prev.filter(i => i.id !== img.id));
-                            setTotalImages(prev => prev - 1);
                             addToast("Image deleted.");
                           }
                         }}

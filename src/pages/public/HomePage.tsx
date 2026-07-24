@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -12,14 +12,123 @@ import {
   Eye,
   BookOpen,
   Search,
-  Lightbulb,
-  Globe,
-  Network
+  Lightbulb
 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
+import { db } from "../../config/firebase";
+import { collection, getDocs, query, orderBy } from "firebase/firestore";
+
+// Fallback assets
+import sparkImg from "../../assets/images/spark.png";
+import hackathonImg from "../../assets/images/hackathon.png";
+import seminarImg from "../../assets/images/seminar.png";
+
+interface HighlightEvent {
+  id: string;
+  title: string;
+  category: string;
+  date: string;
+  description: string;
+  image: string;
+  iconType: "globe" | "network";
+}
+
+const defaultHighlights: HighlightEvent[] = [
+  {
+    id: "mock-summit-2024",
+    title: "Global AI Summit 2024",
+    category: "Conference",
+    date: "Oct 15",
+    description: "Join industry leaders for a two-day symposium on the future of autonomous agents and LLMs.",
+    image: sparkImg,
+    iconType: "globe"
+  },
+  {
+    id: "mock-masterclass-2024",
+    title: "Neural Networks Masterclass",
+    category: "Workshop",
+    date: "Nov 05",
+    description: "Hands-on session building custom architectures using PyTorch and exploring modern optimization.",
+    image: seminarImg,
+    iconType: "network"
+  }
+];
 
 const HomePage: React.FC = () => {
+  const [highlights, setHighlights] = useState<HighlightEvent[]>([]);
+
+  useEffect(() => {
+    const fetchHighlights = async () => {
+      try {
+        const q = query(collection(db, "events"), orderBy("createdAt", "desc"));
+        const querySnapshot = await getDocs(q);
+        const list: HighlightEvent[] = [];
+        const titlesSeen = new Set<string>();
+
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data.status === "Draft") return;
+
+          const title = (data.title || "").trim();
+          
+          if (title && titlesSeen.has(title.toLowerCase())) return;
+          if (title) titlesSeen.add(title.toLowerCase());
+
+          let eventType = "Workshop";
+          if (data.category === "HACKATHONS") eventType = "Hackathon";
+          else if (data.category === "LECTURES") eventType = "Seminar";
+          
+          let img = sparkImg;
+          if (data.imageName === "hackathonImg" || data.category === "HACKATHONS") img = hackathonImg;
+          else if (data.imageName === "seminarImg" || data.category === "LECTURES") img = seminarImg;
+          
+          if (data.posterPreview) {
+            img = data.posterPreview;
+          }
+
+          list.push({
+            id: docSnap.id,
+            title: title,
+            category: eventType,
+            date: data.date || "Oct 24",
+            description: data.description || "",
+            image: img,
+            iconType: eventType === "Hackathon" ? "globe" : "network"
+          });
+        });
+
+        if (list.length > 0) {
+          const parseEventDate = (dateStr: string): number => {
+            if (!dateStr) return Infinity;
+            const parsed = Date.parse(dateStr);
+            if (!isNaN(parsed)) return parsed;
+            const currentYear = new Date().getFullYear();
+            const parsedWithYear = Date.parse(`${dateStr}, ${currentYear}`);
+            if (!isNaN(parsedWithYear)) return parsedWithYear;
+            return Infinity;
+          };
+
+          const now = Date.now() - 24 * 60 * 60 * 1000;
+          const upcoming = list.filter(e => parseEventDate(e.date) >= now);
+          const past = list.filter(e => parseEventDate(e.date) < now);
+
+          upcoming.sort((a, b) => parseEventDate(a.date) - parseEventDate(b.date));
+          past.sort((a, b) => parseEventDate(b.date) - parseEventDate(a.date));
+
+          const combined = [...upcoming, ...past];
+          setHighlights(combined.slice(0, 2));
+        } else {
+          setHighlights(defaultHighlights);
+        }
+      } catch (err) {
+        console.error("Error loading highlights:", err);
+        setHighlights(defaultHighlights);
+      }
+    };
+    fetchHighlights();
+  }, []);
+
   // Animation variants
   const fadeInUp = {
     hidden: { opacity: 0, y: 30 },
@@ -118,7 +227,7 @@ const HomePage: React.FC = () => {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.8, ease: "easeOut" as const }}
             >
-              {/* Stats card container - matching user request for square grids over a wide card with organic floating effects */}
+              {/* Stats card container with floating visual cards */}
               <div className="space-y-4 max-w-[360px] w-full mx-auto relative lg:mr-0">
                 {/* Top Row: Two Square Cards */}
                 <div className="grid grid-cols-2 gap-4">
@@ -138,7 +247,7 @@ const HomePage: React.FC = () => {
                       opacity: { duration: 0.5, delay: 0.1 }
                     }}
                     whileHover={{ scale: 1.03, transition: { duration: 0.2 } }}
-                    className="bg-white/80 backdrop-blur-md rounded-card border border-white/60 shadow-card p-6 flex flex-col justify-between aspect-square text-left transition-all duration-200"
+                    className="glass-panel rounded-card shadow-card p-6 flex flex-col justify-between aspect-square text-left transition-all duration-300 hover:shadow-cardHover hover:border-blue-200/50"
                   >
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600 shadow-inner">
                       <BarChart3 className="h-5 w-5" />
@@ -148,7 +257,7 @@ const HomePage: React.FC = () => {
                       <div className="text-[11px] sm:text-xs text-slate-500 font-semibold tracking-wide mt-1">Active Members</div>
                     </div>
                   </motion.div>
-
+ 
                   {/* Card 2: Yearly Events */}
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -165,7 +274,7 @@ const HomePage: React.FC = () => {
                       opacity: { duration: 0.5, delay: 0.2 }
                     }}
                     whileHover={{ scale: 1.03, transition: { duration: 0.2 } }}
-                    className="bg-white/80 backdrop-blur-md rounded-card border border-white/60 shadow-card p-6 flex flex-col justify-between aspect-square text-left transition-all duration-200"
+                    className="glass-panel rounded-card shadow-card p-6 flex flex-col justify-between aspect-square text-left transition-all duration-300 hover:shadow-cardHover hover:border-sky-200/50"
                   >
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-sky-50 text-sky-600 shadow-inner">
                       <Calendar className="h-5 w-5" />
@@ -176,7 +285,7 @@ const HomePage: React.FC = () => {
                     </div>
                   </motion.div>
                 </div>
-
+ 
                 {/* Bottom Row: Wide Card */}
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -193,7 +302,7 @@ const HomePage: React.FC = () => {
                     opacity: { duration: 0.5, delay: 0.3 }
                   }}
                   whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
-                  className="bg-white/80 backdrop-blur-md rounded-card border border-white/60 shadow-card p-6 flex items-center justify-between text-left transition-all duration-200 w-full"
+                  className="glass-panel rounded-card shadow-card p-6 flex items-center justify-between text-left transition-all duration-300 w-full hover:shadow-cardHover hover:border-emerald-200/50"
                 >
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-50 text-emerald-600 shadow-inner">
@@ -360,73 +469,44 @@ const HomePage: React.FC = () => {
 
           {/* Highlights Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
-            {/* Event Card 1: Global AI Summit */}
-            <motion.div
-              whileHover={{ y: -4, boxShadow: "0 15px 35px rgba(37,99,235,0.06)" }}
-              className="bg-white rounded-card border border-slate-100 p-6 flex flex-col sm:flex-row gap-6 text-left shadow-sm transition-all duration-300"
-            >
-              {/* Event Date/Image Area */}
-              <div className="w-full sm:w-40 h-40 bg-aether-blue-50/70 rounded-xl relative flex items-center justify-center shrink-0 shadow-inner">
-                <span className="absolute top-3 left-3 text-[10px] font-extrabold bg-aether-blue-600 text-white px-2 py-1 rounded-full uppercase tracking-wider">
-                  Oct 15
-                </span>
-                <Globe className="h-16 w-16 text-aether-blue-500/80 animate-pulse" />
-              </div>
-
-              {/* Event Copy Area */}
-              <div className="flex flex-col justify-between py-1 space-y-4">
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold text-aether-blue-600 uppercase tracking-widest bg-aether-blue-50 px-2.5 py-1 rounded-md inline-block">
-                    Conference
+            {highlights.map((event) => (
+              <motion.div
+                key={event.id}
+                whileHover={{ y: -4, boxShadow: "0 15px 35px rgba(37,99,235,0.06)" }}
+                className="bg-white rounded-[24px] border border-slate-100 p-5 flex flex-col sm:flex-row gap-6 text-left shadow-sm transition-all duration-300 group"
+              >
+                {/* Event Thumbnail */}
+                <div className="w-full sm:w-40 h-40 rounded-2xl relative overflow-hidden shrink-0 bg-slate-50 flex items-center justify-center border border-slate-100">
+                  <img 
+                    src={event.image} 
+                    alt={event.title}
+                    className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
+                  />
+                  <span className="absolute top-3 left-3 text-[9px] font-bold bg-white/95 backdrop-blur-sm border border-slate-200/50 text-slate-800 px-2.5 py-1 rounded-lg uppercase tracking-wider shadow-sm">
+                    {event.date}
                   </span>
-                  <h3 className="text-lg font-bold text-aether-dark tracking-tight">
-                    Global AI Summit 2024
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
-                    Join industry leaders for a two-day symposium on the future of autonomous agents and LLMs.
-                  </p>
                 </div>
-                <Link to="/events/mock-summit-2024" className="inline-flex items-center gap-1.5 text-xs font-bold text-aether-blue-600 hover:text-aether-blue-700 group">
-                  View Details
-                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-                </Link>
-              </div>
-            </motion.div>
 
-            {/* Event Card 2: Neural Networks Masterclass */}
-            <motion.div
-              whileHover={{ y: -4, boxShadow: "0 15px 35px rgba(37,99,235,0.06)" }}
-              className="bg-white rounded-card border border-slate-100 p-6 flex flex-col sm:flex-row gap-6 text-left shadow-sm transition-all duration-300"
-            >
-              {/* Event Date/Image Area */}
-              <div className="w-full sm:w-40 h-40 bg-sky-50/70 rounded-xl relative flex items-center justify-center shrink-0 shadow-inner">
-                <span className="absolute top-3 left-3 text-[10px] font-extrabold bg-aether-blue-600 text-white px-2 py-1 rounded-full uppercase tracking-wider">
-                  Nov 05
-                </span>
-                <Network className="h-16 w-16 text-sky-500/80" />
-              </div>
-
-              {/* Event Copy Area */}
-              <div className="flex flex-col justify-between py-1 space-y-4">
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold text-sky-600 uppercase tracking-widest bg-sky-50 px-2.5 py-1 rounded-md inline-block">
-                    Workshop
-                  </span>
-                  <h3 className="text-lg font-bold text-aether-dark tracking-tight">
-                    Neural Networks Masterclass
-                  </h3>
-                  <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
-                    Hands-on session building custom architectures using PyTorch and exploring modern optimization.
-                  </p>
+                {/* Event Copy Area */}
+                <div className="flex flex-col justify-between py-1 flex-grow space-y-4">
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-aether-blue-600 uppercase tracking-widest bg-aether-blue-50 px-2.5 py-1 rounded-md inline-block">
+                      {event.category}
+                    </span>
+                    <h3 className="text-lg font-extrabold text-slate-800 tracking-tight leading-tight group-hover:text-aether-blue-600 transition-colors line-clamp-1">
+                      {event.title}
+                    </h3>
+                    <p className="text-slate-500 text-xs leading-relaxed line-clamp-2">
+                      {event.description}
+                    </p>
+                  </div>
+                  <Link to={`/events/${event.id}`} className="inline-flex items-center gap-1.5 text-xs font-bold text-aether-blue-600 hover:text-aether-blue-700 group/link">
+                    View Details
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover/link:translate-x-1" />
+                  </Link>
                 </div>
-                <Link to="/events/mock-masterclass-2024" className="inline-flex items-center gap-1.5 text-xs font-bold text-aether-blue-600 hover:text-aether-blue-700 group">
-                  View Details
-                  <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
-                </Link>
-              </div>
-            </motion.div>
-
+              </motion.div>
+            ))}
           </div>
         </div>
       </section>

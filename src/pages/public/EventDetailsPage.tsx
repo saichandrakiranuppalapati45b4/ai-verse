@@ -30,6 +30,7 @@ interface DetailedEvent {
   description: string;
   image: string;
   primaryTag?: string;
+  status?: "Draft" | "Active" | "Opened";
   maxReg: number;
   currentReg: number;
   startDate?: string;
@@ -103,8 +104,9 @@ const EventDetailsPage: React.FC = () => {
             description: data.description || "No description provided.",
             image: img,
             primaryTag: data.primaryTag || "",
+            status: data.status || "Opened",
             maxReg: data.maxReg || 100,
-            currentReg: data.currentReg || 0,
+            currentReg: Math.max(0, Number(data.currentReg) || 0),
             startDate: data.startDate || "",
             endDate: data.endDate || "",
             startTime: data.startTime || "",
@@ -273,12 +275,18 @@ const EventDetailsPage: React.FC = () => {
                   </div>
                 )}
 
-                <Link to={`/events/${event.id}/register`} className="w-full">
-                  <Button variant="gradient" className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2">
-                    Register Now
-                    <ArrowRight className="h-4 w-4" />
+                {event.status === "Active" ? (
+                  <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                    Registration Closed
                   </Button>
-                </Link>
+                ) : (
+                  <Link to={`/events/${event.id}/register`} className="w-full">
+                    <Button variant="gradient" className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2">
+                      Register Now
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                )}
 
                 <span className="text-[10px] text-slate-400 font-bold text-center block pt-1">
                   Includes Certificate & Workshop Assets

@@ -15,9 +15,9 @@ const FacDashboardPage: React.FC = () => {
         keywords="AI Verse Faculty Dashboard, Student Approvals Workspace"
       />
       {/* Title Header */}
-      <div>
-        <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight font-sans">Faculty Dashboard</h1>
-        <p className="text-slate-400 text-xs sm:text-sm mt-1 font-medium">Welcome back, Admin</p>
+      <div className="mb-4">
+        <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-[#2563EB] tracking-tight font-sans">Faculty Dashboard</h1>
+        <p className="text-slate-500 text-sm mt-2 font-medium">Welcome back, Admin. Here is your overview for today.</p>
       </div>
 
       {/* Row 1: Summary Cards Grid */}
