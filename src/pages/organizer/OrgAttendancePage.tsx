@@ -855,75 +855,113 @@ const OrgAttendancePage: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    {/* Team Header */}
-                    <div className="border-b border-slate-800 pb-3">
-                      <span className="text-[8px] font-black uppercase text-blue-400 tracking-wider">Scanned Team Info</span>
-                      <h3 className="text-base font-black text-white leading-tight mt-0.5">{scannedTeamInfo.groupName}</h3>
-                      <p className="text-[10px] text-slate-400 mt-1 font-semibold">Event: {scannedTeamInfo.eventTitle}</p>
-                    </div>
-
-                    {/* Team Lead */}
-                    <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
-                      <span className="bg-blue-500/20 text-blue-400 text-[8px] font-black tracking-wider uppercase px-2 py-0.5 rounded-full border border-blue-500/10 inline-block">Team Lead</span>
-                      <div className="flex justify-between items-center text-xs">
-                        <div className="flex flex-col">
-                          <span className="font-extrabold text-slate-200">{scannedTeamInfo.teamLeadName}</span>
-                          <span className="text-[10px] text-slate-450 mt-0.5">{scannedTeamInfo.teamLeadEmail}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-slate-400 font-bold text-[10px]">{scannedTeamInfo.teamLeadStudentId}</span>
-                          <select
-                            value={rosterAttendance["lead"] || "Present"}
-                            onChange={(e) => setRosterAttendance(prev => ({ ...prev, lead: e.target.value as any }))}
-                            className="bg-slate-955 border border-slate-800 rounded-lg px-2 py-1 text-[10px] font-bold text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          >
-                            <option value="Present">Present</option>
-                            <option value="Late">Late</option>
-                            <option value="Absent">Absent</option>
-                          </select>
-                        </div>
+                    {/* Premium Team Header */}
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900 border border-slate-700/50 shadow-lg">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+                      
+                      <div className="px-5 py-4 border-b border-slate-700/50">
+                        <span className="inline-block px-2.5 py-1 bg-blue-500/20 text-blue-400 text-[9px] font-black tracking-widest uppercase rounded-full border border-blue-500/30 mb-2 shadow-[0_0_10px_rgba(59,130,246,0.2)]">Scanned Team Info</span>
+                        <h3 className="text-lg font-black text-white leading-tight tracking-tight">{scannedTeamInfo.groupName}</h3>
+                        <p className="text-[11px] text-slate-400 mt-1 font-semibold flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                          {scannedTeamInfo.eventTitle}
+                        </p>
                       </div>
-                    </div>
 
-                    {/* Teammates List */}
-                    {scannedTeamInfo.members && scannedTeamInfo.members.length > 0 && (
-                      <div className="space-y-2">
-                        <span className="text-[9px] font-black text-slate-450 tracking-wider uppercase block">Teammates Roster</span>
-                        <div className="max-h-[140px] overflow-y-auto space-y-2 pr-1 select-none">
-                          {scannedTeamInfo.members.map((member: any, i: number) => (
-                            <div key={i} className="bg-slate-900/40 border border-slate-850 rounded-xl p-3 flex flex-col gap-1">
-                              <div className="flex justify-between items-center text-xs font-semibold">
-                                <div className="flex flex-col">
-                                  <span className="text-slate-350">{member.name}</span>
-                                  <span className="text-[9px] text-slate-500 mt-0.5">{member.email}</span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                  <span className="text-slate-500 text-[10px]">{member.studentId}</span>
-                                  <select
-                                    value={rosterAttendance[`member_${i}`] || "Present"}
-                                    onChange={(e) => setRosterAttendance(prev => ({ ...prev, [`member_${i}`]: e.target.value as any }))}
-                                    className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-[10px] font-bold text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  >
-                                    <option value="Present">Present</option>
-                                    <option value="Late">Late</option>
-                                    <option value="Absent">Absent</option>
-                                  </select>
-                                </div>
+                      <div className="p-2 space-y-2">
+                        {/* Team Lead Section */}
+                        <div className="bg-slate-950/40 rounded-xl p-3 flex items-center justify-between border border-slate-800/50 hover:border-slate-700 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 p-[2px] shadow-md shadow-blue-900/20 flex-shrink-0">
+                              <div className="w-full h-full bg-slate-900 rounded-full flex items-center justify-center">
+                                <span className="text-white font-bold text-xs">{(scannedTeamInfo.teamLeadName || "U").charAt(0).toUpperCase()}</span>
                               </div>
                             </div>
-                          ))}
+                            <div className="flex flex-col">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-0.5">Team Lead</span>
+                              <span className="text-sm font-extrabold text-slate-100 leading-none">{scannedTeamInfo.teamLeadName}</span>
+                              <span className="text-[10px] text-slate-400 mt-1">{scannedTeamInfo.teamLeadEmail}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end gap-1.5">
+                            <span className="text-slate-500 font-bold text-[9px] tracking-widest uppercase">{scannedTeamInfo.teamLeadStudentId}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentStatus = rosterAttendance["lead"] || "Present";
+                                const nextStatus = currentStatus === "Present" ? "Late" : currentStatus === "Late" ? "Absent" : "Present";
+                                setRosterAttendance(prev => ({ ...prev, lead: nextStatus }));
+                              }}
+                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border shadow-sm
+                                ${(!rosterAttendance["lead"] || rosterAttendance["lead"] === "Present") && "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"}
+                                ${rosterAttendance["lead"] === "Late" && "bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20"}
+                                ${rosterAttendance["lead"] === "Absent" && "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20"}
+                              `}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full
+                                ${(!rosterAttendance["lead"] || rosterAttendance["lead"] === "Present") && "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.5)]"}
+                                ${rosterAttendance["lead"] === "Late" && "bg-amber-400 shadow-[0_0_5px_rgba(251,191,36,0.5)]"}
+                                ${rosterAttendance["lead"] === "Absent" && "bg-red-400 shadow-[0_0_5px_rgba(248,113,113,0.5)]"}
+                              `} />
+                              {rosterAttendance["lead"] || "Present"}
+                            </button>
+                          </div>
                         </div>
+
+                        {/* Teammates List */}
+                        {scannedTeamInfo.members && scannedTeamInfo.members.length > 0 && (
+                          <div className="pt-2">
+                            <span className="text-[10px] font-black text-slate-500 tracking-wider uppercase block px-2 mb-2">Teammates Roster</span>
+                            <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                              {scannedTeamInfo.members.map((member: any, i: number) => (
+                                <div key={i} className="bg-slate-950/20 hover:bg-slate-900/40 rounded-xl p-2.5 flex items-center justify-between border border-transparent hover:border-slate-800 transition-colors group">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700/50 group-hover:border-slate-600 transition-colors">
+                                      <span className="text-slate-300 font-bold text-[10px]">{(member.name || "U").charAt(0).toUpperCase()}</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-xs font-bold text-slate-300 leading-tight">{member.name || "Unnamed"}</span>
+                                      <span className="text-[9px] text-slate-500">{member.studentId || "No ID"}</span>
+                                    </div>
+                                  </div>
+                                  
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentStatus = rosterAttendance[`member_${i}`] || "Present";
+                                      const nextStatus = currentStatus === "Present" ? "Late" : currentStatus === "Late" ? "Absent" : "Present";
+                                      setRosterAttendance(prev => ({ ...prev, [`member_${i}`]: nextStatus }));
+                                    }}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all border
+                                      ${(!rosterAttendance[`member_${i}`] || rosterAttendance[`member_${i}`] === "Present") && "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"}
+                                      ${rosterAttendance[`member_${i}`] === "Late" && "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20"}
+                                      ${rosterAttendance[`member_${i}`] === "Absent" && "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20"}
+                                    `}
+                                  >
+                                    <span className={`w-1 h-1 rounded-full
+                                      ${(!rosterAttendance[`member_${i}`] || rosterAttendance[`member_${i}`] === "Present") && "bg-emerald-400"}
+                                      ${rosterAttendance[`member_${i}`] === "Late" && "bg-amber-400"}
+                                      ${rosterAttendance[`member_${i}`] === "Absent" && "bg-red-400"}
+                                    `} />
+                                    {rosterAttendance[`member_${i}`] || "Present"}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
 
                     {/* Action buttons */}
-                    <div className="flex gap-3.5 pt-1">
+                    <div className="flex gap-3 pt-3">
                       <button
                         type="button"
                         onClick={() => {
                           setScannedTeamInfo(null);
                         }}
-                        className="flex-1 border border-slate-800 hover:bg-slate-955 hover:border-slate-700 text-slate-300 font-extrabold text-xs py-3 rounded-xl transition-all"
+                        className="flex-1 border border-slate-700 hover:bg-slate-800 hover:border-slate-600 text-slate-300 font-extrabold text-[11px] py-3.5 rounded-xl transition-all uppercase tracking-wider"
                       >
                         Cancel
                       </button>
@@ -1049,24 +1087,24 @@ const OrgAttendancePage: React.FC = () => {
                               }
                             });
 
-                            setScanLoading(false);
-                            setScanSuccessMsg(`${scannedTeamInfo.groupName} checked in successfully!`);
-                            
-                            setTimeout(() => {
-                              setScanSuccessMsg("");
-                              setScannedTeamInfo(null);
-                              setIsScannerModalOpen(false);
-                            }, 1800);
-                          } catch (err) {
-                            console.error("Check-in scan verification failed:", err);
-                            alert("Check-in scan verification failed.");
-                            setScanLoading(false);
-                          }
-                        }}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-3 rounded-xl transition-all shadow-md shadow-emerald-950 flex items-center justify-center gap-1.5"
+                            setScanSuccessMsg("Saved successfully!");
+                              setTimeout(() => {
+                                setScanSuccessMsg("");
+                                setScannedTeamInfo(null);
+                                setRosterAttendance({}); // Reset roster attendance
+                                setIsScannerModalOpen(false);
+                              }, 1500);
+                            } catch (err) {
+                              console.error("Check-in error:", err);
+                              alert("Check-in failed. Check connection.");
+                            } finally {
+                              setScanLoading(false);
+                            }
+                          }}
+                        className="flex-[2] bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-white font-extrabold text-[11px] py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-900/30 uppercase tracking-widest flex items-center justify-center gap-2 border border-emerald-400/50"
                       >
-                        <Check className="h-4.5 w-4.5" />
-                        Check In Team
+                        <Check className="h-4 w-4 stroke-[3]" />
+                        Confirm Check-In
                       </button>
                     </div>
                   </>
