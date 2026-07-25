@@ -6,6 +6,7 @@ import {
   MapPin, 
   ArrowRight, 
   ChevronRight,
+  ChevronLeft,
   SlidersHorizontal,
   Bookmark
 } from "lucide-react";
@@ -29,6 +30,7 @@ interface DetailedEvent {
   location: string;
   description: string;
   image: string;
+  posterImages?: {filename: string, preview: string}[];
   primaryTag?: string;
   status?: "Draft" | "Active" | "Opened";
   maxReg: number;
@@ -63,6 +65,7 @@ const EventDetailsPage: React.FC = () => {
   const [event, setEvent] = useState<DetailedEvent | null>(null);
   const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -84,8 +87,15 @@ const EventDetailsPage: React.FC = () => {
           if (data.imageName === "hackathonImg" || data.category === "HACKATHONS") img = hackathonImg;
           else if (data.imageName === "seminarImg" || data.category === "LECTURES") img = seminarImg;
           
-          if (data.posterPreview) {
+          let eventImages: {filename: string, preview: string}[] = [];
+          if (data.posterImages && data.posterImages.length > 0) {
+            eventImages = data.posterImages;
+            img = eventImages[0].preview;
+          } else if (data.posterPreview) {
             img = data.posterPreview;
+            eventImages = [{filename: 'poster.png', preview: data.posterPreview}];
+          } else {
+            eventImages = [{filename: 'default.png', preview: img}];
           }
 
           let timeText = data.time || "10:00 AM";
@@ -103,6 +113,7 @@ const EventDetailsPage: React.FC = () => {
             location: data.location || "Virtual Hub",
             description: data.description || "No description provided.",
             image: img,
+            posterImages: eventImages,
             primaryTag: data.primaryTag || "",
             status: data.status || "Opened",
             maxReg: data.maxReg || 100,
@@ -275,7 +286,11 @@ const EventDetailsPage: React.FC = () => {
                   </div>
                 )}
 
-                {event.status === "Active" ? (
+                {event.endDate && new Date(event.endDate).setHours(23, 59, 59, 999) < new Date().getTime() ? (
+                  <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                    Event Completed
+                  </Button>
+                ) : event.status === "Active" ? (
                   <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
                     Registration Closed
                   </Button>
@@ -305,12 +320,36 @@ const EventDetailsPage: React.FC = () => {
           {/* Left Column (span 8) */}
           <div className="lg:col-span-8 space-y-8">
             {/* Banner poster container */}
-            <div className="w-full h-64 sm:h-96 rounded-3xl overflow-hidden shadow-sm border border-slate-100">
+            <div className="relative w-full rounded-3xl overflow-hidden shadow-sm border border-slate-100 bg-slate-50 flex justify-center group">
               <img 
-                src={event.image} 
+                src={event.posterImages?.[currentImageIndex]?.preview || event.image} 
                 alt={event.title} 
-                className="w-full h-full object-cover"
+                className="w-full h-auto max-h-[80vh] object-contain transition-opacity duration-300"
               />
+              {event.posterImages && event.posterImages.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setCurrentImageIndex(prev => (prev === 0 ? event.posterImages!.length - 1 : prev - 1))}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 backdrop-blur-md rounded-full shadow-md flex items-center justify-center text-slate-700 hover:text-blue-600 hover:bg-white hover:scale-105 transition-all opacity-0 group-hover:opacity-100"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentImageIndex(prev => (prev === event.posterImages!.length - 1 ? 0 : prev + 1))}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 backdrop-blur-md rounded-full shadow-md flex items-center justify-center text-slate-700 hover:text-blue-600 hover:bg-white hover:scale-105 transition-all opacity-0 group-hover:opacity-100"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/20 backdrop-blur-sm px-3 py-1.5 rounded-full">
+                    {event.posterImages.map((_, idx) => (
+                      <div 
+                        key={idx} 
+                        className={`w-1.5 h-1.5 rounded-full transition-all ${idx === currentImageIndex ? 'bg-white w-3' : 'bg-white/50'}`}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* About the Event */}

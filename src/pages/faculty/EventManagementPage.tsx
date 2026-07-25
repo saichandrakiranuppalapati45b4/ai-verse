@@ -59,14 +59,15 @@ const EventManagementPage: React.FC = () => {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setFormPosterFilename(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormPosterPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      Array.from(files).forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setFormPosterImages(prev => [...prev, { filename: file.name, preview: reader.result as string }]);
+        };
+        reader.readAsDataURL(file);
+      });
     }
   };
 
@@ -131,9 +132,9 @@ const EventManagementPage: React.FC = () => {
   const [formMinTeamSize, setFormMinTeamSize] = useState("1");
   const [formMaxTeamSize, setFormMaxTeamSize] = useState("4");
   const [formRegistrationFee, setFormRegistrationFee] = useState("0");
-  const [formPosterFilename, setFormPosterFilename] = useState("");
+  const [formPosterImages, setFormPosterImages] = useState<{filename: string, preview: string}[]>([]);
   const [formWhatsGroupLink, setFormWhatsGroupLink] = useState("");
-  const [formPosterPreview, setFormPosterPreview] = useState("");
+  
   const [formVisibility, setFormVisibility] = useState<"Public" | "Internal Only">("Public");
 
   const [formSpeakerName, setFormSpeakerName] = useState("");
@@ -237,8 +238,9 @@ const EventManagementPage: React.FC = () => {
       isVirtual: formIsVirtual,
       regDeadline: formRegDeadline,
       enableWaitlist: formEnableWaitlist,
-      posterFilename: formPosterFilename,
-      posterPreview: formPosterPreview,
+      posterFilename: formPosterImages[0]?.filename || "",
+      posterPreview: formPosterImages[0]?.preview || "",
+      posterImages: formPosterImages,
       visibility: formVisibility,
       isFeatured: formIsFeatured,
       sendEmail: formSendEmail,
@@ -280,7 +282,7 @@ const EventManagementPage: React.FC = () => {
           status: formStatus,
           currentReg: 0,
           maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
-          image: formPosterPreview || imageFile
+          image: formPosterImages[0]?.preview || imageFile
         };
         setEvents(prev => prev.map(e => e.id === editingEventId ? { ...e, ...updatedEvent } : e));
         setEditingEventId(null);
@@ -295,7 +297,7 @@ const EventManagementPage: React.FC = () => {
           status: formStatus,
           currentReg: 0,
           maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
-          image: formPosterPreview || imageFile
+          image: formPosterImages[0]?.preview || imageFile
         };
         setEvents(prev => [newEvent, ...prev]);
       }
@@ -314,8 +316,7 @@ const EventManagementPage: React.FC = () => {
       setFormRegDeadline("");
       setFormMaxParticipants("");
       setFormEnableWaitlist(false);
-      setFormPosterFilename("");
-      setFormPosterPreview("");
+      setFormPosterImages([]);
       setFormVisibility("Public");
       setFormIsFeatured(false);
       setFormSendEmail(true);
@@ -389,8 +390,7 @@ const EventManagementPage: React.FC = () => {
         setFormRegDeadline(data.regDeadline || "");
         setFormMaxParticipants(data.maxReg ? String(data.maxReg) : "");
         setFormEnableWaitlist(data.enableWaitlist || false);
-        setFormPosterFilename(data.posterFilename || "");
-        setFormPosterPreview(data.posterPreview || "");
+        setFormPosterImages(data.posterImages || (data.posterPreview ? [{ filename: data.posterFilename || "poster.png", preview: data.posterPreview }] : []));
         setFormVisibility(data.visibility || "Public");
         setFormIsFeatured(data.isFeatured || false);
         setFormSendEmail(data.sendEmail !== undefined ? data.sendEmail : true);
@@ -497,8 +497,7 @@ const EventManagementPage: React.FC = () => {
               setFormRegDeadline("");
               setFormMaxParticipants("");
               setFormEnableWaitlist(false);
-              setFormPosterFilename("");
-              setFormPosterPreview("");
+              setFormPosterImages([]);
               setFormVisibility("Public");
               setFormIsFeatured(false);
               setFormSendEmail(true);
@@ -1173,67 +1172,80 @@ const EventManagementPage: React.FC = () => {
                   Media
                 </h3>
                 
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-3xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50/40 hover:bg-blue-50/10 group min-h-[160px] overflow-hidden"
-                >
+                <div className="space-y-4">
                   <input 
                     type="file" 
                     ref={fileInputRef} 
                     className="hidden" 
                     accept="image/*" 
+                    multiple
                     onChange={handleFileChange} 
-                    onClick={(e) => e.stopPropagation()} 
                   />
-                  {formPosterPreview ? (
-                    <div className="w-full space-y-3">
-                      <div className="relative h-44 w-full rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-slate-50">
-                        <img 
-                          src={formPosterPreview} 
-                          alt="Poster Preview" 
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-200 backdrop-blur-[1px]">
-                          <span className="bg-white text-slate-800 font-bold px-3 py-1.5 rounded-xl text-[10px] shadow-md flex items-center gap-1.5">
-                            <Upload className="h-3.5 w-3.5" />
-                            Change Image
-                          </span>
-                        </div>
+                  
+                  {formPosterImages.length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {formPosterImages.map((img, idx) => (
+                          <div key={idx} className="relative w-full rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-slate-50 flex flex-col group">
+                            <div className="relative w-full flex justify-center items-center h-44 bg-slate-100/50">
+                              <img 
+                                src={img.preview} 
+                                alt={`Poster Preview ${idx + 1}`} 
+                                className="w-full h-full object-contain p-2"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 border-t border-emerald-100/60">
+                              <span className="flex items-center gap-1.5 truncate max-w-[150px]">
+                                <CheckSquare className="h-3.5 w-3.5 shrink-0" />
+                                {img.filename}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFormPosterImages(prev => prev.filter((_, i) => i !== idx));
+                                }}
+                                className="text-red-500 hover:text-red-700 font-black ml-2 px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex items-center justify-between text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-100/60 animate-in fade-in duration-200">
-                        <span className="flex items-center gap-1.5 truncate">
-                          <CheckSquare className="h-3.5 w-3.5 shrink-0" />
-                          {formPosterFilename}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFormPosterFilename("");
-                            setFormPosterPreview("");
-                          }}
-                          className="text-red-500 hover:text-red-700 font-black ml-2 px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors"
-                        >
-                          Remove
-                        </button>
-                      </div>
+                      
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full py-3 border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-2xl text-slate-500 hover:text-blue-600 font-bold text-xs bg-slate-50/20 hover:bg-blue-50/10 flex items-center justify-center gap-2 transition-all shadow-sm"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add More Images
+                      </button>
                     </div>
                   ) : (
-                    <>
+                    <div 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-3xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50/40 hover:bg-blue-50/10 group min-h-[160px] overflow-hidden"
+                    >
                       <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center transition-colors mb-3">
                         <Upload className="h-5 w-5" />
                       </div>
                       <span className="text-xs font-black text-slate-700 block">Upload Event Poster</span>
                       <span className="text-[10px] text-slate-450 font-semibold mt-1">Drag and drop your image here, or click to browse</span>
-                      <span className="text-[9px] text-slate-400 mt-0.5 font-semibold">(Recommended: 1200x630px, Max 5MB)</span>
+                      <span className="text-[9px] text-slate-400 mt-0.5 font-semibold">(Any size, Max 5MB)</span>
                       
                       <button 
                         type="button" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
                         className="mt-4 px-4 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-650 hover:bg-slate-50 transition-all text-[11px] font-bold shadow-sm"
                       >
                         Browse Files
                       </button>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1539,9 +1551,9 @@ const EventManagementPage: React.FC = () => {
                 {/* Event Card preview styling */}
                 <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-inner bg-slate-50/20">
                   <div className="relative h-32 bg-slate-100/50">
-                    {formPosterPreview ? (
+                    {formPosterImages.length > 0 ? (
                       <img
-                        src={formPosterPreview}
+                        src={formPosterImages[0].preview}
                         alt="Preview"
                         className="w-full h-full object-cover animate-in fade-in duration-200"
                       />

@@ -31,6 +31,7 @@ interface Event {
   status: "Draft" | "Active" | "Opened";
   currentReg: number;
   maxReg: number;
+  endDate?: string;
 }
 
 const EventsPage: React.FC = () => {
@@ -90,7 +91,8 @@ const EventsPage: React.FC = () => {
             image: img,
             status: data.status || "Opened",
             currentReg: Math.max(0, Number(data.currentReg) || 0),
-            maxReg: data.maxReg || 100
+            maxReg: data.maxReg || 100,
+            endDate: data.endDate || data.startDate || ""
           });
         });
         setEvents(list);
@@ -296,7 +298,11 @@ const EventsPage: React.FC = () => {
 
                     {/* Action Row */}
                     <div className="flex items-center gap-3 pt-2">
-                      {event.status === "Active" ? (
+                      {event.endDate && new Date(event.endDate).setHours(23, 59, 59, 999) < new Date().getTime() ? (
+                        <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                          Event Completed
+                        </Button>
+                      ) : event.status === "Active" ? (
                         <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
                           Registration Closed
                         </Button>
