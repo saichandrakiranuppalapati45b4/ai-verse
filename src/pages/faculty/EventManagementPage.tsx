@@ -34,7 +34,7 @@ interface EventItem {
   title: string;
   date: string;
   location: string;
-  category: "HACKATHONS" | "LECTURES" | "WORKSHOPS";
+  category: "HACKATHONS" | "LECTURES" | "WORKSHOPS" | "TECH_EVENTS" | "ALUMNI_MEETUPS";
   status: "Draft" | "Active" | "Opened";
   currentReg: number;
   maxReg: number;
@@ -116,7 +116,7 @@ const EventManagementPage: React.FC = () => {
 
   // New Detailed Event Form State
   const [formTitle, setFormTitle] = useState("");
-  const [formCategory, setFormCategory] = useState<"Workshop" | "Hackathon" | "Seminar">("Workshop");
+  const [formCategory, setFormCategory] = useState<"Workshop" | "Hackathon" | "Seminar" | "Tech Event" | "Alumni Meetup">("Workshop");
   const [formPrimaryTag, setFormPrimaryTag] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formStartDate, setFormStartDate] = useState("");
@@ -143,6 +143,11 @@ const EventManagementPage: React.FC = () => {
   const [formSpeakerTwitter, setFormSpeakerTwitter] = useState("");
   const [formSpeakerImageFilename, setFormSpeakerImageFilename] = useState("");
   const [formSpeakerImagePreview, setFormSpeakerImagePreview] = useState("");
+  
+  // Alumni Meetup Specific Fields
+  const [formCompany, setFormCompany] = useState("");
+  const [formBatch, setFormBatch] = useState("");
+  const [formIsPastEvent, setFormIsPastEvent] = useState(false);
 
   // Agenda States
   const [formAgendaItems, setFormAgendaItems] = useState<any[]>([
@@ -153,6 +158,18 @@ const EventManagementPage: React.FC = () => {
   const [formIsFeatured, setFormIsFeatured] = useState(false);
   const [formSendEmail, setFormSendEmail] = useState(true);
   const [formStatus, setFormStatus] = useState<"Draft" | "Active" | "Opened">("Draft");
+
+  const getSpeakerSectionTitle = () => {
+    if (formCategory === "Hackathon" || formCategory === "Tech Event") return "Jury Information";
+    if (formCategory === "Workshop") return "Tech Speaker Information";
+    return "Speaker Information";
+  };
+
+  const getSpeakerPrefix = () => {
+    if (formCategory === "Hackathon" || formCategory === "Tech Event") return "Jury";
+    if (formCategory === "Workshop") return "Tech Speaker";
+    return "Speaker";
+  };
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -182,7 +199,7 @@ const EventManagementPage: React.FC = () => {
       return;
     }
 
-    const mappedCategory = formCategory === "Workshop" ? "WORKSHOPS" : formCategory === "Hackathon" ? "HACKATHONS" : "LECTURES";
+    const mappedCategory = formCategory === "Workshop" ? "WORKSHOPS" : formCategory === "Hackathon" ? "HACKATHONS" : formCategory === "Seminar" ? "LECTURES" : formCategory === "Tech Event" ? "TECH_EVENTS" : "ALUMNI_MEETUPS";
 
     let imageName = "sparkImg";
     let imageFile = sparkImg;
@@ -247,6 +264,9 @@ const EventManagementPage: React.FC = () => {
       registrationFee: formRegistrationFee ? Number(formRegistrationFee) : 0,
       status: formStatus,
       whatsGroupLink: formWhatsGroupLink,
+      company: formCategory === "Alumni Meetup" ? formCompany : "",
+      batch: formCategory === "Alumni Meetup" ? formBatch : "",
+      isPastEvent: formIsPastEvent,
       createdAt: Date.now()
     };
 
@@ -314,6 +334,9 @@ const EventManagementPage: React.FC = () => {
       setFormSpeakerTwitter("");
       setFormSpeakerImageFilename("");
       setFormSpeakerImagePreview("");
+      setFormCompany("");
+      setFormBatch("");
+      setFormIsPastEvent(false);
       setFormAgendaItems([
         { time: "09:00 AM - 10:30 AM", title: "Morning Keynote: The Future of Compute", description: "Opening session detailing next-gen silicon compute." },
         { time: "11:30 AM - 01:00 PM", title: "Workshop: Transformer Efficiency", description: "Hands-on FlashAttention, quantization, and sparse computation models." },
@@ -351,9 +374,11 @@ const EventManagementPage: React.FC = () => {
         
         setFormTitle(data.title || "");
         
-        let cat: "Workshop" | "Hackathon" | "Seminar" = "Workshop";
+        let cat: "Workshop" | "Hackathon" | "Seminar" | "Tech Event" | "Alumni Meetup" = "Workshop";
         if (data.category === "HACKATHONS") cat = "Hackathon";
         else if (data.category === "LECTURES") cat = "Seminar";
+        else if (data.category === "TECH_EVENTS") cat = "Tech Event";
+        else if (data.category === "ALUMNI_MEETUPS") cat = "Alumni Meetup";
         setFormCategory(cat);
         
         setFormPrimaryTag(data.primaryTag || "");
@@ -385,6 +410,9 @@ const EventManagementPage: React.FC = () => {
         setFormSpeakerTwitter(data.speakerTwitter || "");
         setFormSpeakerImageFilename(data.speakerImageFilename || "");
         setFormSpeakerImagePreview(data.speakerImagePreview || "");
+        setFormCompany(data.company || "");
+        setFormBatch(data.batch || "");
+        setFormIsPastEvent(data.isPastEvent || false);
         
         if (data.agendaItems && Array.isArray(data.agendaItems)) {
           setFormAgendaItems(data.agendaItems);
@@ -490,6 +518,9 @@ const EventManagementPage: React.FC = () => {
               setFormSpeakerTwitter("");
               setFormSpeakerImageFilename("");
               setFormSpeakerImagePreview("");
+              setFormCompany("");
+              setFormBatch("");
+              setFormIsPastEvent(false);
               setFormAgendaItems([
                 { time: "09:00 AM - 10:30 AM", title: "Morning Keynote: The Future of Compute", description: "Opening session detailing next-gen silicon compute." },
                 { time: "11:30 AM - 01:00 PM", title: "Workshop: Transformer Efficiency", description: "Hands-on FlashAttention, quantization, and sparse computation models." },
@@ -835,12 +866,26 @@ const EventManagementPage: React.FC = () => {
               
               {/* 1. Basic Information */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
-                    <Info className="h-4 w-4" />
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
+                      <Info className="h-4 w-4" />
+                    </div>
+                    Basic Information
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-500">Past Event</span>
+                    <button
+                      type="button"
+                      onClick={() => setFormIsPastEvent(!formIsPastEvent)}
+                      className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formIsPastEvent ? "bg-[#2563EB]" : "bg-slate-200"}`}
+                    >
+                      <div 
+                        className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formIsPastEvent ? "translate-x-4" : "translate-x-0"}`}
+                      />
+                    </button>
                   </div>
-                  Basic Information
-                </h3>
+                </div>
                 
                 <div className="space-y-3">
                   <div>
@@ -866,6 +911,8 @@ const EventManagementPage: React.FC = () => {
                         <option value="Workshop">Workshop</option>
                         <option value="Hackathon">Hackathon</option>
                         <option value="Seminar">Seminar</option>
+                        <option value="Tech Event">Tech Event</option>
+                        <option value="Alumni Meetup">Alumni Meetup</option>
                       </select>
                     </div>
 
@@ -891,6 +938,31 @@ const EventManagementPage: React.FC = () => {
                       className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all resize-none"
                     />
                   </div>
+
+                  {formCategory === "Alumni Meetup" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Company</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Google, Microsoft"
+                          value={formCompany}
+                          onChange={(e) => setFormCompany(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Batch</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 2020-2024"
+                          value={formBatch}
+                          onChange={(e) => setFormBatch(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -984,6 +1056,8 @@ const EventManagementPage: React.FC = () => {
               </div>
 
               {/* 4. Registration Details */}
+              {!formIsPastEvent && (
+                <>
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
                 <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
@@ -1092,6 +1166,8 @@ const EventManagementPage: React.FC = () => {
                   />
                 </div>
               </div>
+              </>
+              )}
 
               {/* 5. Media */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
@@ -1173,7 +1249,7 @@ const EventManagementPage: React.FC = () => {
                   <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
                     <Users className="h-4 w-4" />
                   </div>
-                  Speaker Information
+                  {getSpeakerSectionTitle()}
                 </h3>
                 
                 {/* Speaker Photo Upload Block */}
@@ -1199,7 +1275,7 @@ const EventManagementPage: React.FC = () => {
                   </div>
                   
                   <div className="space-y-1.5 text-left">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Speaker Photo</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{getSpeakerPrefix()} Photo</span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1229,7 +1305,7 @@ const EventManagementPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Speaker Name</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Name</label>
                     <input
                       type="text"
                       placeholder="e.g. Dr. Elena Vos"
@@ -1240,7 +1316,7 @@ const EventManagementPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Speaker Role / Title</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Role / Title</label>
                     <input
                       type="text"
                       placeholder="e.g. Lead Research Scientist"
@@ -1252,7 +1328,7 @@ const EventManagementPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Speaker Bio</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Bio</label>
                   <textarea
                     rows={3}
                     placeholder="Short professional background summary..."
@@ -1288,6 +1364,7 @@ const EventManagementPage: React.FC = () => {
               </div>
 
               {/* Event Agenda */}
+              {!formIsPastEvent && (
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
                 <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
@@ -1369,10 +1446,12 @@ const EventManagementPage: React.FC = () => {
                 </button>
 
               </div>
+              )}
 
             </div>
 
             {/* Right Panel: Live Preview & Status Configuration (span 1) */}
+            {!formIsPastEvent && (
             <div className="space-y-6">
               
               {/* 1. Publishing Settings */}
@@ -1539,6 +1618,7 @@ const EventManagementPage: React.FC = () => {
               </div>
 
             </div>
+            )}
           </div>
         </div>
       )}
