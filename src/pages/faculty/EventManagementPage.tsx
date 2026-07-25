@@ -140,7 +140,6 @@ const EventManagementPage: React.FC = () => {
   const [formSpeakerRole, setFormSpeakerRole] = useState("");
   const [formSpeakerBio, setFormSpeakerBio] = useState("");
   const [formSpeakerLinkedin, setFormSpeakerLinkedin] = useState("");
-  const [formSpeakerTwitter, setFormSpeakerTwitter] = useState("");
   const [formSpeakerImageFilename, setFormSpeakerImageFilename] = useState("");
   const [formSpeakerImagePreview, setFormSpeakerImagePreview] = useState("");
   
@@ -247,7 +246,6 @@ const EventManagementPage: React.FC = () => {
       speakerRole: formSpeakerRole,
       speakerBio: formSpeakerBio,
       speakerLinkedin: formSpeakerLinkedin,
-      speakerTwitter: formSpeakerTwitter,
       speakerImagePreview: formSpeakerImagePreview,
       agendaItems: formAgendaItems,
       agendaTime1: formAgendaItems[0]?.time || "",
@@ -331,7 +329,6 @@ const EventManagementPage: React.FC = () => {
       setFormSpeakerRole("");
       setFormSpeakerBio("");
       setFormSpeakerLinkedin("");
-      setFormSpeakerTwitter("");
       setFormSpeakerImageFilename("");
       setFormSpeakerImagePreview("");
       setFormCompany("");
@@ -407,7 +404,6 @@ const EventManagementPage: React.FC = () => {
         setFormSpeakerRole(data.speakerRole || "");
         setFormSpeakerBio(data.speakerBio || "");
         setFormSpeakerLinkedin(data.speakerLinkedin || "");
-        setFormSpeakerTwitter(data.speakerTwitter || "");
         setFormSpeakerImageFilename(data.speakerImageFilename || "");
         setFormSpeakerImagePreview(data.speakerImagePreview || "");
         setFormCompany(data.company || "");
@@ -515,7 +511,6 @@ const EventManagementPage: React.FC = () => {
               setFormSpeakerRole("");
               setFormSpeakerBio("");
               setFormSpeakerLinkedin("");
-              setFormSpeakerTwitter("");
               setFormSpeakerImageFilename("");
               setFormSpeakerImagePreview("");
               setFormCompany("");
@@ -1338,28 +1333,15 @@ const EventManagementPage: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">LinkedIn Profile URL</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. https://linkedin.com/in/username"
-                      value={formSpeakerLinkedin}
-                      onChange={(e) => setFormSpeakerLinkedin(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Twitter Profile URL</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. https://twitter.com/username"
-                      value={formSpeakerTwitter}
-                      onChange={(e) => setFormSpeakerTwitter(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">LinkedIn Profile URL</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. https://linkedin.com/in/username"
+                    value={formSpeakerLinkedin}
+                    onChange={(e) => setFormSpeakerLinkedin(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                  />
                 </div>
               </div>
 
