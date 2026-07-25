@@ -18,7 +18,8 @@ import {
   CheckCircle2,
   Trash2,
   Settings2,
-  FileArchive
+  FileArchive,
+  ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -87,6 +88,7 @@ const SettingsPage: React.FC = () => {
   const [isArchiving, setIsArchiving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [newRoleInput, setNewRoleInput] = useState("");
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
 
   // Toast trigger helper
   const addToast = (text: string, type: ToastMessage["type"] = "success") => {
@@ -152,10 +154,12 @@ const SettingsPage: React.FC = () => {
   };
 
   const handleRemoveRole = (roleToRemove: string) => {
-    const currentRoles = currentConfig.availableRoles || ["Faculty Coordinator", "Student Lead", "Organizer", "Volunteer"];
-    const nextRoles = currentRoles.filter(r => r !== roleToRemove);
-    handleChange("availableRoles", nextRoles);
-    addToast(`"${roleToRemove}" removed.`, "warning");
+    if (window.confirm(`Are you sure you want to delete the role: "${roleToRemove}"?`)) {
+      const currentRoles = currentConfig.availableRoles || ["Faculty Coordinator", "Student Lead", "Organizer", "Volunteer"];
+      const nextRoles = currentRoles.filter(r => r !== roleToRemove);
+      handleChange("availableRoles", nextRoles);
+      addToast(`"${roleToRemove}" removed.`, "warning");
+    }
   };
 
   // Save Portal Configurations
@@ -543,29 +547,43 @@ const SettingsPage: React.FC = () => {
               </div>
 
               {/* Roles List */}
-              <div className="space-y-2">
+              <div className="space-y-2 relative">
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Roles</label>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {(currentConfig.availableRoles || []).map((role) => (
-                    <div 
-                      key={role} 
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-655 font-bold rounded-xl text-xs animate-in fade-in zoom-in duration-200"
-                    >
-                      <span>{role}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveRole(role)}
-                        className="p-0.5 hover:bg-slate-200 rounded-full text-slate-400 hover:text-red-500 transition-colors"
-                        title="Remove Role"
+                
+                <button
+                  type="button"
+                  onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
+                  className="w-full flex items-center justify-between px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <span>View All Active Roles ({(currentConfig.availableRoles || []).length})</span>
+                  <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isRoleDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {isRoleDropdownOpen && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                    {(currentConfig.availableRoles || []).map((role) => (
+                      <div 
+                        key={role} 
+                        className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 border-b border-slate-50 last:border-0 group transition-colors"
                       >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
-                  {(currentConfig.availableRoles || []).length === 0 && (
-                    <span className="text-slate-400 font-semibold text-xs leading-none">No active roles defined.</span>
-                  )}
-                </div>
+                        <span className="text-xs font-bold text-slate-700">{role}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRole(role)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all focus:opacity-100"
+                          title="Delete Role"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                    {(currentConfig.availableRoles || []).length === 0 && (
+                      <div className="px-4 py-3 text-xs text-slate-500 font-semibold text-center">
+                        No active roles defined.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

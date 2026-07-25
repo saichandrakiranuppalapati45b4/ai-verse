@@ -20,8 +20,12 @@ import {
   Zap,
   ClipboardList,
   AlertCircle,
-  Upload
+  Upload,
+  Download,
+  FileUp,
+  ClipboardPaste
 } from "lucide-react";
+import Papa from "papaparse";
 import { db, firebaseConfig, app } from "../../config/firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
@@ -121,6 +125,28 @@ const UserManagementPage: React.FC = () => {
   const [formPassword, setFormPassword] = useState("");
   const [formConfirmPassword, setFormConfirmPassword] = useState("");
   const [addingToTeam, setAddingToTeam] = useState(false);
+  const [showBulkMenu, setShowBulkMenu] = useState(false);
+  const [showDownloadRoleModal, setShowDownloadRoleModal] = useState(false);
+  const [selectedDownloadRole, setSelectedDownloadRole] = useState("All");
+
+  const initialGridRow = {
+    "Full Name": "",
+    "Email Address": "",
+    "Password": "",
+    "Role Type": "",
+    "Specific Position Title": "",
+    "Professional Bio": "",
+    "LinkedIn URL": "",
+    "GitHub URL": ""
+  };
+  const gridColumns = Object.keys(initialGridRow);
+
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [gridData, setGridData] = useState<Array<Record<string, string>>>(Array(5).fill({...initialGridRow}));
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ total: 0, current: 0, success: 0, failed: 0 });
+  
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const [availableRoles, setAvailableRoles] = useState<string[]>([
     "Faculty Coordinator",
@@ -128,6 +154,198 @@ const UserManagementPage: React.FC = () => {
     "Organizer",
     "Volunteer"
   ]);
+
+  const handleDownloadTemplate = (roleArg?: string) => {
+    let roleOptions = availableRoles.join(" | ");
+    let roleHeader = `"Role Type (Options: ${roleOptions})"`;
+    if (roleArg && roleArg !== "All") {
+      roleHeader = `"Role Type (Fixed: ${roleArg})"`;
+    }
+    const headers = [
+      "Full Name", 
+      "Email Address", 
+      "Password", 
+      roleHeader, 
+      "Specific Position Title", 
+      "Professional Bio", 
+      "LinkedIn URL", 
+      "GitHub URL"
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," + headers.join(",");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "add_members_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setShowBulkMenu(false);
+  };
+
+  const processBulkAdd = async (data: any[]) => {
+    setIsBulkProcessing(true);
+    setBulkProgress({ total: data.length, current: 0, success: 0, failed: 0 });
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      setBulkProgress(prev => ({ ...prev, current: i + 1 }));
+
+      const name = row["Full Name"] || row["name"] || "";
+      const email = row["Email Address"] || row["email"] || "";
+      const password = row["Password"] || row["password"] || "";
+      const roleOptions = availableRoles.join(" | ");
+      const roleType = row[`Role Type (Options: ${roleOptions})`] || row["Role Type"] || row["role"] || "Organizer";
+      const position = row["Specific Position Title"] || row["position"] || "";
+      const bio = row["Professional Bio"] || row["bio"] || "";
+      const linkedin = row["LinkedIn URL"] || row["linkedin"] || "";
+      const github = row["GitHub URL"] || row["github"] || "";
+
+      if (!name.trim() || !email.trim() || !email.includes("@")) {
+        failedCount++;
+        continue;
+      }
+
+      let cleanedRole = roleType.trim();
+      const roleKeys = Object.keys(row);
+      const fixedRoleKey = roleKeys.find(k => k.startsWith("Role Type (Fixed: "));
+      if (fixedRoleKey) {
+        cleanedRole = fixedRoleKey.replace("Role Type (Fixed: ", "").replace(")", "").trim();
+      }
+
+      try {
+        let authUserUid = "";
+        if (cleanedRole === "Faculty Coordinator") {
+          if (!password) {
+            failedCount++;
+            continue;
+          }
+          const secondaryApp = initializeApp(firebaseConfig, `SecondaryApp_${Date.now()}_${i}`);
+          const secondaryAuth = getAuth(secondaryApp);
+          try {
+            const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+            authUserUid = userCred.user.uid;
+          } catch (authErr) {
+            console.error("Auth bulk err:", authErr);
+            await deleteApp(secondaryApp);
+            failedCount++;
+            continue;
+          }
+          await deleteApp(secondaryApp);
+        }
+
+        const payload = {
+          name,
+          email,
+          roleType: cleanedRole,
+          position,
+          bio,
+          linkedin,
+          github,
+          image: "",
+          createdAt: Date.now()
+        };
+
+        const payloadWithCreds = {
+          ...payload,
+          username: email,
+          tempPassword: cleanedRole === "Faculty Coordinator" ? password : "organizer"
+        };
+
+        await addDoc(collection(db, "organizers"), payloadWithCreds);
+
+        if (authUserUid) {
+          await setDoc(doc(db, "users", authUserUid), {
+            uid: authUserUid,
+            email: email,
+            displayName: name,
+            role: "Faculty Coordinator",
+            createdAt: Date.now()
+          });
+        }
+        successCount++;
+      } catch (err) {
+        console.error("Failed to add row", i, err);
+        failedCount++;
+      }
+    }
+
+    setBulkProgress(prev => ({ ...prev, success: successCount, failed: failedCount }));
+    setTimeout(() => {
+      setIsBulkProcessing(false);
+      alert(`Bulk Add Complete!\nSuccess: ${successCount}\nFailed: ${failedCount}`);
+    }, 500);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        if (results.data && results.data.length > 0) {
+          processBulkAdd(results.data);
+        }
+      }
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleGridPaste = (e: React.ClipboardEvent) => {
+    const pasteData = e.clipboardData.getData('text');
+    if (!pasteData) return;
+    e.preventDefault();
+    Papa.parse(pasteData, {
+      header: false,
+      skipEmptyLines: true,
+      complete: (results) => {
+        if (results.data && results.data.length > 0) {
+          const newGrid = [...gridData];
+          let startIndex = 0;
+          const firstRow = results.data[0] as string[];
+          if (firstRow[0]?.toLowerCase().includes("name") || firstRow[1]?.toLowerCase().includes("email")) {
+            startIndex = 1;
+          }
+          
+          let gridIndex = 0;
+          for (let i = startIndex; i < results.data.length; i++) {
+            const row = results.data[i] as string[];
+            if (!newGrid[gridIndex]) newGrid[gridIndex] = { ...initialGridRow };
+            newGrid[gridIndex] = {
+              "Full Name": row[0] || "",
+              "Email Address": row[1] || "",
+              "Password": row[2] || "",
+              "Role Type": row[3] || "",
+              "Specific Position Title": row[4] || "",
+              "Professional Bio": row[5] || "",
+              "LinkedIn URL": row[6] || "",
+              "GitHub URL": row[7] || ""
+            };
+            gridIndex++;
+          }
+          while (newGrid.length < Math.max(5, gridIndex)) newGrid.push({ ...initialGridRow });
+          setGridData(newGrid);
+        }
+      }
+    });
+  };
+
+  const handleGridChange = (rowIndex: number, col: string, value: string) => {
+    const newGrid = [...gridData];
+    newGrid[rowIndex] = { ...newGrid[rowIndex], [col]: value };
+    setGridData(newGrid);
+  };
+
+  const handlePasteSubmit = () => {
+    const dataToProcess = gridData.filter(row => row["Full Name"].trim() || row["Email Address"].trim());
+    if (dataToProcess.length === 0) return;
+    processBulkAdd(dataToProcess);
+    setShowPasteModal(false);
+    setGridData(Array(5).fill({...initialGridRow}));
+  };
 
   React.useEffect(() => {
     const fetchRoles = async () => {
@@ -873,12 +1091,59 @@ const UserManagementPage: React.FC = () => {
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
           {/* Bulk Add Members Button */}
-          <button
-            className="flex items-center gap-2 justify-center w-full md:w-auto px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold rounded-2xl shadow-sm transition-all text-sm whitespace-nowrap"
-          >
-            <Upload className="h-4 w-4" />
-            Bulk Add Members
-          </button>
+          <div className="relative w-full md:w-auto">
+            <button
+              onClick={() => setShowBulkMenu(!showBulkMenu)}
+              className="flex items-center gap-2 justify-center w-full md:w-auto px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold rounded-2xl shadow-sm transition-all text-sm whitespace-nowrap"
+            >
+              <Upload className="h-4 w-4" />
+              Bulk Add Members
+            </button>
+
+            {showBulkMenu && (
+              <>
+                <div 
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowBulkMenu(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-100 rounded-xl shadow-xl z-20 py-2">
+                  <div className="px-4 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Add members</div>
+                  <button
+                    onClick={() => {
+                      setShowBulkMenu(false);
+                      if (fileInputRef.current) fileInputRef.current.click();
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm font-semibold text-slate-700 flex items-center gap-2"
+                  >
+                    <FileUp className="h-4 w-4 text-slate-400" />
+                    Upload excel/.csv
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowBulkMenu(false);
+                      setShowPasteModal(true);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm font-semibold text-slate-700 flex items-center gap-2"
+                  >
+                    <ClipboardPaste className="h-4 w-4 text-slate-400" />
+                    Open .csv (Paste)
+                  </button>
+                  <div className="h-px bg-slate-100 my-1 mx-2"></div>
+                  <div className="px-4 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Templates</div>
+                  <button
+                    onClick={() => {
+                      setShowBulkMenu(false);
+                      setShowDownloadRoleModal(true);
+                    }}
+                    className="w-full text-left px-4 py-2 hover:bg-slate-50 text-sm font-semibold text-slate-700 flex items-center gap-2"
+                  >
+                    <Download className="h-4 w-4 text-slate-400" />
+                    Download template
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           
           {/* Add Member Button */}
           <button
@@ -1172,6 +1437,140 @@ const UserManagementPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {showDownloadRoleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="text-lg font-black text-slate-800 mb-2">Select Role for Template</h3>
+            <p className="text-xs text-slate-500 font-semibold mb-4">
+              Choose the role this template is for, or leave as 'All' to allow any role.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role Type</label>
+                <select
+                  value={selectedDownloadRole}
+                  onChange={(e) => setSelectedDownloadRole(e.target.value)}
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="All">All Roles</option>
+                  {availableRoles.map(role => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  type="button"
+                  className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-2xl text-sm transition-all"
+                  onClick={() => setShowDownloadRoleModal(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button"
+                  className="flex-1 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-2xl text-sm shadow-md shadow-blue-600/10 hover:shadow-lg transition-all"
+                  onClick={() => {
+                    handleDownloadTemplate(selectedDownloadRole);
+                    setShowDownloadRoleModal(false);
+                  }}
+                >
+                  Download
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Paste CSV Modal */}
+      {showPasteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-[90vw] shadow-xl flex flex-col max-h-[90vh]">
+            <h3 className="text-xl font-black text-slate-800 mb-2">Manual Entry / Paste Data</h3>
+            <p className="text-sm text-slate-500 font-medium mb-4">
+              Type data into the grid below, or click any cell and paste (Ctrl+V) from Excel/CSV to auto-fill the rows.
+            </p>
+            <div className="flex-1 overflow-auto border border-slate-200 rounded-2xl relative" onPaste={handleGridPaste}>
+              <table className="w-full text-left text-sm whitespace-nowrap min-w-max">
+                <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 shadow-sm border-r border-slate-200 sticky left-0 z-20 w-10 text-center">#</th>
+                    {gridColumns.map(col => (
+                      <th key={col} className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 shadow-sm">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {gridData.map((row, rIndex) => (
+                    <tr key={rIndex} className="hover:bg-slate-50/50 group">
+                      <td className="px-4 py-2 text-slate-400 font-bold text-xs border-r border-slate-100 bg-white group-hover:bg-slate-50/50 sticky left-0 z-10 text-center">{rIndex + 1}</td>
+                      {gridColumns.map(col => (
+                        <td key={col} className="p-0 border-r border-slate-50 last:border-r-0 focus-within:ring-1 focus-within:ring-inset focus-within:ring-blue-500">
+                          <input
+                            type="text"
+                            value={row[col]}
+                            onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
+                            placeholder={col}
+                            className="w-full min-w-[150px] px-4 py-3 bg-transparent border-0 focus:outline-none text-slate-700 text-sm font-medium placeholder:text-slate-300"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-2 flex justify-start">
+              <button 
+                type="button" 
+                onClick={() => setGridData([...gridData, { ...initialGridRow }])}
+                className="text-xs font-bold text-[#2563EB] hover:text-[#1D4ED8] flex items-center gap-1.5 p-2 rounded-lg hover:bg-blue-50 transition-colors"
+              >
+                <UserPlus className="h-3.5 w-3.5" /> Add Row
+              </button>
+            </div>
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-slate-100">
+              <button 
+                type="button"
+                className="px-6 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-2xl text-sm transition-all"
+                onClick={() => setShowPasteModal(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="px-8 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-2xl text-sm shadow-md shadow-blue-600/10 hover:shadow-lg transition-all"
+                onClick={handlePasteSubmit}
+              >
+                Process Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Processing Modal */}
+      {isBulkProcessing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-xl flex flex-col items-center justify-center text-center">
+            <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-6"></div>
+            <h3 className="text-xl font-black text-slate-800 mb-2">Processing Bulk Add...</h3>
+            <p className="text-sm text-slate-500 font-medium mb-4">
+              Please wait while we add these members. Do not close this window.
+            </p>
+            <div className="w-full bg-slate-100 rounded-full h-3 mb-2 overflow-hidden">
+              <div 
+                className="bg-blue-600 h-full rounded-full transition-all duration-300"
+                style={{ width: `${bulkProgress.total > 0 ? Math.round((bulkProgress.current / bulkProgress.total) * 100) : 0}%` }}
+              ></div>
+            </div>
+            <div className="flex justify-between w-full text-xs font-bold text-slate-400">
+              <span>{bulkProgress.current} / {bulkProgress.total}</span>
+              <span>{bulkProgress.total > 0 ? Math.round((bulkProgress.current / bulkProgress.total) * 100) : 0}%</span>
+            </div>
           </div>
         </div>
       )}

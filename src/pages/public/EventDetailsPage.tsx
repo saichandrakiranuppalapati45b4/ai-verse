@@ -277,7 +277,7 @@ const EventDetailsPage: React.FC = () => {
                   <p className="text-[10px] text-slate-400 font-semibold">Early Bird RSVP active</p>
                 </div>
 
-                {event.minTeamSize && event.maxTeamSize && (
+                {event.type === "Hackathon" && event.minTeamSize && event.maxTeamSize && (
                   <div className="bg-slate-50/50 rounded-2xl p-3 border border-slate-100/50 flex items-center justify-between text-xs mt-2 text-left">
                     <span className="font-bold text-slate-500">Team Size:</span>
                     <span className="font-black text-slate-800 bg-white px-2 py-0.5 rounded-lg border border-slate-200 text-[10px]">

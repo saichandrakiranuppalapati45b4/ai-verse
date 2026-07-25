@@ -1083,29 +1083,31 @@ const EventManagementPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Min Team Size</label>
-                    <input
-                      type="number"
-                      placeholder="e.g. 1"
-                      value={formMinTeamSize}
-                      onChange={(e) => setFormMinTeamSize(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
+                {formCategory === "Hackathon" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Min Team Size</label>
+                      <input
+                        type="number"
+                        placeholder="e.g. 1"
+                        value={formMinTeamSize}
+                        onChange={(e) => setFormMinTeamSize(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Max Team Size</label>
-                    <input
-                      type="number"
-                      placeholder="e.g. 4"
-                      value={formMaxTeamSize}
-                      onChange={(e) => setFormMaxTeamSize(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                    />
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Max Team Size</label>
+                      <input
+                        type="number"
+                        placeholder="e.g. 4"
+                        value={formMaxTeamSize}
+                        onChange={(e) => setFormMaxTeamSize(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="mt-3">
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Registration Fee ($)</label>
