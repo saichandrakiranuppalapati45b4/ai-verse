@@ -95,7 +95,7 @@ const AnnouncementManagementPage: React.FC = () => {
 
   // Toast helper
   const addToast = (text: string, type: ToastMessage["type"] = "success") => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     setToastQueue(prev => [...prev, { id, text, type }]);
     setTimeout(() => {
       setToastQueue(prev => prev.filter(t => t.id !== id));

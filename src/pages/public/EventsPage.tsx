@@ -23,6 +23,7 @@ interface Event {
   id: string;
   title: string;
   type: "Workshop" | "Hackathon" | "Seminar" | "Networking";
+  category?: string;
   date: string;
   time: string;
   location: string;
@@ -53,9 +54,6 @@ const EventsPage: React.FC = () => {
           const title = (data.title || "").trim();
           
           if (title && titlesSeen.has(title.toLowerCase())) {
-            deleteDoc(doc(db, "events", docSnap.id)).catch(err =>
-              console.error("Failed to delete database duplicate:", err)
-            );
             return;
           }
           if (title) {
@@ -63,12 +61,18 @@ const EventsPage: React.FC = () => {
           }
           
           let eventType: Event["type"] = "Workshop";
-          if (data.category === "HACKATHONS") eventType = "Hackathon";
-          else if (data.category === "LECTURES") eventType = "Seminar";
+          const catUpper = String(data.category || "").toUpperCase();
+          if (catUpper === "HACKATHONS" || catUpper === "HACKATHON") {
+            eventType = "Hackathon";
+          } else if (catUpper === "LECTURES" || catUpper === "SEMINAR" || catUpper === "SEMINARS") {
+            eventType = "Seminar";
+          } else if (catUpper === "NETWORKING") {
+            eventType = "Networking";
+          }
           
           let img = sparkImg;
-          if (data.imageName === "hackathonImg" || data.category === "HACKATHONS") img = hackathonImg;
-          else if (data.imageName === "seminarImg" || data.category === "LECTURES") img = seminarImg;
+          if (data.imageName === "hackathonImg" || catUpper === "HACKATHONS" || catUpper === "HACKATHON") img = hackathonImg;
+          else if (data.imageName === "seminarImg" || catUpper === "LECTURES" || catUpper === "SEMINAR") img = seminarImg;
           
           if (data.posterPreview) {
             img = data.posterPreview;
@@ -84,6 +88,7 @@ const EventsPage: React.FC = () => {
             id: docSnap.id,
             title: title,
             type: eventType,
+            category: data.category || eventType,
             date: data.date || "Oct 24",
             time: timeText,
             location: data.location || "Virtual Hub",
@@ -298,20 +303,22 @@ const EventsPage: React.FC = () => {
 
                     {/* Action Row */}
                     <div className="flex items-center gap-3 pt-2">
-                      {event.endDate && new Date(event.endDate).setHours(23, 59, 59, 999) < new Date().getTime() ? (
-                        <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
-                          Event Completed
-                        </Button>
-                      ) : event.status === "Active" ? (
-                        <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
-                          Registration Closed
-                        </Button>
-                      ) : (
-                        <Link to={`/events/${event.id}/register`}>
-                          <Button variant="gradient" size="sm" className="rounded-lg font-bold text-xs px-5 py-2 hover:scale-102 transition-transform">
-                            Register Now
+                      {(event.type === "Hackathon" || event.category === "HACKATHONS" || event.category === "Hackathon" || event.category?.toLowerCase()?.includes("hackathon")) && (
+                        event.endDate && new Date(event.endDate).setHours(23, 59, 59, 999) < new Date().getTime() ? (
+                          <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                            Event Completed
                           </Button>
-                        </Link>
+                        ) : event.status === "Active" ? (
+                          <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                            Registration Closed
+                          </Button>
+                        ) : (
+                          <Link to={`/events/${event.id}/register`}>
+                            <Button variant="gradient" size="sm" className="rounded-lg font-bold text-xs px-5 py-2 hover:scale-102 transition-transform">
+                              Register Now
+                            </Button>
+                          </Link>
+                        )
                       )}
                       <Link to={`/events/${event.id}`}>
                         <Button variant="secondary" size="sm" className="rounded-lg font-bold text-xs bg-slate-50 border border-slate-200/50 hover:bg-slate-100 hover:scale-102 transition-transform px-5 py-2 text-slate-600">

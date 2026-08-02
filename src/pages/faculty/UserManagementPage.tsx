@@ -23,21 +23,24 @@ import {
   Upload,
   Download,
   FileUp,
-  ClipboardPaste
+  ClipboardPaste,
+  Edit2
 } from "lucide-react";
 import Papa from "papaparse";
 import { db, firebaseConfig, app } from "../../config/firebase";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { collection, addDoc, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
+import { collection, addDoc, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
 import Button from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
+import TeamGraphModal from "../../components/dashboard/TeamGraphModal";
 
-interface UserItem {
+export interface UserItem {
   id: string;
   name: string;
   email: string;
+  phone?: string;
   role: "Student Member" | "Student Organizer" | "Faculty Coordinator" | "Guest";
   status: "Active" | "Pending" | "Deactivated";
   image?: string;
@@ -71,15 +74,25 @@ const UserManagementPage: React.FC = () => {
 
   // Fetch users from database
   React.useEffect(() => {
+    const SYSTEM_ACCOUNTS = [
+      "facultycoordinator@aiverse.in",
+      "admin@aiverse.in",
+      "studentorganizer@aiverse.in"
+    ];
+
     const fetchUsers = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, "users"));
         const list: UserItem[] = [];
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          const email = (data.email || "").toLowerCase().trim();
+          if (SYSTEM_ACCOUNTS.includes(email)) {
+            return;
+          }
           list.push({
             id: docSnap.id,
-            name: data.name || "Unnamed User",
+            name: data.name || data.displayName || "Unnamed User",
             email: data.email || "",
             role: data.role || "Guest",
             status: data.status || "Active",
@@ -108,9 +121,13 @@ const UserManagementPage: React.FC = () => {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserItem["role"]>("Student Member");
-  
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+
   // Dropdown actions states
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [showRoleSubMenu, setShowRoleSubMenu] = useState(false);
+  const [roleConfirmState, setRoleConfirmState] = useState<{ isOpen: boolean, userId: string, newRole: string }>({ isOpen: false, userId: "", newRole: "" });
+  const [showGraphModal, setShowGraphModal] = useState(false);
 
   // Add Team Member Form States
   const [showAddMemberForm, setShowAddMemberForm] = useState(false);
@@ -132,9 +149,8 @@ const UserManagementPage: React.FC = () => {
   const initialGridRow = {
     "Full Name": "",
     "Email Address": "",
-    "Password": "",
+    "Phone Number": "",
     "Role Type": "",
-    "Specific Position Title": "",
     "Professional Bio": "",
     "LinkedIn URL": "",
     "GitHub URL": ""
@@ -164,9 +180,8 @@ const UserManagementPage: React.FC = () => {
     const headers = [
       "Full Name", 
       "Email Address", 
-      "Password", 
+      "Phone Number",
       roleHeader, 
-      "Specific Position Title", 
       "Professional Bio", 
       "LinkedIn URL", 
       "GitHub URL"
@@ -195,15 +210,15 @@ const UserManagementPage: React.FC = () => {
 
       const name = row["Full Name"] || row["name"] || "";
       const email = row["Email Address"] || row["email"] || "";
-      const password = row["Password"] || row["password"] || "";
+      const phone = row["Phone Number"] || row["phone"] || "";
       const roleOptions = availableRoles.join(" | ");
-      const roleType = row[`Role Type (Options: ${roleOptions})`] || row["Role Type"] || row["role"] || "Organizer";
-      const position = row["Specific Position Title"] || row["position"] || "";
+      const roleType = row[`Role Type (Options: ${roleOptions})`] || row["Role Type"] || row["role"] || "";
+      const position = row["position"] || "";
       const bio = row["Professional Bio"] || row["bio"] || "";
       const linkedin = row["LinkedIn URL"] || row["linkedin"] || "";
       const github = row["GitHub URL"] || row["github"] || "";
 
-      if (!name.trim() || !email.trim() || !email.includes("@")) {
+      if (!name.trim() || !email.trim() || !email.includes("@") || !roleType.trim() || roleType === "Select Role") {
         failedCount++;
         continue;
       }
@@ -216,55 +231,35 @@ const UserManagementPage: React.FC = () => {
       }
 
       try {
-        let authUserUid = "";
-        if (cleanedRole === "Faculty Coordinator") {
-          if (!password) {
-            failedCount++;
-            continue;
-          }
-          const secondaryApp = initializeApp(firebaseConfig, `SecondaryApp_${Date.now()}_${i}`);
-          const secondaryAuth = getAuth(secondaryApp);
-          try {
-            const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-            authUserUid = userCred.user.uid;
-          } catch (authErr) {
-            console.error("Auth bulk err:", authErr);
-            await deleteApp(secondaryApp);
-            failedCount++;
-            continue;
-          }
-          await deleteApp(secondaryApp);
-        }
-
         const payload = {
           name,
+          displayName: name,
           email,
+          phone,
+          phoneNumber: phone,
+          role: cleanedRole,
           roleType: cleanedRole,
           position,
           bio,
           linkedin,
           github,
           image: "",
+          status: "Active",
           createdAt: Date.now()
         };
 
-        const payloadWithCreds = {
-          ...payload,
-          username: email,
-          tempPassword: cleanedRole === "Faculty Coordinator" ? password : "organizer"
+        const docRef = await addDoc(collection(db, "users"), payload);
+
+        const newUser: UserItem = {
+          id: docRef.id,
+          name: name,
+          email: email,
+          phone: phone,
+          role: cleanedRole,
+          status: "Active",
+          image: ""
         };
-
-        await addDoc(collection(db, "organizers"), payloadWithCreds);
-
-        if (authUserUid) {
-          await setDoc(doc(db, "users", authUserUid), {
-            uid: authUserUid,
-            email: email,
-            displayName: name,
-            role: "Faculty Coordinator",
-            createdAt: Date.now()
-          });
-        }
+        setUsers(prev => [newUser, ...prev]);
         successCount++;
       } catch (err) {
         console.error("Failed to add row", i, err);
@@ -279,24 +274,19 @@ const UserManagementPage: React.FC = () => {
     }, 500);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (results.data && results.data.length > 0) {
-          processBulkAdd(results.data);
-        }
-      }
-    });
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
   const handleGridPaste = (e: React.ClipboardEvent) => {
     const pasteData = e.clipboardData.getData('text');
     if (!pasteData) return;
+
+    // Only intercept if the pasted data appears to be multi-cell grid data (tabs or multiple lines).
+    // This allows single-cell pastes to behave normally within individual input fields.
+    const trimmed = pasteData.trim();
+    const isGridData = pasteData.includes('\t') || trimmed.includes('\n');
+    
+    if (!isGridData) {
+      return; // Let native paste handle it
+    }
+
     e.preventDefault();
     Papa.parse(pasteData, {
       header: false,
@@ -317,12 +307,11 @@ const UserManagementPage: React.FC = () => {
             newGrid[gridIndex] = {
               "Full Name": row[0] || "",
               "Email Address": row[1] || "",
-              "Password": row[2] || "",
+              "Phone Number": row[2] || "",
               "Role Type": row[3] || "",
-              "Specific Position Title": row[4] || "",
-              "Professional Bio": row[5] || "",
-              "LinkedIn URL": row[6] || "",
-              "GitHub URL": row[7] || ""
+              "Professional Bio": row[4] || "",
+              "LinkedIn URL": row[5] || "",
+              "GitHub URL": row[6] || ""
             };
             gridIndex++;
           }
@@ -371,15 +360,18 @@ const UserManagementPage: React.FC = () => {
   // Stats derived from all current users
   const totalCount = users.length;
   const pendingCount = users.filter(u => u.status === "Pending").length;
-  const activeOrganizersCount = users.filter(u => {
-    const r = getDisplayRole(u.role, availableRoles).toLowerCase();
-    return (r.includes("organizer") || r.includes("lead")) && u.status === "Active";
-  }).length;
+  const activeMembersCount = users.filter(u => u.status === "Active" || !u.status).length;
   const deactivatedCount = users.filter(u => u.status === "Deactivated").length;
 
   // Filters logic
   const filteredUsers = useMemo(() => {
+    const SYSTEM_ACCOUNTS = [
+      "facultycoordinator@aiverse.in",
+      "admin@aiverse.in",
+      "studentorganizer@aiverse.in"
+    ];
     return users.filter(user => {
+      if (SYSTEM_ACCOUNTS.includes(user.email.toLowerCase().trim())) return false;
       const matchesSearch = 
         user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
         user.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -426,87 +418,31 @@ const UserManagementPage: React.FC = () => {
       alert("A valid email address is required!");
       return;
     }
-    if (!formPosition.trim()) {
-      alert("Specific Position Title is required!");
-      return;
-    }
 
-    if (formRoleType === "Faculty Coordinator") {
-      if (!formPassword) {
-        alert("Password is required for Faculty Coordinators!");
-        return;
-      }
-      if (formPassword !== formConfirmPassword) {
-        alert("Passwords do not match!");
-        return;
-      }
-    }
 
     setAddingToTeam(true);
     try {
-      let authUserUid = "";
-      if (formRoleType === "Faculty Coordinator") {
-        // Create user in firebase auth using secondary app so administrator isn't logged out
-        const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
-        const secondaryAuth = getAuth(secondaryApp);
-        try {
-          const userCred = await createUserWithEmailAndPassword(secondaryAuth, formEmail, formPassword);
-          authUserUid = userCred.user.uid;
-        } catch (authErr: any) {
-          console.error("Auth creation failed:", authErr);
-          alert(`Authentication setup failed: ${authErr.message || authErr}`);
-          setAddingToTeam(false);
-          await deleteApp(secondaryApp);
-          return;
-        }
-        await deleteApp(secondaryApp);
-      }
-
       const payload = {
         name: formName,
+        displayName: formName,
         email: formEmail,
+        role: formRoleType,
         roleType: formRoleType,
         position: formPosition,
         bio: formBio,
         linkedin: formLinkedin,
         github: formGithub,
         image: formPhotoPreview || "",
+        status: "Active",
         createdAt: Date.now()
       };
 
-      const payloadWithCreds = {
-        ...payload,
-        username: formEmail,
-        tempPassword: formRoleType === "Faculty Coordinator" ? formPassword : "organizer"
-      };
-
-      await addDoc(collection(db, "organizers"), payloadWithCreds);
-
-      let userDocId = "";
-      if (authUserUid) {
-        await setDoc(doc(db, "users", authUserUid), {
-          name: formName,
-          email: formEmail,
-          role: formRoleType,
-          image: formPhotoPreview || "",
-          status: "Active"
-        });
-        userDocId = authUserUid;
-      } else {
-        const userDocRef = await addDoc(collection(db, "users"), {
-          name: formName,
-          email: formEmail,
-          role: formRoleType,
-          image: formPhotoPreview || "",
-          status: "Active"
-        });
-        userDocId = userDocRef.id;
-      }
+      const userDocRef = await addDoc(collection(db, "users"), payload);
 
       alert("Member successfully added to team!");
       
       const newUser: UserItem = {
-        id: userDocId,
+        id: userDocRef.id,
         name: formName,
         email: formEmail,
         role: formRoleType as any,
@@ -565,6 +501,40 @@ const UserManagementPage: React.FC = () => {
     }
   };
 
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUserId || !formName || !formEmail) return;
+
+    try {
+      const docRef = doc(db, "users", editingUserId);
+      await setDoc(docRef, {
+        name: formName,
+        displayName: formName,
+        email: formEmail,
+        role: formRoleType,
+        image: formPhotoPreview || "",
+      }, { merge: true });
+
+      setUsers(users.map(u => u.id === editingUserId ? {
+        ...u,
+        name: formName,
+        email: formEmail,
+        role: formRoleType as any,
+        image: formPhotoPreview || ""
+      } : u));
+
+      setEditingUserId(null);
+      // Reset form
+      setFormName("");
+      setFormEmail("");
+      setFormRoleType("Organizer");
+      setFormPhotoPreview("");
+    } catch (err) {
+      console.error("Error updating user in database:", err);
+      alert("Failed to update user.");
+    }
+  };
+
   const handleStatusChange = async (id: string, newStatus: UserItem["status"]) => {
     try {
       const docRef = doc(db, "users", id);
@@ -577,31 +547,48 @@ const UserManagementPage: React.FC = () => {
     setActiveMenuId(null);
   };
 
-  const handleRoleChange = async (id: string, newRole: UserItem["role"]) => {
+  const handleRoleChange = (id: string, newRole: UserItem["role"]) => {
+    setRoleConfirmState({ isOpen: true, userId: id, newRole });
+    setActiveMenuId(null);
+    setShowRoleSubMenu(false);
+  };
+
+  const confirmRoleChange = async () => {
+    const { userId: id, newRole } = roleConfirmState;
+    if (!id || !newRole) return;
+
     try {
       const docRef = doc(db, "users", id);
       await setDoc(docRef, { role: newRole }, { merge: true });
-      setUsers(users.map(u => u.id === id ? { ...u, role: newRole } : u));
+      setUsers(users.map(u => u.id === id ? { ...u, role: newRole as any } : u));
     } catch (err) {
       console.error("Error updating user role:", err);
       alert("Failed to update role.");
     }
-    setActiveMenuId(null);
+    setRoleConfirmState({ isOpen: false, userId: "", newRole: "" });
   };
 
   const handleDeleteUser = async (id: string) => {
     if (!window.confirm("Are you sure you want to permanently delete this user? This action cannot be undone.")) return;
     
     try {
-      const functions = getFunctions(app);
-      const deleteUserAccount = httpsCallable(functions, "deleteUserAccount");
-      await deleteUserAccount({ uid: id });
+      // 1. Delete user record directly from Firestore
+      await deleteDoc(doc(db, "users", id));
+
+      // 2. Try deleting Firebase Auth account if exists
+      try {
+        const functions = getFunctions(app);
+        const deleteUserAccount = httpsCallable(functions, "deleteUserAccount");
+        await deleteUserAccount({ uid: id });
+      } catch (authErr) {
+        console.warn("Firebase Auth account deletion notice (user may not have auth record):", authErr);
+      }
       
-      setUsers(users.filter(u => u.id !== id));
+      setUsers(prev => prev.filter(u => u.id !== id));
       alert("User successfully deleted.");
     } catch (err: any) {
       console.error("Error deleting user:", err);
-      alert(`Failed to delete user: ${err.message}`);
+      alert(`Failed to delete user: ${err.message || err}`);
     }
     setActiveMenuId(null);
   };
@@ -632,21 +619,7 @@ const UserManagementPage: React.FC = () => {
   const renderAvatar = (user: UserItem) => {
     let avatarUrl = user.image;
     if (!avatarUrl || avatarUrl.trim() === "") {
-      const placeholders = [
-        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&h=150&q=80",
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&h=150&q=80",
-        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&h=150&q=80",
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&h=150&q=80",
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&h=150&q=80",
-        "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=150&h=150&q=80"
-      ];
-      let hash = 0;
-      const str = user.email || user.name || "";
-      for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-      }
-      const index = Math.abs(hash) % placeholders.length;
-      avatarUrl = placeholders[index];
+      avatarUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CBD5E1'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
     }
 
     return (
@@ -658,22 +631,23 @@ const UserManagementPage: React.FC = () => {
     );
   };
 
-  if (showAddMemberForm) {
+  if (showAddMemberForm || editingUserId !== null) {
+    const isEditMode = editingUserId !== null;
     return (
       <div className="space-y-6 pb-12 text-left font-sans animate-in fade-in duration-200">
-        <SEO title="Add Team Member - Faculty Portal" description="Expand the club's influence by adding key contributors and leaders." />
+        <SEO title={`${isEditMode ? 'Edit' : 'Add'} Team Member - Faculty Portal`} description={isEditMode ? "Update team member details." : "Expand the club's influence by adding key contributors and leaders."} />
         
         {/* Breadcrumbs */}
         <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-          <button onClick={() => setShowAddMemberForm(false)} className="hover:text-blue-600 transition-colors">User Management</button>
+          <button onClick={() => { setShowAddMemberForm(false); setEditingUserId(null); }} className="hover:text-blue-600 transition-colors">User Management</button>
           <span>&gt;</span>
-          <span className="text-slate-600 font-black">Add Team Member</span>
+          <span className="text-slate-600 font-black">{isEditMode ? 'Edit' : 'Add'} Team Member</span>
         </div>
 
         {/* Title */}
         <div>
-          <h1 className="text-3xl font-black text-slate-800 tracking-tight leading-none">Add New Team Member</h1>
-          <p className="text-slate-455 text-xs font-semibold mt-1.5">Expand the club's influence by adding key contributors and leaders to the organization.</p>
+          <h1 className="text-3xl font-black text-slate-800 tracking-tight leading-none">{isEditMode ? 'Edit Team Member' : 'Add New Team Member'}</h1>
+          <p className="text-slate-455 text-xs font-semibold mt-1.5">{isEditMode ? "Update this member's profile, role, and details." : "Expand the club's influence by adding key contributors and leaders to the organization."}</p>
         </div>
 
         {/* Two column layout */}
@@ -714,32 +688,7 @@ const UserManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              {formRoleType === "Faculty Coordinator" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100 mt-4 text-left">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Enter Password</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={formPassword}
-                      onChange={(e) => setFormPassword(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/20 focus:bg-white transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Confirm Password</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={formConfirmPassword}
-                      onChange={(e) => setFormConfirmPassword(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/20 focus:bg-white transition-all"
-                    />
-                  </div>
-                </div>
-              )}
+
 
             </div>
 
@@ -751,10 +700,10 @@ const UserManagementPage: React.FC = () => {
                 </span>
                 Role & Position
               </h3>
-              <div className="space-y-4">
+              <div className="mt-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Role Type</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role Type</label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {availableRoles.map((role) => (
                       <button
                         key={role}
@@ -770,18 +719,6 @@ const UserManagementPage: React.FC = () => {
                       </button>
                     ))}
                   </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Specific Position Title</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Technical Lead, PR Head"
-                    value={formPosition}
-                    onChange={(e) => setFormPosition(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/20 focus:bg-white transition-all"
-                  />
-                  <span className="text-[10px] text-slate-400 font-semibold mt-1.5 block">This appears on the public team card.</span>
                 </div>
               </div>
             </div>
@@ -840,15 +777,15 @@ const UserManagementPage: React.FC = () => {
               <Button
                 variant="gradient"
                 disabled={addingToTeam}
-                onClick={handleAddTeamMemberSubmit}
+                onClick={isEditMode ? handleEditUser : handleAddTeamMemberSubmit}
                 className="px-6 py-3 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/10"
               >
-                {addingToTeam ? "Adding..." : "Add to Team"}
+                {addingToTeam ? "Saving..." : isEditMode ? "Save Changes" : "Add to Team"}
                 <ArrowRight className="h-4 w-4" />
               </Button>
               <button
                 type="button"
-                onClick={() => setShowAddMemberForm(false)}
+                onClick={() => { setShowAddMemberForm(false); setEditingUserId(null); }}
                 className="px-6 py-3 bg-white border border-slate-200 text-slate-655 font-bold rounded-2xl text-xs hover:bg-slate-50 transition-colors"
               >
                 Cancel
@@ -974,39 +911,20 @@ const UserManagementPage: React.FC = () => {
           <div className="absolute bottom-0 inset-x-0 h-1 bg-gradient-to-r from-blue-500 to-sky-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
         </div>
 
-        {/* Pending Approvals */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] relative overflow-hidden group hover:shadow-md transition-all duration-300">
-          <div className="flex justify-between items-start">
-            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 shadow-inner">
-              <Clock className="h-4.5 w-4.5" />
-            </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
-              Urgent
-            </span>
-          </div>
-          <div className="mt-3 text-left">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Pending Approvals</span>
-            <h3 className="text-2xl font-extrabold mt-1 text-slate-800 tracking-tight font-sans">
-              {pendingCount}
-            </h3>
-          </div>
-          <div className="absolute bottom-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 to-yellow-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
-        </div>
-
-        {/* Active Organizers */}
+        {/* Active Members */}
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] relative overflow-hidden group hover:shadow-md transition-all duration-300">
           <div className="flex justify-between items-start">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-              <Shield className="h-4.5 w-4.5" />
+              <UserCheck className="h-4.5 w-4.5" />
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
-              Core
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">
+              Active
             </span>
           </div>
           <div className="mt-3 text-left">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Active Organizers</span>
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Active Members</span>
             <h3 className="text-2xl font-extrabold mt-1 text-slate-800 tracking-tight font-sans">
-              {activeOrganizersCount}
+              {activeMembersCount}
             </h3>
           </div>
           <div className="absolute bottom-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
@@ -1029,6 +947,28 @@ const UserManagementPage: React.FC = () => {
             </h3>
           </div>
           <div className="absolute bottom-0 inset-x-0 h-1 bg-gradient-to-r from-slate-500 to-slate-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
+        </div>
+
+        {/* Open Graph */}
+        <div 
+          className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] relative overflow-hidden group hover:shadow-md transition-all duration-300 cursor-pointer"
+          onClick={() => setShowGraphModal(true)}
+        >
+          <div className="flex justify-between items-start">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500 shadow-inner">
+              <Clock className="h-4.5 w-4.5" />
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">
+              Hiring
+            </span>
+          </div>
+          <div className="mt-3 text-left">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Open Graph</span>
+            <h3 className="text-2xl font-extrabold mt-1 text-slate-800 tracking-tight font-sans">
+              {pendingCount}
+            </h3>
+          </div>
+          <div className="absolute bottom-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 to-yellow-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
         </div>
       </div>
 
@@ -1232,7 +1172,10 @@ const UserManagementPage: React.FC = () => {
                           {/* Dropdown Menu Trigger */}
                           <div className="relative">
                             <button
-                              onClick={() => setActiveMenuId(activeMenuId === user.id ? null : user.id)}
+                              onClick={() => {
+                                setActiveMenuId(activeMenuId === user.id ? null : user.id);
+                                setShowRoleSubMenu(false);
+                              }}
                               className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
                             >
                               <MoreVertical className="h-4 w-4" />
@@ -1241,29 +1184,59 @@ const UserManagementPage: React.FC = () => {
                             {/* Quick Edit Popup Context Menu */}
                             {activeMenuId === user.id && (
                               <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in duration-100">
-                                <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1">
-                                  Change Role
-                                </div>
-                                {(() => {
-                                  const options = [...availableRoles];
-                                  const displayRole = getDisplayRole(user.role, availableRoles);
-                                  if (displayRole && !options.includes(displayRole)) {
-                                    options.push(displayRole);
-                                  }
-                                  return options;
-                                })().map((role) => (
-                                  <button
-                                    key={role}
-                                    onClick={() => handleRoleChange(user.id, role as any)}
-                                    className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
-                                  >
-                                    {role}
-                                  </button>
-                                ))}
-
-                                <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
-                                  Quick Action
-                                </div>
+                                {showRoleSubMenu ? (
+                                  <>
+                                    <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1 flex justify-between items-center">
+                                      Select Role
+                                      <button onClick={() => setShowRoleSubMenu(false)} className="hover:text-slate-600 p-0.5 rounded transition-colors hover:bg-slate-100">
+                                        <ChevronLeft className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                    <div className="max-h-60 overflow-y-auto">
+                                      {(() => {
+                                        const options = [...availableRoles];
+                                        const displayRole = getDisplayRole(user.role, availableRoles);
+                                        if (displayRole && !options.includes(displayRole)) {
+                                          options.push(displayRole);
+                                        }
+                                        return options;
+                                      })().map((role) => (
+                                        <button
+                                          key={role}
+                                          onClick={() => handleRoleChange(user.id, role as any)}
+                                          className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
+                                        >
+                                          {role}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        setActiveMenuId(null);
+                                        setEditingUserId(user.id);
+                                        setFormName(user.name);
+                                        setFormEmail(user.email);
+                                        setFormRoleType(user.role || "Organizer");
+                                        setFormPhotoPreview(user.image || "");
+                                      }}
+                                      className="w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2"
+                                    >
+                                      <Edit2 className="h-3.5 w-3.5" />
+                                      Edit Profile
+                                    </button>
+                                    <button
+                                      onClick={() => setShowRoleSubMenu(true)}
+                                      className="w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center justify-between"
+                                    >
+                                      Change Role
+                                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                                    </button>
+                                    <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
+                                      Quick Action
+                                    </div>
                                 {user.status === "Active" ? (
                                   <button
                                     onClick={() => handleStatusChange(user.id, "Deactivated")}
@@ -1288,6 +1261,8 @@ const UserManagementPage: React.FC = () => {
                                   <Trash2 className="h-3.5 w-3.5" />
                                   Remove Member
                                 </button>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1440,6 +1415,7 @@ const UserManagementPage: React.FC = () => {
           </div>
         </div>
       )}
+
       {showDownloadRoleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
@@ -1499,7 +1475,10 @@ const UserManagementPage: React.FC = () => {
                   <tr>
                     <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 shadow-sm border-r border-slate-200 sticky left-0 z-20 w-10 text-center">#</th>
                     {gridColumns.map(col => (
-                      <th key={col} className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 shadow-sm">{col}</th>
+                      <th key={col} className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 shadow-sm">
+                        {col}
+                        {["Full Name", "Email Address", "Role Type"].includes(col) && <span className="text-red-500 ml-1">*</span>}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -1509,13 +1488,26 @@ const UserManagementPage: React.FC = () => {
                       <td className="px-4 py-2 text-slate-400 font-bold text-xs border-r border-slate-100 bg-white group-hover:bg-slate-50/50 sticky left-0 z-10 text-center">{rIndex + 1}</td>
                       {gridColumns.map(col => (
                         <td key={col} className="p-0 border-r border-slate-50 last:border-r-0 focus-within:ring-1 focus-within:ring-inset focus-within:ring-blue-500">
-                          <input
-                            type="text"
-                            value={row[col]}
-                            onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
-                            placeholder={col}
-                            className="w-full min-w-[150px] px-4 py-3 bg-transparent border-0 focus:outline-none text-slate-700 text-sm font-medium placeholder:text-slate-300"
-                          />
+                          {col === "Role Type" ? (
+                            <select
+                              value={row[col]}
+                              onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
+                              className="w-full min-w-[150px] px-4 py-3 bg-transparent border-0 focus:outline-none text-slate-700 text-sm font-medium"
+                            >
+                              <option value="" disabled>Select Role</option>
+                              {availableRoles.map(role => (
+                                <option key={role} value={role}>{role}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={row[col]}
+                              onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
+                              placeholder={col}
+                              className="w-full min-w-[150px] px-4 py-3 bg-transparent border-0 focus:outline-none text-slate-700 text-sm font-medium placeholder:text-slate-300"
+                            />
+                          )}
                         </td>
                       ))}
                     </tr>
@@ -1574,6 +1566,44 @@ const UserManagementPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Role Change Confirmation Modal */}
+      {roleConfirmState.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl text-center">
+            <div className="mx-auto w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mb-4 text-blue-600">
+              <Shield className="h-6 w-6" />
+            </div>
+            <h3 className="text-lg font-black text-slate-800 mb-2">Change Role?</h3>
+            <p className="text-sm text-slate-500 font-medium mb-6">
+              Are you sure you want to change this user's role to <span className="font-bold text-slate-800">{roleConfirmState.newRole}</span>?
+            </p>
+            <div className="flex gap-3">
+              <button 
+                type="button"
+                className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-2xl text-sm transition-all"
+                onClick={() => setRoleConfirmState({ isOpen: false, userId: "", newRole: "" })}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="flex-1 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-2xl text-sm shadow-md shadow-blue-600/10 hover:shadow-lg transition-all"
+                onClick={confirmRoleChange}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Team Graph Modal */}
+      <TeamGraphModal 
+        isOpen={showGraphModal} 
+        onClose={() => setShowGraphModal(false)} 
+        users={users} 
+      />
     </div>
   );
 };

@@ -41,8 +41,8 @@ export const StatsGrid: React.FC = () => {
         });
         setGalleryAssets(photosTotal || 142);
         setPhotosToday(todayCount || 0);
-      } catch (err) {
-        console.error("Error fetching stats:", err);
+      } catch (err: any) {
+        console.warn("[StatsGrid] Remote stats unavailable, using default metrics:", err?.message || err);
       }
     };
     fetchStats();

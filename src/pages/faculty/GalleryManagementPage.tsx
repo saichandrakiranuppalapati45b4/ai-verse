@@ -22,7 +22,11 @@ import {
   Info,
   Cloud,
   Settings as SettingsIcon,
-  Bell
+  Bell,
+  Link as LinkIcon,
+  ExternalLink,
+  Pencil,
+  AlertTriangle
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -73,6 +77,24 @@ const GalleryManagementPage: React.FC = () => {
       .reduce((sum, a) => sum + (a.photosCount || 0), 0);
   }, [albums]);
 
+  const resolveAlbumCover = (data: any) => {
+    if (data?.bannerImage && typeof data.bannerImage === "string" && data.bannerImage.trim() !== "") {
+      return data.bannerImage;
+    }
+    if (data?.coverImage && typeof data.coverImage === "string" && (data.coverImage.startsWith("data:") || data.coverImage.startsWith("http") || data.coverImage.startsWith("/"))) {
+      return data.coverImage;
+    }
+    if (data?.coverImage === "galleryCoding") return galleryCoding;
+    if (data?.coverImage === "gallerySymposium") return gallerySymposium;
+    if (data?.coverImage === "galleryCoworking") return galleryCoworking;
+    if (data?.coverImage === "galleryCollab") return galleryCollab;
+    if (data?.coverImage === "galleryVr") return galleryVr;
+    if (data?.category === "Hackathons") return galleryCoding;
+    if (data?.category === "Symposiums") return gallerySymposium;
+    if (data?.category === "Socials") return galleryCoworking;
+    return galleryLab;
+  };
+
   // Fetch albums from Firestore on mount
   useEffect(() => {
     const loadAlbums = async () => {
@@ -81,10 +103,6 @@ const GalleryManagementPage: React.FC = () => {
         const list: AlbumItem[] = [];
         querySnapshot.forEach((doc) => {
           const data = doc.data();
-          let cover = galleryLab;
-          if (data.coverImage === "galleryCoding" || data.category === "Hackathons") cover = galleryCoding;
-          else if (data.coverImage === "gallerySymposium" || data.category === "Symposiums") cover = gallerySymposium;
-          else if (data.coverImage === "galleryCoworking" || data.category === "Socials") cover = galleryCoworking;
 
           list.push({
             id: doc.id,
@@ -92,7 +110,7 @@ const GalleryManagementPage: React.FC = () => {
             photosCount: data.photosCount || 0,
             date: data.date || "",
             status: data.status || "Published",
-            coverImage: cover,
+            coverImage: resolveAlbumCover(data),
             category: data.category || "Workshops"
           });
         });
@@ -127,9 +145,14 @@ const GalleryManagementPage: React.FC = () => {
 
   // New Album Full Page View states
   const [showCreateAlbumView, setShowCreateAlbumView] = useState(false);
+  const [editingAlbumId, setEditingAlbumId] = useState<string | null>(null);
+  const [deleteConfirmAlbum, setDeleteConfirmAlbum] = useState<{ id: string; title: string } | null>(null);
+
   const [albumTitle, setAlbumTitle] = useState("");
   const [albumCategory, setAlbumCategory] = useState("Workshops");
   const [albumDescription, setAlbumDescription] = useState("");
+  const [driveLink, setDriveLink] = useState("");
+  const [bannerImage, setBannerImage] = useState("");
   const [isPublicVisible, setIsPublicVisible] = useState(true);
   const [isFeaturedOnHome, setIsFeaturedOnHome] = useState(false);
   const [isCommentsEnabled, setIsCommentsEnabled] = useState(true);
@@ -138,6 +161,18 @@ const GalleryManagementPage: React.FC = () => {
   const [selectedPhotos, setSelectedPhotos] = useState<{ name: string; size: string; preview: string }[]>([]);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const bannerInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleOpenEditAlbum = (album: AlbumItem) => {
+    setEditingAlbumId(album.id);
+    setAlbumTitle(album.title || "");
+    setAlbumCategory(album.category || "Workshops");
+    setAlbumDescription((album as any).description || "");
+    setDriveLink((album as any).driveLink || "");
+    setBannerImage(album.coverImage || (album as any).bannerImage || "");
+    setFormStatus(album.status);
+    setShowCreateAlbumView(true);
+  };
 
   const readAndAppendFiles = (files: File[]) => {
     files.forEach(file => {
@@ -233,9 +268,11 @@ const GalleryManagementPage: React.FC = () => {
       photosCount: selectedPhotos.length || 12,
       date: dateStr,
       status: status,
-      coverImage: coverName,
+      coverImage: bannerImage || coverName,
       category: albumCategory,
       description: albumDescription,
+      driveLink: driveLink,
+      bannerImage: bannerImage,
       isPublic: isPublicVisible,
       isFeatured: isFeaturedOnHome,
       allowComments: isCommentsEnabled,
@@ -247,24 +284,26 @@ const GalleryManagementPage: React.FC = () => {
     addToast("Saving album to Firestore...", "info");
 
     try {
-      await addDoc(collection(db, "albums"), payload);
+      if (editingAlbumId) {
+        await updateDoc(doc(db, "albums", editingAlbumId), payload);
+        addToast("Album updated successfully!", "success");
+      } else {
+        await addDoc(collection(db, "albums"), payload);
+        addToast("Album created successfully!", "success");
+      }
       
       const querySnapshot = await getDocs(collection(db, "albums"));
       const list: AlbumItem[] = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        let cov = galleryLab;
-        if (data.coverImage === "galleryCoding" || data.category === "Hackathons") cov = galleryCoding;
-        else if (data.coverImage === "gallerySymposium" || data.category === "Symposiums") cov = gallerySymposium;
-        else if (data.coverImage === "galleryCoworking" || data.category === "Socials") cov = galleryCoworking;
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
 
         list.push({
-          id: doc.id,
+          id: docSnap.id,
           title: data.title || "",
           photosCount: data.photosCount || 0,
           date: data.date || "",
           status: data.status || "Published",
-          coverImage: cov,
+          coverImage: resolveAlbumCover(data),
           category: data.category || "Workshops"
         });
       });
@@ -272,13 +311,14 @@ const GalleryManagementPage: React.FC = () => {
 
       setAlbumTitle("");
       setAlbumDescription("");
+      setDriveLink("");
+      setBannerImage("");
       setSelectedPhotos([]);
+      setEditingAlbumId(null);
       setShowCreateAlbumView(false);
-
-      addToast("Album created successfully!", "success");
     } catch (err) {
-      console.error("Error creating album:", err);
-      addToast("Failed to create album.", "warning");
+      console.error("Error saving album:", err);
+      addToast("Failed to save album.", "warning");
     }
   };
 
@@ -304,7 +344,7 @@ const GalleryManagementPage: React.FC = () => {
 
   // Toast trigger helper
   const addToast = (text: string, type: ToastMessage["type"] = "success") => {
-    const id = Date.now().toString();
+    const id = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     setToastQueue(prev => [...prev, { id, text, type }]);
     setTimeout(() => {
       setToastQueue(prev => prev.filter(t => t.id !== id));
@@ -447,19 +487,27 @@ const GalleryManagementPage: React.FC = () => {
     }
   };
 
-  // Delete album
-  const handleDeleteAlbum = async (id: string, title: string) => {
-    if (confirm(`Are you sure you want to delete the album "${title}"?`)) {
-      try {
-        const docRef = doc(db, "albums", id);
-        await deleteDoc(docRef);
+  // Trigger delete confirmation modal
+  const handleDeleteAlbum = (id: string, title: string) => {
+    setDeleteConfirmAlbum({ id, title });
+  };
 
-        setAlbums(prev => prev.filter(alb => alb.id !== id));
-        addToast(`Album "${title}" deleted.`);
-      } catch (err) {
-        console.error("Error deleting album from Firestore:", err);
-        addToast("Failed to delete album from Firestore.", "warning");
-      }
+  // Confirm delete action
+  const confirmDeleteAlbum = async () => {
+    if (!deleteConfirmAlbum) return;
+    const { id, title } = deleteConfirmAlbum;
+
+    try {
+      const docRef = doc(db, "albums", id);
+      await deleteDoc(docRef);
+
+      setAlbums(prev => prev.filter(alb => alb.id !== id));
+      addToast(`Album "${title}" deleted from gallery directory.`, "success");
+    } catch (err) {
+      console.error("Error deleting album from Firestore:", err);
+      addToast("Failed to delete album from Firestore.", "warning");
+    } finally {
+      setDeleteConfirmAlbum(null);
     }
   };
 
@@ -615,85 +663,157 @@ const GalleryManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Card 2: Photo Upload dropzone */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)]">
+              {/* Card 2: Google Drive Link card */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
                 <div className="flex items-center justify-between pb-4 border-b border-slate-50">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-                      <Cloud className="h-4 w-4" />
+                      <LinkIcon className="h-4 w-4" />
                     </div>
-                    <h3 className="text-sm font-bold text-slate-800 tracking-tight">Photo Upload</h3>
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight">Google Drive Link</h3>
                   </div>
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border px-2 py-0.5 rounded-lg">
-                    Max: 25MB / Image
+                  <span className="text-[9px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-lg tracking-wider uppercase">
+                    Cloud Link
                   </span>
                 </div>
 
-                {/* Dropzone design */}
-                <div className="mt-5 space-y-4">
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={handleDrop}
-                    className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-3xl p-10 text-center cursor-pointer hover:bg-slate-50/50 transition-all duration-300 flex flex-col items-center justify-center space-y-4"
-                  >
-                    <div className="w-12 h-12 rounded-2xl bg-[#E6F9F0] text-[#10B981] flex items-center justify-center shadow-inner">
-                      <Upload className="h-5 w-5 stroke-[2.5]" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-extrabold text-slate-800 tracking-tight">Drag & drop photos here</h4>
-                      <p className="text-xs text-slate-400 font-semibold mt-1">
-                        or <span className="text-[#2563EB] hover:underline font-bold">browse files</span> from your secure workstation
-                      </p>
+                <div className="pt-1 space-y-4">
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
+                      Google Drive Folder or File Link
+                    </label>
+                    <div className="relative flex items-center">
+                      <ExternalLink className="absolute left-4 h-4 w-4 text-slate-400 pointer-events-none" />
+                      <input 
+                        type="url"
+                        placeholder="https://drive.google.com/drive/folders/1a2b3c4d5e6f7g8h9..."
+                        value={driveLink}
+                        onChange={(e) => setDriveLink(e.target.value)}
+                        className="w-full pl-11 pr-4 py-3 border border-slate-200 rounded-2xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-semibold text-slate-800 placeholder-slate-400 transition-all"
+                      />
                     </div>
                   </div>
 
-                  <input 
-                    type="file" 
-                    multiple
-                    accept="image/*"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-
-                  {/* Previews panel */}
-                  {selectedPhotos.length > 0 && (
-                    <div className="space-y-3 pt-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-600">{selectedPhotos.length} photos selected</span>
-                        <button 
-                          onClick={() => setSelectedPhotos([])}
-                          className="text-xs font-bold text-red-500 hover:underline"
-                        >
-                          Clear All
-                        </button>
+                  {/* Status Banner / Sharing Guidance */}
+                  {driveLink ? (
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/50 flex items-center justify-between gap-3 text-emerald-800 text-xs font-semibold">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                        <span className="truncate">Google Drive link attached successfully</span>
                       </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-56 overflow-y-auto pr-1">
-                        {selectedPhotos.map((photo, index) => (
-                          <div key={index} className="group relative h-20 bg-slate-50 border rounded-xl overflow-hidden shadow-sm">
-                            <img src={photo.preview} className="w-full h-full object-cover" alt="" />
-                            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-all p-1.5 flex flex-col justify-between text-left">
-                              <span className="text-[9px] text-white font-medium truncate block">{photo.name}</span>
-                              <div className="flex items-center justify-between">
-                                <span className="text-[8px] text-white/70 font-bold">{photo.size}</span>
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedPhotos(prev => prev.filter((_, idx) => idx !== index));
-                                  }}
-                                  className="w-4 h-4 rounded bg-red-500 hover:bg-red-600 text-white flex items-center justify-center"
-                                >
-                                  <X className="h-2.5 w-2.5" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
+                      <a 
+                        href={driveLink} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-[10px] font-extrabold underline text-emerald-700 hover:text-emerald-900 shrink-0"
+                      >
+                        Test Link
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100/80 flex items-start gap-3 text-slate-500 text-xs font-medium">
+                      <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="font-semibold text-slate-700">How to share your Google Drive link:</p>
+                        <ol className="list-decimal list-inside text-[11px] space-y-0.5 text-slate-500 font-normal">
+                          <li>Open your folder in Google Drive and click <strong>Share</strong>.</li>
+                          <li>Set general access permission to <strong>"Anyone with the link"</strong>.</li>
+                          <li>Copy the link and paste it into the input field above.</li>
+                        </ol>
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Card 3: Upload Event Banner card */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-50">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                      <ImageIcon className="h-4 w-4" />
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight">Upload Event Banner</h3>
+                  </div>
+                  <span className="text-[9px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-lg tracking-wider uppercase">
+                    Cover Banner
+                  </span>
+                </div>
+
+                <div className="pt-1 space-y-4">
+                  {bannerImage ? (
+                    <div className="relative group rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50">
+                      <img 
+                        src={bannerImage} 
+                        alt="Event Banner Preview" 
+                        className="w-full h-44 object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity p-4 flex items-center justify-center gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => bannerInputRef.current?.click()}
+                          className="px-3.5 py-2 bg-white text-slate-800 rounded-xl text-xs font-bold shadow-md hover:bg-slate-50 transition-all flex items-center gap-1.5"
+                        >
+                          <Upload className="h-3.5 w-3.5 text-blue-600" />
+                          Change Banner
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => setBannerImage("")}
+                          className="px-3.5 py-2 bg-red-600 text-white rounded-xl text-xs font-bold shadow-md hover:bg-red-700 transition-all flex items-center gap-1.5"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={() => bannerInputRef.current?.click()}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                          const file = e.dataTransfer.files[0];
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setBannerImage(reader.result as string);
+                            addToast("Event banner uploaded successfully!", "success");
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="border-2 border-dashed border-slate-200 hover:border-emerald-500 rounded-2xl p-8 text-center cursor-pointer hover:bg-emerald-50/30 transition-all duration-300 flex flex-col items-center justify-center space-y-3"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-[#E6F9F0] text-[#10B981] flex items-center justify-center shadow-inner">
+                        <Upload className="h-5 w-5 stroke-[2.5]" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-800 tracking-tight">Drag & drop event banner here</h4>
+                        <p className="text-xs text-slate-400 font-semibold mt-1">
+                          or <span className="text-[#10B981] hover:underline font-bold">browse files</span> (PNG, JPG, WEBP recommended)
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    ref={bannerInputRef}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        const file = e.target.files[0];
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setBannerImage(reader.result as string);
+                          addToast("Event banner uploaded successfully!", "success");
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="hidden"
+                  />
                 </div>
               </div>
             </div>
@@ -1089,20 +1209,36 @@ const GalleryManagementPage: React.FC = () => {
                       >
                         Set to {album.status === "Published" ? "Draft" : "Publish"}
                       </button>
-                      <button 
-                        onClick={() => handleDeleteAlbum(album.id, album.title)}
-                        className="text-slate-400 hover:text-red-600 transition-colors p-1"
-                        title="Delete Album"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => handleOpenEditAlbum(album)}
+                          className="text-slate-400 hover:text-blue-600 transition-colors p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
+                          title="Edit Album"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteAlbum(album.id, album.title)}
+                          className="text-slate-400 hover:text-red-600 transition-colors p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-slate-200"
+                          title="Delete Album"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
 
                 {/* Dotted "Create New Album" card */}
                 <div 
-                  onClick={() => setShowCreateAlbumView(true)}
+                  onClick={() => {
+                    setEditingAlbumId(null);
+                    setAlbumTitle("");
+                    setAlbumDescription("");
+                    setDriveLink("");
+                    setBannerImage("");
+                    setShowCreateAlbumView(true);
+                  }}
                   className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-card flex flex-col items-center justify-center p-8 cursor-pointer hover:bg-slate-50/50 transition-all duration-300 min-h-[300px]"
                 >
                   <div className="p-4 bg-slate-100 rounded-full group-hover:bg-blue-50 text-slate-400 group-hover:text-blue-500 transition-colors">
@@ -1157,16 +1293,24 @@ const GalleryManagementPage: React.FC = () => {
                         <td className="py-4 text-sm font-semibold text-slate-600">{album.photosCount} Photos</td>
                         <td className="py-4 text-sm font-semibold text-slate-500">{album.date}</td>
                         <td className="py-4 text-right pr-4">
-                          <div className="flex items-center justify-end gap-3">
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => toggleAlbumStatus(album.id)}
-                              className="text-xs font-bold text-blue-600 hover:underline"
+                              className="text-xs font-bold text-blue-600 hover:underline mr-2"
                             >
                               Toggle
                             </button>
                             <button
+                              onClick={() => handleOpenEditAlbum(album)}
+                              className="text-slate-400 hover:text-blue-600 p-1.5 hover:bg-slate-100 rounded-lg"
+                              title="Edit Album"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
                               onClick={() => handleDeleteAlbum(album.id, album.title)}
-                              className="text-slate-400 hover:text-red-500 p-1"
+                              className="text-slate-400 hover:text-red-500 p-1.5 hover:bg-slate-100 rounded-lg"
+                              title="Delete Album"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -1482,6 +1626,46 @@ const GalleryManagementPage: React.FC = () => {
               >
                 Approve & Save Tags
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmAlbum && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" 
+            onClick={() => setDeleteConfirmAlbum(null)}
+          ></div>
+          
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-sm w-full relative z-10 p-6 sm:p-7 text-center animate-in fade-in zoom-in-95 duration-200 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto shadow-inner">
+              <AlertTriangle className="h-6 w-6 stroke-[2.2]" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-base font-extrabold text-slate-800 tracking-tight">Delete Gallery Album?</h3>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                Are you sure you want to delete <span className="font-bold text-slate-700">"{deleteConfirmAlbum.title}"</span> from the gallery directory? This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmAlbum(null)}
+                className="w-full py-2.5 px-4 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteAlbum}
+                className="w-full py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-red-600/20"
+              >
+                Delete Album
+              </button>
             </div>
           </div>
         </div>

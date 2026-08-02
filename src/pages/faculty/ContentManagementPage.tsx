@@ -95,7 +95,7 @@ const ContentManagementPage: React.FC = () => {
     if (!newTitle) return;
 
     const newAnn: Announcement = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       title: newTitle,
       dateText: "Just now",
       status: newStatus,
@@ -130,7 +130,7 @@ const ContentManagementPage: React.FC = () => {
     if (!newSectionName) return;
 
     const newSec: WebSection = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       name: newSectionName,
       lastUpdated: "Just now"
     };

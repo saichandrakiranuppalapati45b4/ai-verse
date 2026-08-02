@@ -24,7 +24,6 @@ import OrgEventsPage from "../pages/organizer/OrgEventsPage";
 import OrgAttendancePage from "../pages/organizer/OrgAttendancePage";
 import FacDashboardPage from "../pages/faculty/FacDashboardPage";
 import UserManagementPage from "../pages/faculty/UserManagementPage";
-import OrganizerManagementPage from "../pages/faculty/OrganizerManagementPage";
 import EventManagementPage from "../pages/faculty/EventManagementPage";
 import GalleryManagementPage from "../pages/faculty/GalleryManagementPage";
 import SettingsPage from "../pages/faculty/SettingsPage";
@@ -83,12 +82,33 @@ const AppRoutes: React.FC = () => {
         <Route path="dashboard" element={<FacDashboardPage />} />
         <Route path="events" element={<EventManagementPage />} />
         <Route path="registrations" element={<RegistrationsManagementPage />} />
-        <Route path="team" element={<OrganizerManagementPage />} />
-        <Route path="users" element={<UserManagementPage />} />
+        <Route path="team" element={<Navigate to="/faculty/dashboard" replace />} />
+        <Route 
+          path="users" 
+          element={
+            <ProtectedRoute disallowEmails={["facultycoordinator@aiverse.in"]}>
+              <UserManagementPage />
+            </ProtectedRoute>
+          } 
+        />
         <Route path="attendance" element={<AttendanceManagementPage />} />
         <Route path="analytics" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Analytics</h2><p className="text-sm text-slate-500">Detailed overview of attendance trends.</p></div>} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="gallery" element={<GalleryManagementPage />} />
+        <Route 
+          path="settings" 
+          element={
+            <ProtectedRoute disallowEmails={["facultycoordinator@aiverse.in"]}>
+              <SettingsPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="gallery" 
+          element={
+            <ProtectedRoute disallowEmails={["facultycoordinator@aiverse.in"]}>
+              <GalleryManagementPage />
+            </ProtectedRoute>
+          } 
+        />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

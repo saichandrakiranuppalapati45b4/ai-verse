@@ -10,7 +10,8 @@ import {
   User,
   Users as UsersIcon,
   X,
-  RefreshCw
+  RefreshCw,
+  Download
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
@@ -24,6 +25,10 @@ interface RegistrationItem {
   teamLeadName: string;
   teamLeadEmail: string;
   teamLeadStudentId: string;
+  phoneNumber: string;
+  branch: string;
+  section: string;
+  year: string;
   teamSize: number;
   members: Array<{ name: string; email: string; studentId: string; role?: string }>;
   status?: "Confirmed" | "Pending" | "Waitlisted";
@@ -46,6 +51,143 @@ const RegistrationsManagementPage: React.FC = () => {
   const longPressTimer = useRef<any>(null);
   const isLongPressActive = useRef(false);
   const [deleteModeOption, setDeleteModeOption] = useState<"single" | "group" | "event">("single");
+  const [selectedRegIds, setSelectedRegIds] = useState<string[]>([]);
+  const [isDeleteSelectionMode, setIsDeleteSelectionMode] = useState(false);
+
+  // Export Modal State
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportSelectedEvent, setExportSelectedEvent] = useState("All");
+
+  const handleExportCsv = () => {
+    const targetRegs = exportSelectedEvent === "All"
+      ? registrations
+      : registrations.filter(r => r.eventTitle === exportSelectedEvent);
+
+    if (targetRegs.length === 0) {
+      alert("No registrations available for the selected event.");
+      return;
+    }
+
+    const headers = [
+      "Event Title",
+      "Registration Type",
+      "Student / Lead Name",
+      "Roll Number / Student ID",
+      "Email Address",
+      "Phone Number",
+      "Branch",
+      "Section",
+      "Year",
+      "Team Size",
+      "Status",
+      "Registration Date"
+    ];
+
+    const rows: string[] = [];
+
+    targetRegs.forEach((reg) => {
+      const regType = reg.groupName && reg.groupName !== "Individual RSVP" ? "Group" : "Individual";
+      const regDate = new Date(reg.createdAt).toLocaleDateString("en-US");
+      const status = reg.status || "Confirmed";
+
+      if (reg.members && reg.members.length > 0) {
+        reg.members.forEach((m) => {
+          const row = [
+            `"${(reg.eventTitle || "").replace(/"/g, '""')}"`,
+            `"${regType}"`,
+            `"${(m.name || reg.teamLeadName || "").replace(/"/g, '""')}"`,
+            `"${(m.studentId || reg.teamLeadStudentId || "").replace(/"/g, '""')}"`,
+            `"${(m.email || reg.teamLeadEmail || "").replace(/"/g, '""')}"`,
+            `"${((m as any).phoneNumber || reg.phoneNumber || "").replace(/"/g, '""')}"`,
+            `"${((m as any).branch || reg.branch || "").replace(/"/g, '""')}"`,
+            `"${((m as any).section || reg.section || "").replace(/"/g, '""')}"`,
+            `"${((m as any).year || reg.year || "").replace(/"/g, '""')}"`,
+            reg.teamSize || 1,
+            `"${status}"`,
+            `"${regDate}"`
+          ];
+          rows.push(row.join(","));
+        });
+      } else {
+        const row = [
+          `"${(reg.eventTitle || "").replace(/"/g, '""')}"`,
+          `"${regType}"`,
+          `"${(reg.teamLeadName || "").replace(/"/g, '""')}"`,
+          `"${(reg.teamLeadStudentId || "").replace(/"/g, '""')}"`,
+          `"${(reg.teamLeadEmail || "").replace(/"/g, '""')}"`,
+          `"${(reg.phoneNumber || "").replace(/"/g, '""')}"`,
+          `"${(reg.branch || "").replace(/"/g, '""')}"`,
+          `"${(reg.section || "").replace(/"/g, '""')}"`,
+          `"${(reg.year || "").replace(/"/g, '""')}"`,
+          reg.teamSize || 1,
+          `"${status}"`,
+          `"${regDate}"`
+        ];
+        rows.push(row.join(","));
+      }
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    const filename = exportSelectedEvent === "All"
+      ? "all_event_registrations.csv"
+      : `${exportSelectedEvent.toLowerCase().replace(/[^a-z0-9]/g, "_")}_registrations.csv`;
+
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setIsExportModalOpen(false);
+  };
+
+  const toggleSelectReg = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedRegIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedRegIds.length === filteredRegistrations.length && filteredRegistrations.length > 0) {
+      setSelectedRegIds([]);
+    } else {
+      setSelectedRegIds(filteredRegistrations.map(r => r.id));
+    }
+  };
+
+  const handleBulkDeleteRegistrations = async () => {
+    if (selectedRegIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedRegIds.length} selected registration(s)?`)) return;
+
+    try {
+      setLoading(true);
+      const selectedRegs = registrations.filter(r => selectedRegIds.includes(r.id));
+      
+      for (const reg of selectedRegs) {
+        await deleteDoc(doc(db, "registrations", reg.id));
+        try {
+          await updateDoc(doc(db, "events", reg.eventId), {
+            currentReg: increment(-reg.teamSize)
+          });
+        } catch (e) {
+          console.error("Error updating event counter:", e);
+        }
+      }
+
+      setRegistrations(prev => prev.filter(r => !selectedRegIds.includes(r.id)));
+      setSelectedRegIds([]);
+      setIsDeleteSelectionMode(false);
+      alert(`Successfully deleted ${selectedRegs.length} registration(s).`);
+    } catch (err) {
+      console.error("Error bulk deleting registrations:", err);
+      alert("Failed to delete selected registrations.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDeleteGroupRegistrations = async (groupName: string) => {
     if (!groupName || groupName === "Individual RSVP") return;
@@ -103,9 +245,13 @@ const RegistrationsManagementPage: React.FC = () => {
           eventId: data.eventId || "",
           eventTitle: data.eventTitle || "Unknown Event",
           groupName: data.groupName || "Individual RSVP",
-          teamLeadName: data.teamLeadName || "",
+          teamLeadName: data.teamLeadName || "Student Registrant",
           teamLeadEmail: data.teamLeadEmail || "",
           teamLeadStudentId: data.teamLeadStudentId || "",
+          phoneNumber: data.phoneNumber || "",
+          branch: data.branch || "",
+          section: data.section || "",
+          year: data.year || "",
           teamSize: data.teamSize || 1,
           members: data.members || [],
           status: data.status || "Confirmed",
@@ -192,10 +338,10 @@ const RegistrationsManagementPage: React.FC = () => {
   const filteredRegistrations = useMemo(() => {
     return registrations.filter(r => {
       const matchesSearch = 
-        r.teamLeadName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.groupName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.teamLeadStudentId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.eventTitle.toLowerCase().includes(searchQuery.toLowerCase());
+        (r.teamLeadName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (r.groupName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (r.teamLeadStudentId || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (r.eventTitle || "").toLowerCase().includes(searchQuery.toLowerCase());
       
       const matchesEvent = selectedEvent === "All" || r.eventTitle === selectedEvent;
       
@@ -380,12 +526,49 @@ const RegistrationsManagementPage: React.FC = () => {
               </button>
 
               <button
-                onClick={() => alert("Exporting spreadsheet reports...")}
+                onClick={() => setIsExportModalOpen(true)}
                 className="flex items-center gap-1.5 justify-center px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl text-xs shadow-sm hover:shadow transition-all whitespace-nowrap"
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" />
                 Export Data
               </button>
+
+              {!isDeleteSelectionMode ? (
+                <button
+                  onClick={() => setIsDeleteSelectionMode(true)}
+                  disabled={loading || filteredRegistrations.length === 0}
+                  className="flex items-center gap-1.5 justify-center px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/60 font-bold rounded-xl text-xs shadow-sm hover:shadow transition-all whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Enable selection mode to delete registrations"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 animate-in fade-in duration-200">
+                  <button
+                    onClick={() => {
+                      setIsDeleteSelectionMode(false);
+                      setSelectedRegIds([]);
+                    }}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBulkDeleteRegistrations}
+                    disabled={selectedRegIds.length === 0 || loading}
+                    className={`flex items-center gap-1.5 justify-center px-4 py-2 font-bold rounded-xl text-xs shadow-sm transition-all whitespace-nowrap ${
+                      selectedRegIds.length > 0
+                        ? "bg-red-600 hover:bg-red-700 text-white cursor-pointer shadow-red-100"
+                        : "bg-red-200 text-white cursor-not-allowed"
+                    }`}
+                    title={selectedRegIds.length > 0 ? `Delete ${selectedRegIds.length} selected registration(s)` : "Select registrations using radio buttons below"}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Confirm Delete {selectedRegIds.length > 0 ? `(${selectedRegIds.length})` : ""}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -394,6 +577,17 @@ const RegistrationsManagementPage: React.FC = () => {
             <table className="w-full border-collapse text-left text-xs text-slate-600">
               <thead className="bg-slate-50/70 text-[9px] font-bold text-slate-400 tracking-wider uppercase border-b border-slate-100">
                 <tr>
+                  {isDeleteSelectionMode && (
+                    <th scope="col" className="px-4 py-4 w-10 text-center animate-in fade-in">
+                      <input
+                        type="checkbox"
+                        checked={filteredRegistrations.length > 0 && selectedRegIds.length === filteredRegistrations.length}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded-full border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer accent-red-600"
+                        title="Select / Deselect all"
+                      />
+                    </th>
+                  )}
                   <th scope="col" className="px-6 py-4">Participant / ID</th>
                   <th scope="col" className="px-6 py-4">Event Name</th>
                   <th scope="col" className="px-6 py-4">Type</th>
@@ -405,14 +599,14 @@ const RegistrationsManagementPage: React.FC = () => {
               <tbody className="divide-y divide-slate-100 text-slate-750">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center">
+                    <td colSpan={isDeleteSelectionMode ? 7 : 6} className="px-6 py-12 text-center">
                       <Loader2 className="h-6 w-6 text-blue-600 animate-spin mx-auto mb-2" />
                       <span className="text-slate-400 font-bold">Querying registration listings...</span>
                     </td>
                   </tr>
                 ) : filteredRegistrations.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-semibold">
+                    <td colSpan={isDeleteSelectionMode ? 7 : 6} className="px-6 py-12 text-center text-slate-400 font-semibold">
                       No registrations matched current search filters.
                     </td>
                   </tr>
@@ -420,17 +614,32 @@ const RegistrationsManagementPage: React.FC = () => {
                   filteredRegistrations.map((reg) => {
                     const isGroup = reg.groupName && reg.groupName !== "Individual RSVP";
                     const initial = reg.teamLeadName ? reg.teamLeadName.substring(0, 2).toUpperCase() : "US";
+                    const isSelected = selectedRegIds.includes(reg.id);
                     
                     return (
                       <tr 
                         key={reg.id} 
-                        className="hover:bg-slate-50/40 transition-colors cursor-pointer"
+                        className={`hover:bg-slate-50/40 transition-colors cursor-pointer ${isDeleteSelectionMode && isSelected ? "bg-red-50/30" : ""}`}
                         onClick={() => {
-                          setSelectedReg(reg);
-                          setEditForm(JSON.parse(JSON.stringify(reg)));
-                          setIsEditing(false);
+                          if (isDeleteSelectionMode) {
+                            toggleSelectReg(reg.id);
+                          } else {
+                            setSelectedReg(reg);
+                            setEditForm(JSON.parse(JSON.stringify(reg)));
+                            setIsEditing(false);
+                          }
                         }}
                       >
+                        {isDeleteSelectionMode && (
+                          <td className="px-4 py-4 text-center animate-in fade-in" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => toggleSelectReg(reg.id, e as any)}
+                              className="w-4 h-4 rounded-full border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer accent-red-600"
+                            />
+                          </td>
+                        )}
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-[10px] shrink-0">
@@ -889,6 +1098,71 @@ const RegistrationsManagementPage: React.FC = () => {
               )}
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* ================= EXPORT DATA MODAL ================= */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-3xl border border-slate-100 shadow-2xl overflow-hidden p-6 space-y-6 text-left">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold shadow-inner">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-850">Export Registration Records</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">Select an event to generate and download CSV data report.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsExportModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">Select Event</label>
+                <select
+                  value={exportSelectedEvent}
+                  onChange={(e) => setExportSelectedEvent(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-slate-50/30 focus:bg-white transition-all cursor-pointer"
+                >
+                  <option value="All">All Events (All Registrations)</option>
+                  {uniqueEvents.filter(ev => ev !== "All").map((ev, idx) => (
+                    <option key={idx} value={ev}>{ev}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/60 text-xs text-slate-600 space-y-1">
+                <span className="font-bold text-blue-700 block">Report Summary:</span>
+                <p>
+                  Will export {exportSelectedEvent === "All" ? registrations.length : registrations.filter(r => r.eventTitle === exportSelectedEvent).length} registration record(s) 
+                  for <span className="font-bold text-slate-800">{exportSelectedEvent}</span> into CSV spreadsheet format.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setIsExportModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExportCsv}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV Report
+              </button>
+            </div>
           </div>
         </div>
       )}

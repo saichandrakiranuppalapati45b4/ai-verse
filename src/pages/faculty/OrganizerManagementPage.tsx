@@ -203,7 +203,11 @@ const OrganizerManagementPage: React.FC = () => {
       const list: Organizer[] = [];
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        if (data.roleType === "Organizer" || data.roleType === "Student Lead" || data.roleType === "Faculty Coordinator" || data.roleType === "student Organizer") {
+        const roleTypeLower = (data.roleType || "").toLowerCase();
+        const emailLower = (data.email || "").toLowerCase().trim();
+        const isFaculty = roleTypeLower.includes("faculty") || emailLower.includes("faculty") || emailLower === "admin@aiverse.in";
+
+        if (!isFaculty) {
           const count = parseInt(data.events) || data.eventsCount || 4;
           
           let names: string[] = [];
@@ -222,8 +226,8 @@ const OrganizerManagementPage: React.FC = () => {
             eventsCount: count,
             eventNames: names,
             successRate: parseInt(data.success) || data.successRate || 92,
-            xp: data.xp || (data.roleType === "Faculty Coordinator" ? 2200 : 1500),
-            badge: data.badge || (data.roleType === "Faculty Coordinator" ? "FACULTY" : "ELITE"),
+            xp: data.xp || 1500,
+            badge: data.badge || "ELITE",
             image: data.image || "",
             username: data.username || data.email || "",
             tempPassword: data.tempPassword || ""
@@ -439,10 +443,14 @@ const OrganizerManagementPage: React.FC = () => {
   };
 
   const filteredSelectionUsers = useMemo(() => {
-    return allUsers.filter(u => 
-      (u.name || "").toLowerCase().includes(searchUserQuery.toLowerCase()) ||
-      (u.email || "").toLowerCase().includes(searchUserQuery.toLowerCase())
-    );
+    return allUsers.filter(u => {
+      const uRole = (u.role || u.roleType || "").toLowerCase();
+      const uEmail = (u.email || "").toLowerCase().trim();
+      const isFaculty = uRole.includes("faculty") || uEmail.includes("faculty") || uEmail === "admin@aiverse.in";
+      if (isFaculty) return false;
+      return (u.name || "").toLowerCase().includes(searchUserQuery.toLowerCase()) ||
+             (u.email || "").toLowerCase().includes(searchUserQuery.toLowerCase());
+    });
   }, [allUsers, searchUserQuery]);
 
   // Pagination states
@@ -489,7 +497,7 @@ const OrganizerManagementPage: React.FC = () => {
     }
 
     const newOrg: Organizer = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       name: newName,
       email: newEmail,
       eventsCount: Number(newEvents),
@@ -502,7 +510,7 @@ const OrganizerManagementPage: React.FC = () => {
 
     // Log achievement automatically
     const newAch: Achievement = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       time: "Just now",
       title: `${newName} joined as Organizer`,
       description: "Successfully onboarded to AI Verse.",
@@ -547,13 +555,6 @@ const OrganizerManagementPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowAddOrganizerForm(true)}
-          className="flex items-center gap-2 justify-center px-5 py-2.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-2xl shadow-md shadow-blue-600/10 hover:shadow-lg transition-all text-sm whitespace-nowrap self-start md:self-center"
-        >
-          <Plus className="h-4.5 w-4.5" />
-          Add New Organizer
-        </button>
       </div>
 
       {/* ================= METRICS CARDS (COMPACT THEME WITH LEFT COLOR BORDERS) ================= */}

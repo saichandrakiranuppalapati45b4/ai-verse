@@ -48,10 +48,12 @@ const TeamPage: React.FC = () => {
     fetchTeam();
   }, []);
 
+  const BLANK_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23CBD5E1'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
+
   const leaders: Leader[] = dbMembers.filter(m => m.roleType === "Faculty Coordinator" || m.roleType === "Student Lead").map(m => ({
     name: m.name,
     role: m.position || m.roleType,
-    image: m.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80",
+    image: m.image || BLANK_AVATAR,
     bio: m.bio || "Active contributor helping drive AIVerse excellence.",
     github: m.github || "",
     linkedin: m.linkedin || "",
@@ -61,7 +63,7 @@ const TeamPage: React.FC = () => {
   const organizers: Member[] = dbMembers.filter(m => m.roleType === "Organizer").map(m => ({
     name: m.name,
     role: m.position || "Organizer",
-    image: m.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80",
+    image: m.image || BLANK_AVATAR,
     pills: [m.position ? m.position.toUpperCase() : "ORGANIZER"]
   }));
 
@@ -139,7 +141,7 @@ const TeamPage: React.FC = () => {
         </div>
 
         {/* Leadership Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="flex overflow-x-auto gap-8 pb-8 snap-x snap-mandatory">
           {leaders.map((leader, idx) => (
             <motion.div
               key={idx}
@@ -147,7 +149,7 @@ const TeamPage: React.FC = () => {
               initial="hidden"
               whileInView="visible"
               viewport={{ once: true, margin: "-50px" }}
-              className="bg-white rounded-card shadow-sm border border-slate-100 p-5 sm:p-6 flex flex-col sm:flex-row gap-6 items-center text-left hover:shadow-card transition-all duration-300"
+              className="bg-white rounded-card shadow-sm border border-slate-100 p-5 sm:p-6 flex flex-col sm:flex-row gap-6 items-center text-left hover:shadow-card transition-all duration-300 min-w-[340px] sm:min-w-[480px] snap-center shrink-0"
             >
               {/* Leader Photo */}
               <div className="w-full sm:w-36 aspect-[4/5] rounded-xl overflow-hidden shrink-0 bg-slate-50 relative">
@@ -219,19 +221,19 @@ const TeamPage: React.FC = () => {
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, margin: "-50px" }}
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6"
+            className="flex overflow-x-auto gap-6 pb-8 snap-x snap-mandatory"
           >
             {organizers.map((member, idx) => (
               <motion.div
                 key={idx}
                 variants={fadeInUp}
-                className="bg-white rounded-card shadow-sm border border-slate-100 p-5 text-center flex flex-col items-center justify-between hover:shadow-card hover:-translate-y-1 transition-all duration-300"
+                className="bg-white rounded-card shadow-sm border border-slate-100 p-5 text-center flex flex-col items-center justify-between hover:shadow-card hover:-translate-y-1 transition-all duration-300 min-w-[240px] sm:min-w-[280px] snap-center shrink-0"
               >
                 <div className="space-y-4">
                   {/* Round Avatar */}
                   <div className="w-16 h-16 rounded-full overflow-hidden border border-slate-100 shadow-inner bg-slate-50 mx-auto">
                     <img 
-                      src={member.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80"} 
+                      src={member.image || BLANK_AVATAR} 
                       alt={member.name} 
                       className="w-full h-full object-cover" 
                     />
@@ -283,7 +285,7 @@ const TeamPage: React.FC = () => {
                   {/* Round Avatar */}
                   <div className="w-16 h-16 rounded-full overflow-hidden border border-slate-100 shadow-inner bg-slate-50 mx-auto">
                     <img 
-                      src={member.image || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&h=256&q=80"} 
+                      src={member.image || BLANK_AVATAR} 
                       alt={member.name} 
                       className="w-full h-full object-cover" 
                     />

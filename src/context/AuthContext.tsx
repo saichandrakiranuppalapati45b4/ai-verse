@@ -8,6 +8,12 @@ import {
 import { doc, setDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 
+export const ALLOWED_EMAILS = [
+  "admin@aiverse.in",
+  "facultycoordinator@aiverse.in",
+  "studentorganizer@aiverse.in"
+];
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -45,52 +51,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (firebaseUser) {
+        const userEmail = firebaseUser.email?.toLowerCase().trim() || "";
+        
+        // Strict restriction: Only allow the 3 authorized emails
+        if (!ALLOWED_EMAILS.includes(userEmail)) {
+          console.warn(`[AuthContext] Denying access to unauthorized user: ${userEmail}`);
+          await signOut(auth);
+          setUser(null);
+          localStorage.removeItem("aether_mock_user");
+          setLoading(false);
+          return;
+        }
+
         const userDocRef = doc(db, "users", firebaseUser.uid);
         
+        let forcedRole: "faculty" | "organizer" | "member" = "faculty";
+        let forcedDisplayRole = "Super Admin";
+        let defaultName = "System Admin";
+        
+        if (userEmail === "admin@aiverse.in") {
+          forcedRole = "faculty";
+          forcedDisplayRole = "Super Admin";
+          defaultName = "System Admin";
+        } else if (userEmail === "facultycoordinator@aiverse.in") {
+          forcedRole = "faculty";
+          forcedDisplayRole = "Faculty Coordinator";
+          defaultName = "Faculty Coordinator";
+        } else if (userEmail === "studentorganizer@aiverse.in") {
+          forcedRole = "organizer";
+          forcedDisplayRole = "Student Organizer";
+          defaultName = "Student Organizer";
+        }
+
+        const fallbackProfile: UserProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || "",
+          name: firebaseUser.displayName || defaultName,
+          role: forcedRole,
+          displayRole: forcedDisplayRole
+        };
+
         // Setup real-time listener for user profile changes
         unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const profileData = docSnap.data();
-            const rawRole = profileData.role || "member";
-            const normalizedRole = 
-              rawRole.toLowerCase().includes("faculty") || rawRole.toLowerCase().includes("advisor") || rawRole.toLowerCase().includes("coordinator") || rawRole.toLowerCase().includes("admin") || rawRole.toLowerCase().includes("super") ? "faculty" as const :
-              rawRole.toLowerCase().includes("organizer") || rawRole.toLowerCase().includes("lead") || rawRole.toLowerCase().includes("head") ? "organizer" as const :
-              "member" as const;
-
             setUser({
               uid: firebaseUser.uid,
               email: firebaseUser.email || "",
-              name: profileData.name || "Aether Member",
-              role: normalizedRole,
-              displayRole: profileData.role || (normalizedRole === "faculty" ? "Faculty Advisor" : "Organizer"),
+              name: profileData.displayName || profileData.name || defaultName,
+              role: forcedRole,
+              displayRole: profileData.role || forcedDisplayRole,
               image: profileData.image || "",
               year: profileData.year
             });
           } else {
-            // Write a default profile document for them as a member in Firestore
+            setUser(fallbackProfile);
+            // Write a default profile document for them in Firestore asynchronously
             const defaultProfile = {
-              name: firebaseUser.displayName || "Aether Member",
+              name: firebaseUser.displayName || defaultName,
               email: firebaseUser.email || "",
-              role: "member" as const
+              role: forcedDisplayRole,
+              status: "Active"
             };
-            setDoc(userDocRef, defaultProfile).then(() => {
-              setUser({
-                uid: firebaseUser.uid,
-                ...defaultProfile
-              });
+            setDoc(userDocRef, defaultProfile).catch((err) => {
+              console.error("[AuthContext] Error creating default profile document:", err);
             });
           }
           setLoading(false);
         }, (error) => {
-          console.error("[AuthContext] Error in onSnapshot listener:", error);
+          console.warn("[AuthContext] Firestore sync unavailable, using default profile:", error?.message || error);
+          setUser(fallbackProfile);
           setLoading(false);
         });
 
       } else {
         // If not authenticated via Firebase, check local mock session
-        const savedUser = localStorage.getItem("aether_mock_user");
-        if (savedUser) {
-          setUser(JSON.parse(savedUser));
+        const savedUserStr = localStorage.getItem("aether_mock_user");
+        if (savedUserStr) {
+          try {
+            const savedUser = JSON.parse(savedUserStr);
+            if (savedUser && savedUser.email && ALLOWED_EMAILS.includes(savedUser.email.toLowerCase().trim())) {
+              setUser(savedUser);
+            } else {
+              localStorage.removeItem("aether_mock_user");
+              setUser(null);
+            }
+          } catch (e) {
+            localStorage.removeItem("aether_mock_user");
+            setUser(null);
+          }
         } else {
           setUser(null);
         }
@@ -106,17 +155,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, roleOrPassword: string) => {
     setLoading(true);
+    const cleanEmail = email.toLowerCase().trim();
+    
+    if (!ALLOWED_EMAILS.includes(cleanEmail)) {
+      setLoading(false);
+      throw new Error("Access restricted: Only authorized accounts (admin@aiverse.in, facultycoordinator@aiverse.in, studentorganizer@aiverse.in) are permitted to sign in.");
+    }
+
     try {
       const isMockRole = ["faculty", "organizer", "member"].includes(roleOrPassword);
       if (isMockRole) {
-        // Developer Quick Login
-        const role = roleOrPassword as "faculty" | "organizer" | "member";
+        // Developer Quick Login for testing
+        let role: "faculty" | "organizer" | "member" = "faculty";
+        let displayRole = "Super Admin";
+        let name = "System Admin";
+
+        if (cleanEmail === "facultycoordinator@aiverse.in") {
+          role = "faculty";
+          displayRole = "Faculty Coordinator";
+          name = "Faculty Coordinator";
+        } else if (cleanEmail === "studentorganizer@aiverse.in") {
+          role = "organizer";
+          displayRole = "Student Organizer";
+          name = "Student Organizer";
+        }
+
         const mockUser: UserProfile = {
-          uid: `mock-uid-${role}`,
-          email,
-          name: role === "faculty" ? "Dr. Sarah Jenkins" : role === "organizer" ? "Alex Rivera" : "Jordan Lee",
+          uid: `mock-uid-${cleanEmail}`,
+          email: cleanEmail,
+          name,
           role,
-          year: role === "member" ? "3rd Year" : undefined,
+          displayRole,
         };
         setUser(mockUser);
         localStorage.setItem("aether_mock_user", JSON.stringify(mockUser));
@@ -126,9 +195,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await signInWithEmailAndPassword(auth, email, roleOrPassword);
         // Clear any old mock sessions
         localStorage.removeItem("aether_mock_user");
-        // NOTE: Do NOT set loading=false here — onAuthStateChanged will handle it
-        // after the Firestore user profile snapshot arrives. This prevents the
-        // ProtectedRoute from seeing loading=false + user=null and redirecting to /404.
       }
     } catch (error) {
       console.error("Login failed:", error);
@@ -139,6 +205,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (email: string, passwordOrRole: string, name: string, role: "faculty" | "organizer" | "member") => {
     setLoading(true);
+    const cleanEmail = email.toLowerCase().trim();
+
+    if (!ALLOWED_EMAILS.includes(cleanEmail)) {
+      setLoading(false);
+      throw new Error("Access restricted: Only authorized accounts (admin@aiverse.in, facultycoordinator@aiverse.in, studentorganizer@aiverse.in) are permitted to register.");
+    }
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, passwordOrRole);
       const userDocRef = doc(db, "users", userCredential.user.uid);
@@ -148,7 +221,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role
       };
       await setDoc(userDocRef, profile);
-      // Clear mock session
       localStorage.removeItem("aether_mock_user");
     } catch (error) {
       console.error("Registration failed:", error);
@@ -177,11 +249,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem("aether_mock_user");
       signOut(auth).catch(() => {});
     } else {
+      const email = role === "organizer" ? "studentorganizer@aiverse.in" : "admin@aiverse.in";
       const updatedUser: UserProfile = {
-        uid: `mock-uid-${role}`,
-        email: `${role}@aetheric.ai`,
-        name: role === "faculty" ? "Dr. Sarah Jenkins" : role === "organizer" ? "Alex Rivera" : "Jordan Lee",
-        role,
+        uid: `mock-uid-${email}`,
+        email,
+        name: role === "organizer" ? "Student Organizer" : "System Admin",
+        role: role === "organizer" ? "organizer" : "faculty",
+        displayRole: role === "organizer" ? "Student Organizer" : "Super Admin"
       };
       setUser(updatedUser);
       localStorage.setItem("aether_mock_user", JSON.stringify(updatedUser));

@@ -32,7 +32,7 @@ const DashboardLayout: React.FC = () => {
     navigate("/login");
   };
 
-  const menuItems = user.role === "organizer" ? [
+  let menuItems = user.role === "organizer" ? [
     { path: "/organizer/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/organizer/events", label: "My Events", icon: Calendar },
     { path: "/organizer/attendance", label: "Attendance", icon: ClipboardCheck },
@@ -40,12 +40,19 @@ const DashboardLayout: React.FC = () => {
     { path: "/faculty/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/faculty/attendance", label: "Attendance", icon: ClipboardCheck },
     { path: "/faculty/users", label: "User Management", icon: Users },
-    { path: "/faculty/team", label: "Organizers", icon: ClipboardList },
     { path: "/faculty/events", label: "Events", icon: Calendar },
     { path: "/faculty/registrations", label: "Registrations", icon: ClipboardList },
     { path: "/faculty/gallery", label: "Gallery", icon: Image },
     { path: "/faculty/settings", label: "Settings", icon: Settings },
   ];
+
+  if (user.email?.toLowerCase().trim() === "facultycoordinator@aiverse.in") {
+    menuItems = menuItems.filter(item => 
+      item.path !== "/faculty/gallery" && 
+      item.path !== "/faculty/settings" && 
+      item.path !== "/faculty/users"
+    );
+  }
 
   return (
     <div className="h-screen bg-slate-50 flex font-sans overflow-hidden">

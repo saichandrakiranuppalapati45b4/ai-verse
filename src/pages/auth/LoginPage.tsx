@@ -21,81 +21,43 @@ const LoginPage: React.FC = () => {
 
   const navigate = useNavigate();
 
-  const handleRoleQuickLogin = async (role: "faculty" | "organizer" | "member") => {
-    setIsLoading(true);
-    setError("");
-    try {
-      await login(`${role}@aetheric.ai`, role);
-      if (role === "faculty") navigate("/faculty/dashboard");
-      else if (role === "organizer") navigate("/organizer/dashboard");
-      else navigate("/");
-    } catch (err) {
-      setError("Failed to login. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const ALLOWED_ACCOUNTS = [
+    { email: "admin@aiverse.in", label: "Full Admin", role: "faculty", target: "/faculty/dashboard" },
+    { email: "facultycoordinator@aiverse.in", label: "Faculty Coordinator", role: "faculty", target: "/faculty/dashboard" },
+    { email: "studentorganizer@aiverse.in", label: "Student Organizer", role: "organizer", target: "/organizer/dashboard" },
+  ];
 
-  const handleMockFormSubmit = async (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
-      setError("Please enter email");
+      setError("Please enter email address");
       return;
     }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const matchedAccount = ALLOWED_ACCOUNTS.find(acc => acc.email === cleanEmail);
+
+    if (!matchedAccount) {
+      setError("Access restricted: Only authorized accounts (admin@aiverse.in, facultycoordinator@aiverse.in, studentorganizer@aiverse.in) are permitted to sign in.");
+      return;
+    }
+
     setIsLoading(true);
     setError("");
+
     try {
       if (password) {
         // Real Firebase Authentication login
-        await login(email, password);
-        // Check if it was a mock login (where the password is a role name)
-        const isMockRole = ["faculty", "organizer", "member"].includes(password);
-        if (isMockRole) {
-          if (password === "faculty") navigate("/faculty/dashboard");
-          else if (password === "organizer") navigate("/organizer/dashboard");
-          else navigate("/");
-          return;
-        }
-
-        // Real Firebase login redirect based on database role
-        const firebaseUser = auth.currentUser;
-        if (firebaseUser) {
-          try {
-            const userDocSnap = await getDoc(doc(db, "users", firebaseUser.uid));
-            if (userDocSnap.exists()) {
-              const rawRole = userDocSnap.data().role || "member";
-              const rawRoleLower = rawRole.toLowerCase();
-              if (rawRoleLower.includes("faculty") || rawRoleLower.includes("advisor") || rawRoleLower.includes("coordinator") || rawRoleLower.includes("admin") || rawRoleLower.includes("super")) {
-                navigate("/faculty/dashboard");
-                return;
-              } else if (rawRoleLower.includes("organizer") || rawRoleLower.includes("lead") || rawRoleLower.includes("head")) {
-                navigate("/organizer/dashboard");
-                return;
-              } else {
-                // Role is "member" or unrecognized — send to admin setup to pick correct role
-                navigate("/admin-setup");
-                return;
-              }
-            }
-          } catch (fetchRoleErr) {
-            console.error("Error fetching user role on login:", fetchRoleErr);
-          }
-        }
-
-        // Fallback: if Firestore doc doesn't exist or fetch failed, go to admin-setup
-        navigate("/admin-setup");
+        await login(cleanEmail, password);
       } else {
-        // Simple custom email routing mock
-        if (email.includes("faculty") || email.includes("admin") || email.includes("super")) {
-          await handleRoleQuickLogin("faculty");
-        } else if (email.includes("organizer")) {
-          await handleRoleQuickLogin("organizer");
-        } else {
-          await handleRoleQuickLogin("member");
-        }
+        // Quick login for testing / passwordless login
+        await login(cleanEmail, matchedAccount.role);
       }
+      
+      // Redirect to designated dashboard
+      navigate(matchedAccount.target);
     } catch (err: any) {
-      setError(err?.message || "Failed to sign in. Please verify credentials.");
+      setError(err?.message || "Failed to sign in. Please check your credentials.");
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +95,7 @@ const LoginPage: React.FC = () => {
         )}
 
         {/* Login Form */}
-        <form onSubmit={handleMockFormSubmit} className="space-y-4 text-left">
+        <form onSubmit={handleFormSubmit} className="space-y-4 text-left">
           {/* Email field */}
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -145,10 +107,27 @@ const LoginPage: React.FC = () => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@company.com"
+                placeholder="admin@aiverse.in"
                 className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-aether-blue-500/20 focus:border-aether-blue-500 transition-all font-sans text-sm text-slate-800 placeholder-slate-400"
                 required
               />
+            </div>
+            {/* Quick-select authorized accounts */}
+            <div className="pt-1.5 flex flex-wrap gap-1.5">
+              {ALLOWED_ACCOUNTS.map((acc) => (
+                <button
+                  key={acc.email}
+                  type="button"
+                  onClick={() => setEmail(acc.email)}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border font-medium transition-all ${
+                    email.toLowerCase().trim() === acc.email
+                      ? "bg-blue-50 border-blue-300 text-blue-700 font-bold"
+                      : "bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100"
+                  }`}
+                >
+                  {acc.label}
+                </button>
+              ))}
             </div>
           </div>
 

@@ -229,6 +229,26 @@ const RegistrationPage: React.FC = () => {
     );
   }
 
+  const isHackathon = 
+    event.category === "HACKATHONS" || 
+    event.category === "Hackathon" || 
+    event.category?.toLowerCase()?.includes("hackathon");
+
+  if (!isHackathon) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans text-center px-4">
+        <Info className="h-10 w-10 text-blue-600 mb-4" />
+        <h2 className="text-xl font-bold text-slate-800">No Registration Required</h2>
+        <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed font-medium">
+          Registration is only required for Hackathons. The event <span className="font-bold text-slate-700">"{event.title}"</span> is an open public event with no registration required.
+        </p>
+        <Link to={`/events/${event.id}`} className="mt-5">
+          <Button variant="gradient" className="rounded-xl text-xs font-bold px-6 py-2.5">View Event Details</Button>
+        </Link>
+      </div>
+    );
+  }
+
   if (success) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans text-center px-4 py-16">

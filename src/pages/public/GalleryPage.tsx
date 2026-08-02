@@ -14,7 +14,7 @@ import galleryCollab from "../../assets/images/gallery_collab.png";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs } from "firebase/firestore";
-import { Calendar, ImageIcon, X, FolderOpen, Plus, Sparkles, ChevronRight } from "lucide-react";
+import { Calendar, ImageIcon, X, FolderOpen, Plus, Sparkles, ChevronRight, ExternalLink } from "lucide-react";
 
 interface AlbumItem {
   id: string;
@@ -25,6 +25,7 @@ interface AlbumItem {
   category: "Workshops" | "Hackathons" | "Symposiums" | "Socials";
   coverImage: string;
   description: string;
+  driveLink?: string;
   images: string[];
 }
 
@@ -41,7 +42,14 @@ const GalleryPage: React.FC = () => {
         const querySnapshot = await getDocs(collection(db, "albums"));
         const list: AlbumItem[] = [];
 
-        const resolveCover = (name: string, category: string) => {
+        const resolveCover = (data: any, category: string) => {
+          if (data?.bannerImage && typeof data.bannerImage === "string" && data.bannerImage.trim() !== "") {
+            return data.bannerImage;
+          }
+          if (data?.coverImage && typeof data.coverImage === "string" && (data.coverImage.startsWith("data:") || data.coverImage.startsWith("http") || data.coverImage.startsWith("/"))) {
+            return data.coverImage;
+          }
+          const name = data?.coverImage;
           if (name === "galleryCoding" || category === "Hackathons") return galleryCoding;
           if (name === "gallerySymposium" || category === "Symposiums") return gallerySymposium;
           if (name === "galleryCoworking" || category === "Socials") return galleryCoworking;
@@ -62,53 +70,15 @@ const GalleryPage: React.FC = () => {
             photosCount: data.photosCount || 0,
             date: data.date || "Just now",
             status: data.status || "Published",
-            coverImage: resolveCover(data.coverImage, albumCategory),
+            coverImage: resolveCover(data, albumCategory),
             category: albumCategory,
             description: data.description || "No event description available.",
+            driveLink: data.driveLink || "",
             images: data.images || []
           });
         });
 
-        if (list.length === 0) {
-          const defaultItems: AlbumItem[] = [
-            { 
-              id: "1", 
-              category: "Workshops", 
-              coverImage: galleryLab, 
-              title: "AI & Deep Learning Masterclass", 
-              photosCount: 6, 
-              date: "Jul 05, 2026", 
-              status: "Published", 
-              description: "Hands-on student workshop exploring modern convolutional neural network architectures and deep learning optimization.", 
-              images: [galleryLab, galleryVr, galleryCollab] 
-            },
-            { 
-              id: "2", 
-              category: "Symposiums", 
-              coverImage: gallerySymposium, 
-              title: "AI Frontiers Symposium", 
-              photosCount: 4, 
-              date: "Jun 28, 2026", 
-              status: "Published", 
-              description: "Distinguished faculty members and guest researchers present slides on multi-agent reinforcement learning advancements.", 
-              images: [gallerySymposium, galleryLab] 
-            },
-            { 
-              id: "3", 
-              category: "Hackathons", 
-              coverImage: galleryCoding, 
-              title: "Neural Hackathon 2026", 
-              photosCount: 8, 
-              date: "Jun 12, 2026", 
-              status: "Published", 
-              description: "Students collaborate and compete in a 36-hour sprint coding real-world artificial intelligence models for sustainability.", 
-              images: [galleryCoding, galleryCollab, galleryVr] 
-            }
-          ];
-          setAlbums(defaultItems);
-        } else {
-          setAlbums(list);
-        }
+        setAlbums(list);
       } catch (err) {
         console.error("Error loading gallery items from database:", err);
       } finally {
@@ -343,40 +313,35 @@ const GalleryPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Bottom Row: Album Images Grid */}
-                <div className="space-y-4 pt-6 border-t border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <FolderOpen className="h-4.5 w-4.5 text-[#2563EB]" />
-                    <h4 className="text-sm font-bold text-slate-800 tracking-tight">Album Photos ({(selectedAlbum.images && selectedAlbum.images.length) || 0})</h4>
-                  </div>
+                {/* Bottom Row: Google Drive Album Photos Link */}
+                <div className="pt-6 border-t border-slate-100">
+                  <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/50 border border-blue-100/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 text-left">
+                      <div className="w-10 h-10 rounded-xl bg-[#2563EB] text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
+                        <FolderOpen className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-800 tracking-tight">Event Photo Gallery</h4>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">High-resolution event photos & media stored on Google Drive</p>
+                      </div>
+                    </div>
 
-                  {!selectedAlbum.images || selectedAlbum.images.length === 0 ? (
-                    <div className="py-16 border border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-1.5 bg-slate-50/50">
-                      <ImageIcon className="h-6 w-6 stroke-[1.5]" />
-                      <span className="text-xs font-semibold">No photos inside this album yet.</span>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      {selectedAlbum.images.map((img: string, idx: number) => (
-                        <div 
-                          key={idx}
-                          onClick={() => setSelectedImage(img)}
-                          className="group relative aspect-[4/3] rounded-2xl overflow-hidden border border-slate-100 cursor-zoom-in bg-slate-50 shadow-sm hover:shadow transition-shadow"
-                        >
-                          <img 
-                            src={img} 
-                            className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-350" 
-                            alt="" 
-                          />
-                          <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <span className="p-2 bg-white/95 rounded-full text-slate-700 shadow shadow-black/10 transform scale-90 group-hover:scale-100 transition-transform">
-                              <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    {selectedAlbum.driveLink ? (
+                      <a 
+                        href={selectedAlbum.driveLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 hover:shadow-lg shrink-0"
+                      >
+                        <span>Click here to view album photos</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    ) : (
+                      <span className="text-xs font-semibold text-slate-400 bg-white px-4 py-2 rounded-xl border">
+                        No Drive link attached
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </motion.div>

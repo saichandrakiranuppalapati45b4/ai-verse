@@ -55,7 +55,7 @@ const NeuralCursor: React.FC = () => {
       }
 
       clearTimeout(moveTimeout);
-      moveTimeout = setTimeout(() => {
+      moveTimeout = window.setTimeout(() => {
         mouse.isMoving = false;
       }, 100);
     };

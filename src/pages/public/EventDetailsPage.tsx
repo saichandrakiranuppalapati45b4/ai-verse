@@ -286,25 +286,32 @@ const EventDetailsPage: React.FC = () => {
                   </div>
                 )}
 
-                {event.endDate && new Date(event.endDate).setHours(23, 59, 59, 999) < new Date().getTime() ? (
-                  <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
-                    Event Completed
-                  </Button>
-                ) : event.status === "Active" ? (
-                  <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
-                    Registration Closed
-                  </Button>
-                ) : (
-                  <Link to={`/events/${event.id}/register`} className="w-full">
-                    <Button variant="gradient" className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2">
-                      Register Now
-                      <ArrowRight className="h-4 w-4" />
+                {(event.type === "Hackathon" || (event as any).category === "HACKATHONS" || (event as any).category === "Hackathon" || (event as any).category?.toLowerCase()?.includes("hackathon")) ? (
+                  event.endDate && new Date(event.endDate).setHours(23, 59, 59, 999) < new Date().getTime() ? (
+                    <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                      Event Completed
                     </Button>
-                  </Link>
+                  ) : event.status === "Active" ? (
+                    <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                      Registration Closed
+                    </Button>
+                  ) : (
+                    <Link to={`/events/${event.id}/register`} className="w-full">
+                      <Button variant="gradient" className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2">
+                        Register Now
+                        <ArrowRight className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  )
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl text-center">
+                    <span className="text-xs font-bold text-slate-700 block">Open Public Event</span>
+                    <span className="text-[10px] font-medium text-slate-400 block mt-0.5">No registration required for this event</span>
+                  </div>
                 )}
 
                 <span className="text-[10px] text-slate-400 font-bold text-center block pt-1">
-                  Includes Certificate & Workshop Assets
+                  Includes Certificate & Event Assets
                 </span>
               </div>
             </div>
