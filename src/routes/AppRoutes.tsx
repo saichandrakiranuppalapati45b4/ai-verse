@@ -14,6 +14,7 @@ import TeamPage from "../pages/public/TeamPage";
 import ContactPage from "../pages/public/ContactPage";
 import RegistrationPage from "../pages/public/RegistrationPage";
 import TicketPage from "../pages/public/TicketPage";
+import JuryPage from "../pages/public/JuryPage";
 import LoginPage from "../pages/auth/LoginPage";
 import AdminSetupPage from "../pages/auth/AdminSetupPage";
 import NotFoundPage from "../pages/errors/NotFoundPage";
@@ -30,6 +31,7 @@ import SettingsPage from "../pages/faculty/SettingsPage";
 import RegistrationsManagementPage from "../pages/faculty/RegistrationsManagementPage";
 import AttendanceManagementPage from "../pages/faculty/AttendanceManagementPage";
 import ProfilePage from "../pages/faculty/ProfilePage";
+import FacResultsPage from "../pages/faculty/FacResultsPage";
 
 const AppRoutes: React.FC = () => {
   return (
@@ -50,6 +52,14 @@ const AppRoutes: React.FC = () => {
       </Route>
 
       <Route path="/ticket/:registrationId" element={<TicketPage />} />
+      <Route
+        path="/jury"
+        element={
+          <ProtectedRoute allowedRoles={["jury", "faculty", "organizer"]}>
+            <JuryPage />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Organizer Routes */}
       <Route
@@ -64,6 +74,8 @@ const AppRoutes: React.FC = () => {
         <Route path="dashboard" element={<OrgDashboardPage />} />
         <Route path="events" element={<OrgEventsPage />} />
         <Route path="attendance" element={<OrgAttendancePage />} />
+        <Route path="jury" element={<Navigate to="/organizer/dashboard" replace />} />
+        <Route path="results" element={<FacResultsPage />} />
         <Route path="gallery" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Gallery Management</h2><p className="text-sm text-slate-500">Upload and album configure.</p></div>} />
         <Route path="registrations" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Registrations</h2><p className="text-sm text-slate-500">View and export registrant records.</p></div>} />
         <Route path="profile" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Profile Settings</h2><p className="text-sm text-slate-500">Update organizer credentials.</p></div>} />
@@ -82,6 +94,8 @@ const AppRoutes: React.FC = () => {
         <Route path="dashboard" element={<FacDashboardPage />} />
         <Route path="events" element={<EventManagementPage />} />
         <Route path="registrations" element={<RegistrationsManagementPage />} />
+        <Route path="jury" element={<Navigate to="/faculty/dashboard" replace />} />
+        <Route path="results" element={<FacResultsPage />} />
         <Route path="team" element={<Navigate to="/faculty/dashboard" replace />} />
         <Route 
           path="users" 

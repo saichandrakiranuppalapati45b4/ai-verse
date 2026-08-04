@@ -5,7 +5,7 @@ import { auth } from "../config/firebase";
 
 interface ProtectedRouteProps {
   children: React.ReactElement;
-  allowedRoles?: Array<"faculty" | "organizer" | "member">;
+  allowedRoles?: Array<"faculty" | "organizer" | "member" | "jury">;
   disallowEmails?: string[];
   redirectTo?: string;
 }

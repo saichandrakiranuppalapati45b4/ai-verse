@@ -611,179 +611,171 @@ const RegistrationPage: React.FC = () => {
         )}
 
         {step === 2 && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-in fade-in duration-200">
-            {/* Left Column (span 4): Registration Summary + Requirements + Decorative Card */}
-            <div className="lg:col-span-4 space-y-6">
-              {/* Registration Summary */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50 flex items-center gap-2">
-                  <ClipboardList className="h-4 w-4 text-blue-600" />
-                  Registration Summary
-                </h3>
-                
-                {event.maxTeamSize > 1 && (
-                  <div className="space-y-1 bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100/50">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Group Name</span>
-                    <span className="text-xs font-extrabold text-slate-800 block truncate">{groupName}</span>
-                  </div>
-                )}
-
-                <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100/50 space-y-2">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Team Lead</span>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px] shrink-0 uppercase">
-                      {leadName ? leadName.substring(0, 2).toUpperCase() : "TL"}
-                    </div>
-                    <div className="leading-tight text-left truncate">
-                      <span className="text-[10px] font-extrabold text-slate-850 block">{leadName}</span>
-                      <span className="text-[8px] font-bold text-slate-450 block mt-0.5">{leadEmail}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-50/60 text-xs font-bold text-slate-400 text-left">
-                  <span>Event: {event.title}</span>
-                </div>
-              </div>
-
-              {/* Requirements Card */}
-              {event.maxTeamSize > 1 && (
-                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-3.5 text-left">
-                  <h3 className="text-xs font-black text-[#2563EB] uppercase tracking-wider pb-2 border-b border-slate-50">
-                    Requirements
+          <div className="space-y-8 animate-in fade-in duration-200">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              {/* Left Column (span 4): Registration Summary */}
+              <div className="lg:col-span-4 space-y-6">
+                {/* Registration Summary */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50 flex items-center gap-2">
+                    <ClipboardList className="h-4 w-4 text-blue-600" />
+                    Registration Summary
                   </h3>
+                  
+                  {event.maxTeamSize > 1 && (
+                    <div className="space-y-1 bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100/50">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Group Name</span>
+                      <span className="text-xs font-extrabold text-slate-800 block truncate">{groupName}</span>
+                    </div>
+                  )}
 
-                  <div className="space-y-2 text-[10px] text-slate-500 font-semibold leading-relaxed">
-                    <p>Minimum <span className="text-slate-800 font-bold">{event.minTeamSize} members</span>, maximum <span className="text-slate-800 font-bold">{event.maxTeamSize} members</span> allowed per group. Ensure all emails are official university IDs.</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Decorative blue card */}
-              <div className="relative p-6 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-3xl overflow-hidden shadow-md text-white h-44 flex items-end">
-                <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:12px_12px]"></div>
-                <div className="relative z-10 text-left">
-                  <h4 className="text-xs font-black text-white/70 uppercase tracking-widest mb-1.5">AI Verse</h4>
-                  <h3 className="text-sm font-black text-white leading-normal">Join the next generation of AI pioneers.</h3>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column (span 8): Member Details form */}
-            <div className="lg:col-span-8 space-y-6 text-left">
-              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6">
-                
-                <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-                  <div>
-                    <h3 className="text-base font-extrabold text-slate-855 leading-tight">Member Details</h3>
-                    <p className="text-[10px] text-slate-450 font-semibold mt-0.5">Add the members who will be joining your group.</p>
-                  </div>
-                  <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-black rounded-full text-[9px] border border-blue-100/30">
-                    {members.length === 1 ? "1 Member Added" : `${members.length} Members Added`}
-                  </span>
-                </div>
-
-                <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
-                  {members.map((member, idx) => (
-                    <div key={idx} className="p-4 border border-slate-100 bg-slate-50/10 rounded-2xl space-y-3.5 relative">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[9px] font-black text-blue-600 tracking-wider">TEAM MEMBER #{idx + 2}</span>
-                        {members.length > event.minTeamSize - 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveTeammate(idx)}
-                            className="text-red-500 hover:text-red-750 font-bold text-[9px] hover:bg-red-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            Remove
-                          </button>
-                        )}
+                  <div className="bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100/50 space-y-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Team Lead</span>
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px] shrink-0 uppercase">
+                        {leadName ? leadName.substring(0, 2).toUpperCase() : "TL"}
                       </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Sarah Jenkins"
-                            value={member.name}
-                            onChange={(e) => handleMemberChange(idx, "name", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">University Email</label>
-                          <input
-                            type="email"
-                            placeholder="s.jenkins@univ.edu"
-                            value={member.email}
-                            onChange={(e) => handleMemberChange(idx, "email", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Student ID</label>
-                          <input
-                            type="text"
-                            placeholder="ID-2024-XXXX"
-                            value={member.studentId}
-                            onChange={(e) => handleMemberChange(idx, "studentId", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</label>
-                          <input
-                            type="tel"
-                            placeholder="e.g. +1 (555) 000-0000"
-                            value={member.role || ""}
-                            onChange={(e) => handleMemberChange(idx, "role", e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
-                          />
-                        </div>
+                      <div className="leading-tight text-left truncate">
+                        <span className="text-[10px] font-extrabold text-slate-850 block">{leadName}</span>
+                        <span className="text-[8px] font-bold text-slate-450 block mt-0.5">{leadEmail}</span>
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-50/60 text-xs font-bold text-slate-400 text-left">
+                    <span>Event: {event.title}</span>
+                  </div>
                 </div>
+              </div>
 
-                {members.length < event.maxTeamSize - 1 && (
-                  <button
-                    type="button"
-                    onClick={handleAddTeammate}
-                    className="w-full py-2.5 border border-dashed border-slate-200 hover:border-blue-500 rounded-2xl text-slate-500 hover:text-blue-600 font-bold text-xs bg-slate-50/20 hover:bg-blue-50/10 flex items-center justify-center gap-1.5 transition-all shadow-sm"
-                  >
-                    <Users className="h-3.5 w-3.5" />
-                    Add Another Member
-                  </button>
-                )}
+              {/* Right Column (span 8): Member Details form */}
+              <div className="lg:col-span-8 space-y-6 text-left">
+                <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6">
+                  
+                  <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-855 leading-tight">Member Details</h3>
+                      <p className="text-[10px] text-slate-450 font-semibold mt-0.5">Add the members who will be joining your group.</p>
+                    </div>
+                    <span className="px-2.5 py-1 bg-blue-50 text-blue-700 font-black rounded-full text-[9px] border border-blue-100/30">
+                      {members.length === 1 ? "1 Member Added" : `${members.length} Members Added`}
+                    </span>
+                  </div>
 
-                <div className="pt-4 flex justify-between">
-                  <button
-                    onClick={() => setStep(1)}
-                    className="rounded-2xl px-5 py-2.5 font-bold text-xs bg-white text-slate-700 flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 transition-colors"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Previous Step
-                  </button>
-                  <Button 
-                    variant="gradient"
-                    onClick={() => {
-                      if (validateStep2()) {
-                        setStep(3);
-                      }
-                    }}
-                    className="rounded-2xl px-6 py-3 font-bold text-xs flex items-center gap-1.5"
-                  >
-                    Proceed to Review
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
+                  <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
+                    {members.map((member, idx) => (
+                      <div key={idx} className="p-4 border border-slate-100 bg-slate-50/10 rounded-2xl space-y-3.5 relative">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[9px] font-black text-blue-600 tracking-wider">TEAM MEMBER #{idx + 2}</span>
+                          {members.length > event.minTeamSize - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTeammate(idx)}
+                              className="text-red-500 hover:text-red-750 font-bold text-[9px] hover:bg-red-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Sarah Jenkins"
+                              value={member.name}
+                              onChange={(e) => handleMemberChange(idx, "name", e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">University Email</label>
+                            <input
+                              type="email"
+                              placeholder="s.jenkins@univ.edu"
+                              value={member.email}
+                              onChange={(e) => handleMemberChange(idx, "email", e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Student ID</label>
+                            <input
+                              type="text"
+                              placeholder="ID-2024-XXXX"
+                              value={member.studentId}
+                              onChange={(e) => handleMemberChange(idx, "studentId", e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</label>
+                            <input
+                              type="tel"
+                              placeholder="e.g. +1 (555) 000-0000"
+                              value={member.role || ""}
+                              onChange={(e) => handleMemberChange(idx, "role", e.target.value)}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {members.length < event.maxTeamSize - 1 && (
+                    <button
+                      type="button"
+                      onClick={handleAddTeammate}
+                      className="w-full py-2.5 border border-dashed border-slate-200 hover:border-blue-500 rounded-2xl text-slate-500 hover:text-blue-600 font-bold text-xs bg-slate-50/20 hover:bg-blue-50/10 flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      Add Another Member
+                    </button>
+                  )}
+
+                  <div className="pt-4 flex justify-between">
+                    <button
+                      onClick={() => setStep(1)}
+                      className="rounded-2xl px-5 py-2.5 font-bold text-xs bg-white text-slate-700 flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 transition-colors"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Previous Step
+                    </button>
+                    <Button 
+                      variant="gradient"
+                      onClick={() => {
+                        if (validateStep2()) {
+                          setStep(3);
+                        }
+                      }}
+                      className="rounded-2xl px-6 py-3 font-bold text-xs flex items-center gap-1.5"
+                    >
+                      Proceed to Review
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Requirements Card (Moved to the very bottom of the page) */}
+            {event.maxTeamSize > 1 && (
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-3 text-left">
+                <h3 className="text-xs font-black text-[#2563EB] uppercase tracking-wider pb-2 border-b border-slate-50">
+                  Requirements
+                </h3>
+
+                <div className="space-y-2 text-xs text-slate-600 font-semibold leading-relaxed">
+                  <p>Minimum <span className="text-slate-800 font-bold">{event.minTeamSize} members</span>, maximum <span className="text-slate-800 font-bold">{event.maxTeamSize} members</span> allowed per group. Ensure all emails are official university IDs.</p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

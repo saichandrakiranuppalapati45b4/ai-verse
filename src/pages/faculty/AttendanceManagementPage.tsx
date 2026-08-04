@@ -57,7 +57,7 @@ const AttendanceManagementPage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  useEffect(() => {
+      useEffect(() => {
     const initializeAttendanceData = async () => {
       try {
         setLoading(true);
@@ -69,26 +69,46 @@ const AttendanceManagementPage: React.FC = () => {
 
         // 2. Fetch events from Firestore
         const eventsSnap = await getDocs(collection(db, "events"));
-        const allDbEvents = eventsSnap.docs.map(docSnap => {
-          const data = docSnap.data();
-          const categoryString = data.category || (data.type ? data.type.toUpperCase() : "GENERAL");
-          const displayStatus = data.status === "Opened" || data.status === "Published" || data.status === "Active" ? "LIVE" as const : "STARTING SOON" as const;
-          
-          return {
-            id: docSnap.id,
-            title: data.title || "Unnamed Event",
-            location: data.location || "General Classroom",
-            timeRange: data.timeRange || (data.startDate ? `${data.startDate} • ${data.startTime || ""}` : "10:00 AM - 12:00 PM"),
-            category: categoryString,
-            status: displayStatus,
-            currentReg: Math.max(0, Number(data.currentReg) || 0),
-            maxReg: data.maxReg || 100
-          };
-        });
+        const todayStr = new Date().toISOString().split("T")[0]; // e.g. "2026-08-02"
 
-        setEvents(allDbEvents);
-        if (allDbEvents.length > 0) {
-          setSelectedEventId(allDbEvents[0].id);
+        const activeDbEvents: EventCard[] = eventsSnap.docs
+          .map(docSnap => {
+            const data = docSnap.data();
+            const categoryString = data.category || (data.type ? data.type.toUpperCase() : "GENERAL");
+            
+            // Check if event is completed, closed, finished, cancelled, or past
+            const statusUpper = (data.status || "").toString().toUpperCase();
+            const isCompletedStatus = ["COMPLETED", "CLOSED", "FINISHED", "CANCELLED", "PAST"].includes(statusUpper);
+            const isPastFlag = Boolean(data.isPastEvent);
+            
+            const dateStr = data.endDate || data.startDate;
+            const isPastDate = Boolean(dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) && dateStr < todayStr);
+
+            // Filter out completed and past events so they do not show for attendance management
+            if (isCompletedStatus || isPastFlag || isPastDate) {
+              return null;
+            }
+
+            const displayStatus = data.status === "Opened" || data.status === "Published" || data.status === "Active" 
+              ? ("LIVE" as const) 
+              : ("STARTING SOON" as const);
+            
+            return {
+              id: docSnap.id,
+              title: data.title || "Unnamed Event",
+              location: data.location || "General Classroom",
+              timeRange: data.timeRange || (data.startDate ? `${data.startDate} • ${data.startTime || ""}` : "10:00 AM - 12:00 PM"),
+              category: categoryString,
+              status: displayStatus,
+              currentReg: Math.max(0, Number(data.currentReg) || 0),
+              maxReg: data.maxReg || 100
+            };
+          })
+          .filter((ev): ev is EventCard => ev !== null);
+
+        setEvents(activeDbEvents);
+        if (activeDbEvents.length > 0) {
+          setSelectedEventId(activeDbEvents[0].id);
         }
       } catch (err) {
         console.error("Error initializing attendance events:", err);
@@ -321,7 +341,7 @@ const AttendanceManagementPage: React.FC = () => {
               </div>
               <div>
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block leading-none">Active Events</span>
-                <span className="text-sm font-extrabold text-slate-800 mt-0.5 block">03</span>
+                <span className="text-sm font-extrabold text-slate-800 mt-0.5 block">{String(events.length).padStart(2, '0')}</span>
               </div>
             </div>
           </div>
@@ -348,6 +368,10 @@ const AttendanceManagementPage: React.FC = () => {
         {loading ? (
           <div className="flex items-center justify-center py-20 bg-white rounded-2xl border border-slate-100">
             <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : events.length === 0 ? (
+          <div className="p-8 bg-white rounded-3xl border border-slate-100 text-center font-medium text-slate-400 text-xs">
+            No active or ongoing events available for attendance management today. Completed and past events have been archived.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

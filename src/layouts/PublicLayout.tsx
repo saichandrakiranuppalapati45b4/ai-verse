@@ -6,7 +6,7 @@ import NeuralCursor from "../components/ui/NeuralCursor";
 
 const PublicLayout: React.FC = () => {
   const location = useLocation();
-  const isRegistrationPage = location.pathname.endsWith("/register");
+  const isRegistrationPage = location.pathname.endsWith("/register") || location.pathname.includes("/register");
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -15,7 +15,7 @@ const PublicLayout: React.FC = () => {
       <main className="flex-grow pt-20">
         <Outlet />
       </main>
-      <Footer />
+      {!isRegistrationPage && <Footer />}
     </div>
   );
 };

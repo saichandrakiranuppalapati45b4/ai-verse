@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import SEO from "../../components/layout/SEO";
 import Button from "../../components/ui/Button";
 import { db } from "../../config/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
 import { 
   Globe, 
   Palette, 
@@ -19,7 +19,8 @@ import {
   Trash2,
   Settings2,
   FileArchive,
-  ChevronDown
+  ChevronDown,
+  Award
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -48,6 +49,9 @@ interface PortalConfig {
   notifyEventSubmissions: boolean;
   notifySecurityThresholds: boolean;
   availableRoles: string[];
+  juryPortalActive: boolean;
+  activeJuryEventId?: string;
+  activeJuryEventTitle?: string;
 }
 
 const SettingsPage: React.FC = () => {
@@ -70,8 +74,38 @@ const SettingsPage: React.FC = () => {
     notifyNewRegistrations: true,
     notifyEventSubmissions: true,
     notifySecurityThresholds: true,
-    availableRoles: ["Faculty Coordinator", "Student Lead", "Organizer", "Volunteer"]
+    availableRoles: ["Faculty Coordinator", "Student Lead", "Organizer", "Volunteer"],
+    juryPortalActive: true,
+    activeJuryEventId: "ALL_EVENTS",
+    activeJuryEventTitle: "All Events"
   };
+
+  // Real events list fetched from Firestore for Jury Control selector
+  const [dbEventsList, setDbEventsList] = useState<{ id: string; title: string }[]>([]);
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const eventsSnap = await getDocs(collection(db, "events"));
+        if (!eventsSnap.empty) {
+          const list = eventsSnap.docs
+            .map(docSnap => ({
+              id: docSnap.id,
+              title: docSnap.data().title || "Unnamed Event",
+              status: docSnap.data().status || "Active"
+            }))
+            .filter(e => {
+              const s = (e.status || "").toLowerCase();
+              return !s.includes("completed") && !s.includes("finished") && !s.includes("archive");
+            });
+          setDbEventsList(list);
+        }
+      } catch (err) {
+        console.error("Error loading events for Jury Control:", err);
+      }
+    };
+    fetchEvents();
+  }, []);
 
   // State configurations
   const [savedConfig, setSavedConfig] = useState<PortalConfig>(defaultConfigs);
@@ -584,6 +618,120 @@ const SettingsPage: React.FC = () => {
                     )}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* Card: Jury Control */}
+          <div className="bg-white p-6 rounded-card border border-slate-100 shadow-card text-left space-y-5">
+            <div className="flex items-center gap-3 border-b border-slate-50 pb-3">
+              <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                <Award className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-800">Jury Control</h2>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Control access and active status for the Jury Portal evaluation page.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Jury Portal Status Toggle */}
+              <div className="flex items-center justify-between py-3 px-4 bg-slate-50/60 rounded-2xl border border-slate-100">
+                <div className="text-left leading-tight space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-slate-800">Jury Portal Status</h4>
+                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold tracking-wide uppercase
+                      ${currentConfig.juryPortalActive !== false ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-red-50 text-red-600 border border-red-100"}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${currentConfig.juryPortalActive !== false ? "bg-emerald-600 animate-pulse" : "bg-red-600"}`}></span>
+                      {currentConfig.juryPortalActive !== false ? "ACTIVE" : "DEACTIVATED"}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-semibold">
+                    {currentConfig.juryPortalActive !== false 
+                      ? "Jury evaluation page is active. Jurors can log in, view project assignments, and enter evaluation scores." 
+                      : "Jury Portal is currently deactivated. Access is locked for all jurors."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const nextVal = currentConfig.juryPortalActive === false ? true : false;
+                    handleChange("juryPortalActive", nextVal);
+                    localStorage.setItem("juryPortalActive", String(nextVal));
+                    
+                    // Immediately write change to Firestore for instant live sync across all tabs/jurors
+                    try {
+                      const docRef = doc(db, "settings", "portal_config");
+                      await setDoc(docRef, { ...currentConfig, juryPortalActive: nextVal }, { merge: true });
+                    } catch (err) {
+                      console.error("Error writing juryPortalActive to Firestore:", err);
+                    }
+
+                    // Dispatch custom storage events to wake up open tabs immediately
+                    window.dispatchEvent(new Event("storage"));
+                    window.dispatchEvent(new Event("juryPortalStatusChanged"));
+
+                    addToast(
+                      `Jury Portal access is now ${nextVal ? "ACTIVATED (Open)" : "DEACTIVATED (Locked)"}.`,
+                      nextVal ? "success" : "warning"
+                    );
+                  }}
+                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer outline-none shrink-0
+                    ${currentConfig.juryPortalActive !== false ? "bg-[#2563EB]" : "bg-slate-300"}`}
+                >
+                  <div className={`bg-white w-4 h-4 rounded-full shadow transform transition-transform duration-200 
+                    ${currentConfig.juryPortalActive !== false ? "translate-x-5" : "translate-x-0"}`} 
+                  />
+                </button>
+              </div>
+
+              {/* Event Selector for Jury Scoring */}
+              <div className="pt-4 border-t border-slate-100 space-y-2">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Active Event for Jury Evaluation
+                </label>
+                <select
+                  value={currentConfig.activeJuryEventId || "ALL_EVENTS"}
+                  onChange={async (e) => {
+                    const selectedId = e.target.value;
+                    const selectedEv = dbEventsList.find(ev => ev.id === selectedId);
+                    const selectedTitle = selectedId === "ALL_EVENTS" ? "All Events" : (selectedEv?.title || "Selected Event");
+
+                    handleChange("activeJuryEventId", selectedId);
+                    handleChange("activeJuryEventTitle", selectedTitle);
+
+                    localStorage.setItem("activeJuryEventId", selectedId);
+                    localStorage.setItem("activeJuryEventTitle", selectedTitle);
+
+                    try {
+                      const docRef = doc(db, "settings", "portal_config");
+                      await setDoc(docRef, { 
+                        ...currentConfig, 
+                        activeJuryEventId: selectedId, 
+                        activeJuryEventTitle: selectedTitle 
+                      }, { merge: true });
+                    } catch (err) {
+                      console.error("Error writing activeJuryEventId to Firestore:", err);
+                    }
+
+                    window.dispatchEvent(new Event("storage"));
+                    window.dispatchEvent(new Event("juryPortalStatusChanged"));
+
+                    addToast(`Active Jury Event set to "${selectedTitle}".`, "info");
+                  }}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                >
+                  <option value="ALL_EVENTS">All Events / All Tracks (Default)</option>
+                  {dbEventsList.map(ev => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.title}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-slate-400 font-semibold">
+                  Select which event participants the jury will evaluate and mark in the spreadsheet.
+                </p>
               </div>
             </div>
           </div>

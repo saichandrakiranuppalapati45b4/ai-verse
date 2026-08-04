@@ -25,6 +25,7 @@ const LoginPage: React.FC = () => {
     { email: "admin@aiverse.in", label: "Full Admin", role: "faculty", target: "/faculty/dashboard" },
     { email: "facultycoordinator@aiverse.in", label: "Faculty Coordinator", role: "faculty", target: "/faculty/dashboard" },
     { email: "studentorganizer@aiverse.in", label: "Student Organizer", role: "organizer", target: "/organizer/dashboard" },
+    { email: "jury@aiverse.in", label: "Jury Evaluator", role: "jury", target: "/jury" },
   ];
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -38,7 +39,7 @@ const LoginPage: React.FC = () => {
     const matchedAccount = ALLOWED_ACCOUNTS.find(acc => acc.email === cleanEmail);
 
     if (!matchedAccount) {
-      setError("Access restricted: Only authorized accounts (admin@aiverse.in, facultycoordinator@aiverse.in, studentorganizer@aiverse.in) are permitted to sign in.");
+      setError("Access restricted: Only authorized accounts (admin@aiverse.in, facultycoordinator@aiverse.in, studentorganizer@aiverse.in, jury@aiverse.in) are permitted to sign in.");
       return;
     }
 

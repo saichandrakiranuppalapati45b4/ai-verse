@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { db } from "../../config/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import SEO from "../../components/layout/SEO";
 import { 
    Download, 
    Loader2,
-   MessageSquare
+   MessageSquare,
+   Home
 } from "lucide-react";
 
 interface Teammate {
@@ -279,7 +280,7 @@ const TicketPage: React.FC = () => {
             </div>
 
             {/* Action buttons */}
-            <div className="flex flex-col sm:flex-row gap-3 pt-2 w-full max-w-xs">
+            <div className="flex flex-col sm:flex-row gap-3 pt-2 w-full max-w-sm">
               <button 
                 onClick={handleDownloadQR}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs py-3 rounded-2xl flex items-center justify-center gap-1.5 transition-all shadow-md shadow-blue-600/15"
@@ -287,6 +288,15 @@ const TicketPage: React.FC = () => {
                 <Download className="h-4.5 w-4.5" />
                 Download QR
               </button>
+
+              <Link to="/" className="w-full">
+                <button 
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs py-3 rounded-2xl flex items-center justify-center gap-1.5 transition-all border border-slate-200/80 shadow-xs"
+                >
+                  <Home className="h-4.5 w-4.5 text-blue-600" />
+                  Go Home
+                </button>
+              </Link>
             </div>
 
           </div>

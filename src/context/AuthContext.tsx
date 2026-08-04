@@ -11,14 +11,15 @@ import { auth, db } from "../config/firebase";
 export const ALLOWED_EMAILS = [
   "admin@aiverse.in",
   "facultycoordinator@aiverse.in",
-  "studentorganizer@aiverse.in"
+  "studentorganizer@aiverse.in",
+  "jury@aiverse.in"
 ];
 
 export interface UserProfile {
   uid: string;
   email: string;
   name: string;
-  role: "faculty" | "organizer" | "member" | null;
+  role: "faculty" | "organizer" | "member" | "jury" | null;
   displayRole?: string;
   image?: string;
   year?: string;
@@ -29,8 +30,8 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, roleOrPassword: string) => Promise<void>;
   logout: () => Promise<void>;
-  register?: (email: string, passwordOrRole: string, name: string, role: "faculty" | "organizer" | "member") => Promise<void>;
-  setMockRole: (role: "faculty" | "organizer" | "member" | null) => void;
+  register?: (email: string, passwordOrRole: string, name: string, role: "faculty" | "organizer" | "member" | "jury") => Promise<void>;
+  setMockRole: (role: "faculty" | "organizer" | "member" | "jury" | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -65,7 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const userDocRef = doc(db, "users", firebaseUser.uid);
         
-        let forcedRole: "faculty" | "organizer" | "member" = "faculty";
+        let forcedRole: "faculty" | "organizer" | "member" | "jury" = "faculty";
         let forcedDisplayRole = "Super Admin";
         let defaultName = "System Admin";
         
@@ -81,6 +82,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           forcedRole = "organizer";
           forcedDisplayRole = "Student Organizer";
           defaultName = "Student Organizer";
+        } else if (userEmail === "jury@aiverse.in") {
+          forcedRole = "jury";
+          forcedDisplayRole = "Jury Evaluator";
+          defaultName = "Jury Panelist";
         }
 
         const fallbackProfile: UserProfile = {
@@ -159,14 +164,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     if (!ALLOWED_EMAILS.includes(cleanEmail)) {
       setLoading(false);
-      throw new Error("Access restricted: Only authorized accounts (admin@aiverse.in, facultycoordinator@aiverse.in, studentorganizer@aiverse.in) are permitted to sign in.");
+      throw new Error("Access restricted: Only authorized accounts (admin@aiverse.in, facultycoordinator@aiverse.in, studentorganizer@aiverse.in, jury@aiverse.in) are permitted to sign in.");
     }
 
     try {
-      const isMockRole = ["faculty", "organizer", "member"].includes(roleOrPassword);
+      const isMockRole = ["faculty", "organizer", "member", "jury"].includes(roleOrPassword);
       if (isMockRole) {
         // Developer Quick Login for testing
-        let role: "faculty" | "organizer" | "member" = "faculty";
+        let role: "faculty" | "organizer" | "member" | "jury" = "faculty";
         let displayRole = "Super Admin";
         let name = "System Admin";
 
@@ -178,6 +183,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role = "organizer";
           displayRole = "Student Organizer";
           name = "Student Organizer";
+        } else if (cleanEmail === "jury@aiverse.in") {
+          role = "jury";
+          displayRole = "Jury Evaluator";
+          name = "Jury Panelist";
         }
 
         const mockUser: UserProfile = {

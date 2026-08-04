@@ -16,6 +16,7 @@ import {
   Search, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   MapPin,
   Trash2,
   Upload,
@@ -45,7 +46,7 @@ interface EventItem {
   date: string;
   location: string;
   category: "HACKATHONS" | "LECTURES" | "WORKSHOPS" | "TECH_EVENTS" | "ALUMNI_MEETUPS";
-  status: "Draft" | "Active" | "Opened";
+  status: "Draft" | "Active" | "Opened" | "Completed";
   currentReg: number;
   maxReg: number;
   image?: string;
@@ -614,7 +615,7 @@ const EventManagementPage: React.FC = () => {
     }
   };
 
-  const handleStatusChange = async (id: string, newStatus: "Draft" | "Active" | "Opened") => {
+  const handleStatusChange = async (id: string, newStatus: "Draft" | "Active" | "Opened" | "Completed") => {
     try {
       const docRef = doc(db, "events", id);
       await setDoc(docRef, { status: newStatus }, { merge: true });
@@ -914,21 +915,27 @@ const EventManagementPage: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                            <select
-                              value={event.status}
-                              onChange={(e) => handleStatusChange(event.id, e.target.value as any)}
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border bg-white focus:outline-none cursor-pointer tracking-wider uppercase
-                                ${event.status === "Opened"
-                                  ? "text-emerald-650 bg-emerald-50 border-emerald-100"
-                                  : event.status === "Active"
-                                    ? "text-[#2563EB] bg-blue-50 border-blue-100"
-                                    : "text-slate-500 bg-slate-50 border-slate-200/60"
+                            <div className="relative inline-block">
+                              <select
+                                value={event.status}
+                                onChange={(e) => handleStatusChange(event.id, e.target.value as any)}
+                                className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border appearance-none pr-7 transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer ${
+                                  event.status === "Opened"
+                                    ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100/80"
+                                    : event.status === "Active"
+                                    ? "text-[#2563EB] bg-blue-50 border-blue-200 hover:bg-blue-100/80"
+                                    : event.status === "Completed"
+                                    ? "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100/80"
+                                    : "text-slate-600 bg-slate-100 border-slate-200 hover:bg-slate-200/60"
                                 }`}
-                            >
-                              <option value="Draft">Draft</option>
-                              <option value="Active">Active</option>
-                              <option value="Opened">Opened</option>
-                            </select>
+                              >
+                                <option value="Draft" className="bg-white text-slate-700 font-bold uppercase text-[10px]">DRAFT</option>
+                                <option value="Active" className="bg-white text-[#2563EB] font-bold uppercase text-[10px]">ACTIVE</option>
+                                <option value="Opened" className="bg-white text-emerald-700 font-bold uppercase text-[10px]">OPENED</option>
+                                <option value="Completed" className="bg-white text-purple-700 font-bold uppercase text-[10px]">COMPLETED</option>
+                              </select>
+                              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-60 text-slate-600" />
+                            </div>
                           </td>
                           <td className="px-6 py-4 w-44">
                             <div className="space-y-1.5">

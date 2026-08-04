@@ -52,29 +52,52 @@ const AboutPage: React.FC = () => {
   useEffect(() => {
     const loadTeam = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, "organizers"));
+        const usersSnap = await getDocs(collection(db, "users"));
+        const organizersSnap = await getDocs(collection(db, "organizers"));
+        
         const list: any[] = [];
-        querySnapshot.forEach((docSnap) => {
+        // First add users collection docs (authoritative source from User Management)
+        usersSnap.forEach((docSnap) => {
           list.push({ id: docSnap.id, ...docSnap.data() });
         });
         
-        // Filter for Faculty Coordinator or Student Lead
+        // Merge organizers collection docs for any additional details
+        organizersSnap.forEach((docSnap) => {
+          const data = docSnap.data();
+          const existingIndex = list.findIndex(
+            item => item.email && data.email && item.email.toLowerCase().trim() === data.email.toLowerCase().trim()
+          );
+          if (existingIndex >= 0) {
+            const userItem = list[existingIndex];
+            list[existingIndex] = {
+              ...data,
+              ...userItem,
+              showInAbout: userItem.showInAbout !== undefined ? userItem.showInAbout : data.showInAbout,
+              showInAboutPage: userItem.showInAboutPage !== undefined ? userItem.showInAboutPage : data.showInAboutPage
+            };
+          } else {
+            list.push({ id: docSnap.id, ...data });
+          }
+        });
+        
+        // ONLY filter for members explicitly selected with "Show in About Page" option
         const filtered = list.filter(
-          m => m.roleType === "Faculty Coordinator" || m.roleType === "Student Lead"
+          m => m.showInAbout === true || m.showInAbout === "Yes" || m.showInAboutPage === true || m.showInAboutPage === "Yes"
         );
         
         if (filtered.length > 0) {
-          // Sort so Faculty Coordinator comes first
           filtered.sort((a, b) => {
-            if (a.roleType === "Faculty Coordinator" && b.roleType !== "Faculty Coordinator") return -1;
-            if (a.roleType !== "Faculty Coordinator" && b.roleType === "Faculty Coordinator") return 1;
+            const isFacultyA = (a.roleType || a.role || "").toLowerCase().includes("faculty");
+            const isFacultyB = (b.roleType || b.role || "").toLowerCase().includes("faculty");
+            if (isFacultyA && !isFacultyB) return -1;
+            if (!isFacultyA && isFacultyB) return 1;
             return 0;
           });
           
           const mapped = filtered.map(m => ({
             id: m.id,
-            name: m.name || "Unnamed Member",
-            role: m.position || m.roleType || "Advisor",
+            name: m.name || m.displayName || "Unnamed Member",
+            role: m.position || m.roleType || m.role || "Faculty Coordinator",
             image: m.image || riyaImg,
             bio: m.bio || ""
           }));

@@ -24,7 +24,8 @@ import {
   Download,
   FileUp,
   ClipboardPaste,
-  Edit2
+  Edit2,
+  Eye
 } from "lucide-react";
 import Papa from "papaparse";
 import { db, firebaseConfig, app } from "../../config/firebase";
@@ -44,6 +45,10 @@ export interface UserItem {
   role: "Student Member" | "Student Organizer" | "Faculty Coordinator" | "Guest";
   status: "Active" | "Pending" | "Deactivated";
   image?: string;
+  showInAbout?: "Yes" | "No";
+  bio?: string;
+  linkedin?: string;
+  github?: string;
 }
 
 // Helper to resolve legacy/db roles to settings configuration roles
@@ -96,7 +101,11 @@ const UserManagementPage: React.FC = () => {
             email: data.email || "",
             role: data.role || "Guest",
             status: data.status || "Active",
-            image: data.image || ""
+            image: data.image || "",
+            showInAbout: data.showInAbout === true || data.showInAbout === "Yes" || data.showInAboutPage === true || data.showInAboutPage === "Yes" ? "Yes" : "No",
+            bio: data.bio || "",
+            linkedin: data.linkedin || "",
+            github: data.github || ""
           });
         });
         setUsers(list);
@@ -139,6 +148,7 @@ const UserManagementPage: React.FC = () => {
   const [formLinkedin, setFormLinkedin] = useState("");
   const [formGithub, setFormGithub] = useState("");
   const [formPhotoPreview, setFormPhotoPreview] = useState("");
+  const [formShowInAbout, setFormShowInAbout] = useState<string>("No");
   const [formPassword, setFormPassword] = useState("");
   const [formConfirmPassword, setFormConfirmPassword] = useState("");
   const [addingToTeam, setAddingToTeam] = useState(false);
@@ -377,7 +387,11 @@ const UserManagementPage: React.FC = () => {
         user.email.toLowerCase().includes(searchQuery.toLowerCase());
       
       const displayRole = getDisplayRole(user.role, availableRoles);
-      const matchesRole = roleFilter === "All" || displayRole === roleFilter;
+      const matchesRole = roleFilter === "All" 
+        ? true 
+        : roleFilter === "Show in About Page"
+        ? user.showInAbout === "Yes"
+        : displayRole === roleFilter;
       const matchesStatus = statusFilter === "All" || user.status === statusFilter;
 
       return matchesSearch && matchesRole && matchesStatus;
@@ -398,6 +412,32 @@ const UserManagementPage: React.FC = () => {
   }, [searchQuery, roleFilter, statusFilter]);
 
   // Actions handlers
+  const handleToggleShowInAbout = async (userId: string, value: string) => {
+    const isShow = value === "Yes";
+    try {
+      const docRef = doc(db, "users", userId);
+      await setDoc(docRef, { showInAbout: isShow, showInAboutPage: isShow }, { merge: true });
+
+      const targetUser = users.find(u => u.id === userId);
+      if (targetUser && targetUser.email) {
+        try {
+          const orgSnap = await getDocs(collection(db, "organizers"));
+          orgSnap.forEach(async (d) => {
+            if ((d.data().email || "").toLowerCase().trim() === targetUser.email.toLowerCase().trim()) {
+              await setDoc(doc(db, "organizers", d.id), { showInAbout: isShow, showInAboutPage: isShow }, { merge: true });
+            }
+          });
+        } catch (orgErr) {
+          console.error("Error syncing to organizers collection:", orgErr);
+        }
+      }
+
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, showInAbout: isShow ? "Yes" : "No" } : u));
+    } catch (err) {
+      console.error("Error updating show in about status:", err);
+    }
+  };
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -433,6 +473,8 @@ const UserManagementPage: React.FC = () => {
         linkedin: formLinkedin,
         github: formGithub,
         image: formPhotoPreview || "",
+        showInAbout: formShowInAbout === "Yes",
+        showInAboutPage: formShowInAbout === "Yes",
         status: "Active",
         createdAt: Date.now()
       };
@@ -447,6 +489,7 @@ const UserManagementPage: React.FC = () => {
         email: formEmail,
         role: formRoleType as any,
         image: formPhotoPreview || "",
+        showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
         status: "Active"
       };
       setUsers(prev => [newUser, ...prev]);
@@ -460,6 +503,7 @@ const UserManagementPage: React.FC = () => {
       setFormLinkedin("");
       setFormGithub("");
       setFormPhotoPreview("");
+      setFormShowInAbout("No");
       setFormPassword("");
       setFormConfirmPassword("");
       setShowAddMemberForm(false);
@@ -479,7 +523,8 @@ const UserManagementPage: React.FC = () => {
       name: inviteName,
       email: inviteEmail,
       role: inviteRole,
-      status: "Active"
+      status: "Active",
+      showInAbout: "No"
     };
 
     try {
@@ -489,7 +534,8 @@ const UserManagementPage: React.FC = () => {
         name: inviteName,
         email: inviteEmail,
         role: inviteRole,
-        status: "Active"
+        status: "Active",
+        showInAbout: "No"
       };
       setUsers([newUser, ...users]);
       setInviteName("");
@@ -513,6 +559,11 @@ const UserManagementPage: React.FC = () => {
         email: formEmail,
         role: formRoleType,
         image: formPhotoPreview || "",
+        showInAbout: formShowInAbout === "Yes",
+        showInAboutPage: formShowInAbout === "Yes",
+        bio: formBio,
+        linkedin: formLinkedin,
+        github: formGithub
       }, { merge: true });
 
       setUsers(users.map(u => u.id === editingUserId ? {
@@ -520,7 +571,11 @@ const UserManagementPage: React.FC = () => {
         name: formName,
         email: formEmail,
         role: formRoleType as any,
-        image: formPhotoPreview || ""
+        image: formPhotoPreview || "",
+        showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
+        bio: formBio,
+        linkedin: formLinkedin,
+        github: formGithub
       } : u));
 
       setEditingUserId(null);
@@ -529,6 +584,7 @@ const UserManagementPage: React.FC = () => {
       setFormEmail("");
       setFormRoleType("Organizer");
       setFormPhotoPreview("");
+      setFormShowInAbout("No");
     } catch (err) {
       console.error("Error updating user in database:", err);
       alert("Failed to update user.");
@@ -720,6 +776,32 @@ const UserManagementPage: React.FC = () => {
                     ))}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Show in About Page Card */}
+            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
+              <h3 className="text-sm font-black text-slate-800 tracking-tight flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-blue-50/50 text-blue-600 flex items-center justify-center shrink-0">
+                  <Eye className="h-3.5 w-3.5" />
+                </span>
+                Show in About Page
+              </h3>
+              <p className="text-xs text-slate-500 font-normal leading-relaxed">
+                Choose whether this user profile should be displayed on the public About page under Club Leadership.
+              </p>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Select Option
+                </label>
+                <select
+                  value={formShowInAbout}
+                  onChange={(e) => setFormShowInAbout(e.target.value)}
+                  className="w-full sm:w-72 px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-bold text-sm text-slate-800 bg-slate-50/20 focus:bg-white transition-all cursor-pointer"
+                >
+                  <option value="Yes">Yes (Show Profile on About Page)</option>
+                  <option value="No">No (Do Not Show on About Page)</option>
+                </select>
               </div>
             </div>
 
@@ -972,6 +1054,33 @@ const UserManagementPage: React.FC = () => {
         </div>
       </div>
 
+      {/* ================= USER MANAGEMENT TABS ================= */}
+      <div className="border-b border-slate-200">
+        <div className="flex flex-wrap -mb-px gap-6 text-left">
+          <button
+            onClick={() => setRoleFilter("All")}
+            className={`pb-3 px-1 text-xs font-bold transition-all border-b-2 select-none whitespace-nowrap
+              ${roleFilter !== "Show in About Page" 
+                ? "border-[#2563EB] text-[#2563EB] font-black" 
+                : "border-transparent text-slate-400 hover:text-slate-600"
+              }`}
+          >
+            All Users ({users.length})
+          </button>
+          <button
+            onClick={() => setRoleFilter("Show in About Page")}
+            className={`pb-3 px-1 text-xs font-bold transition-all border-b-2 select-none whitespace-nowrap flex items-center gap-1.5
+              ${roleFilter === "Show in About Page" 
+                ? "border-[#2563EB] text-[#2563EB] font-black" 
+                : "border-transparent text-slate-400 hover:text-slate-600"
+              }`}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Show in About Page ({users.filter(u => u.showInAbout === "Yes").length})
+          </button>
+        </div>
+      </div>
+
       {/* ================= FILTER TOOLBAR ================= */}
       <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
         {/* Search & Select dropdown filters */}
@@ -993,9 +1102,10 @@ const UserManagementPage: React.FC = () => {
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="appearance-none w-full sm:w-44 px-4 py-2 pr-10 bg-slate-50 border border-slate-200/80 rounded-2xl text-slate-700 text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium cursor-pointer"
+              className="appearance-none w-full sm:w-48 px-4 py-2 pr-10 bg-slate-50 border border-slate-200/80 rounded-2xl text-slate-700 text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium cursor-pointer"
             >
               <option value="All">Role: All</option>
+              <option value="Show in About Page">Show in About Page</option>
               {availableRoles.map(role => (
                 <option key={role} value={role}>{role}</option>
               ))}
@@ -1008,8 +1118,6 @@ const UserManagementPage: React.FC = () => {
               <Filter className="h-3.5 w-3.5" />
             </div>
           </div>
-
-
 
           {/* Status Filter */}
           <div className="relative w-full sm:w-auto">
@@ -1117,7 +1225,15 @@ const UserManagementPage: React.FC = () => {
                       <div className="flex items-center gap-3">
                         {renderAvatar(user)}
                         <div>
-                          <div className="font-bold text-slate-800 text-sm">{user.name}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-bold text-slate-800 text-sm">{user.name}</div>
+                            {user.showInAbout === "Yes" && (
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-blue-50 text-blue-600 border border-blue-100">
+                                <Eye className="w-2.5 h-2.5" />
+                                Shown in About
+                              </span>
+                            )}
+                          </div>
                           <div className="text-slate-400 text-xs font-medium">{user.email}</div>
                         </div>
                       </div>
@@ -1183,87 +1299,114 @@ const UserManagementPage: React.FC = () => {
 
                             {/* Quick Edit Popup Context Menu */}
                             {activeMenuId === user.id && (
-                              <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in duration-100">
-                                {showRoleSubMenu ? (
-                                  <>
-                                    <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1 flex justify-between items-center">
-                                      Select Role
-                                      <button onClick={() => setShowRoleSubMenu(false)} className="hover:text-slate-600 p-0.5 rounded transition-colors hover:bg-slate-100">
-                                        <ChevronLeft className="h-3 w-3" />
-                                      </button>
-                                    </div>
-                                    <div className="max-h-60 overflow-y-auto">
-                                      {(() => {
-                                        const options = [...availableRoles];
-                                        const displayRole = getDisplayRole(user.role, availableRoles);
-                                        if (displayRole && !options.includes(displayRole)) {
-                                          options.push(displayRole);
-                                        }
-                                        return options;
-                                      })().map((role) => (
-                                        <button
-                                          key={role}
-                                          onClick={() => handleRoleChange(user.id, role as any)}
-                                          className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
-                                        >
-                                          {role}
+                              <>
+                                <div 
+                                  className="fixed inset-0 z-40"
+                                  onClick={() => setActiveMenuId(null)}
+                                />
+                                <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in duration-100">
+                                  {showRoleSubMenu ? (
+                                    <>
+                                      <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1 flex justify-between items-center">
+                                        Select Role
+                                        <button onClick={() => setShowRoleSubMenu(false)} className="hover:text-slate-600 p-0.5 rounded transition-colors hover:bg-slate-100">
+                                          <ChevronLeft className="h-3 w-3" />
                                         </button>
-                                      ))}
-                                    </div>
-                                  </>
-                                ) : (
-                                  <>
+                                      </div>
+                                      <div className="max-h-60 overflow-y-auto">
+                                        {(() => {
+                                          const options = [...availableRoles];
+                                          const displayRole = getDisplayRole(user.role, availableRoles);
+                                          if (displayRole && !options.includes(displayRole)) {
+                                            options.push(displayRole);
+                                          }
+                                          return options;
+                                        })().map((role) => (
+                                          <button
+                                            key={role}
+                                            onClick={() => handleRoleChange(user.id, role as any)}
+                                            className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
+                                          >
+                                            {role}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        onClick={() => {
+                                          setActiveMenuId(null);
+                                          setEditingUserId(user.id);
+                                          setFormName(user.name);
+                                          setFormEmail(user.email);
+                                          setFormRoleType(user.role || "Organizer");
+                                          setFormPhotoPreview(user.image || "");
+                                          setFormShowInAbout(user.showInAbout === "Yes" ? "Yes" : "No");
+                                          setFormBio(user.bio || "");
+                                          setFormLinkedin(user.linkedin || "");
+                                          setFormGithub(user.github || "");
+                                        }}
+                                        className="w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2"
+                                      >
+                                        <Edit2 className="h-3.5 w-3.5" />
+                                        Edit Profile
+                                      </button>
+                                      <button
+                                        onClick={() => setShowRoleSubMenu(true)}
+                                        className="w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center justify-between"
+                                      >
+                                        Change Role
+                                        <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                                      </button>
+                                      <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
+                                        Show in About Page
+                                      </div>
+                                      <div className="px-4 py-1.5 flex items-center justify-between text-xs font-medium text-slate-700">
+                                        <span>Show Profile</span>
+                                        <select
+                                          value={user.showInAbout === "Yes" ? "Yes" : "No"}
+                                          onChange={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleShowInAbout(user.id, e.target.value);
+                                          }}
+                                          className="px-2 py-0.5 text-xs border border-slate-200 rounded-lg bg-slate-50 font-bold focus:outline-none focus:border-blue-500 cursor-pointer"
+                                        >
+                                          <option value="Yes">Yes</option>
+                                          <option value="No">No</option>
+                                        </select>
+                                      </div>
+                                      <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
+                                        Quick Action
+                                      </div>
+                                  {user.status === "Active" ? (
                                     <button
-                                      onClick={() => {
-                                        setActiveMenuId(null);
-                                        setEditingUserId(user.id);
-                                        setFormName(user.name);
-                                        setFormEmail(user.email);
-                                        setFormRoleType(user.role || "Organizer");
-                                        setFormPhotoPreview(user.image || "");
-                                      }}
-                                      className="w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2"
+                                      onClick={() => handleStatusChange(user.id, "Deactivated")}
+                                      className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-50 text-red-600 flex items-center gap-2"
                                     >
-                                      <Edit2 className="h-3.5 w-3.5" />
-                                      Edit Profile
+                                      <UserX className="h-3.5 w-3.5" />
+                                      Deactivate
                                     </button>
+                                  ) : (
                                     <button
-                                      onClick={() => setShowRoleSubMenu(true)}
-                                      className="w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center justify-between"
+                                      onClick={() => handleStatusChange(user.id, "Active")}
+                                      className="w-full px-4 py-1.5 text-xs font-medium hover:bg-emerald-50 text-emerald-600 flex items-center gap-2"
                                     >
-                                      Change Role
-                                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                                      <UserCheck className="h-3.5 w-3.5" />
+                                      Activate
                                     </button>
-                                    <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
-                                      Quick Action
-                                    </div>
-                                {user.status === "Active" ? (
+                                  )}
                                   <button
-                                    onClick={() => handleStatusChange(user.id, "Deactivated")}
-                                    className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-50 text-red-600 flex items-center gap-2"
+                                    onClick={() => handleDeleteUser(user.id)}
+                                    className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-100 text-red-700 border-t border-slate-50/80 mt-1 flex items-center gap-2"
                                   >
-                                    <UserX className="h-3.5 w-3.5" />
-                                    Deactivate
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Remove Member
                                   </button>
-                                ) : (
-                                  <button
-                                    onClick={() => handleStatusChange(user.id, "Active")}
-                                    className="w-full px-4 py-1.5 text-xs font-medium hover:bg-emerald-50 text-emerald-600 flex items-center gap-2"
-                                  >
-                                    <UserCheck className="h-3.5 w-3.5" />
-                                    Activate
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleDeleteUser(user.id)}
-                                  className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-100 text-red-700 border-t border-slate-50/80 mt-1 flex items-center gap-2"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Remove Member
-                                </button>
-                                  </>
-                                )}
-                              </div>
+                                    </>
+                                  )}
+                                </div>
+                              </>
                             )}
                           </div>
                         </div>
