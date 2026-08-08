@@ -34,6 +34,8 @@ import {
   FileText,
   X
 } from "lucide-react";
+import DatePicker from "../../components/ui/DatePicker";
+import TimePicker from "../../components/ui/TimePicker";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -56,6 +58,7 @@ const EventManagementPage: React.FC = () => {
   const [events, setEvents] = useState<EventItem[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const speakerFileInputRef = React.useRef<HTMLInputElement>(null);
+  const juryFileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleSpeakerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -64,6 +67,18 @@ const EventManagementPage: React.FC = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setFormSpeakerImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleJuryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormJuryImageFilename(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormJuryImagePreview(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
@@ -195,6 +210,14 @@ const EventManagementPage: React.FC = () => {
   const [formFacultyCoordinator, setFormFacultyCoordinator] = useState("");
   const [formStudentCoordinator, setFormStudentCoordinator] = useState("");
   
+  const [formJuryName, setFormJuryName] = useState("");
+  const [formJuryRole, setFormJuryRole] = useState("");
+  const [formJuryBio, setFormJuryBio] = useState("");
+  const [formJuryLinkedin, setFormJuryLinkedin] = useState("");
+  const [formJurySameAsSpeaker, setFormJurySameAsSpeaker] = useState(false);
+  const [formJuryImageFilename, setFormJuryImageFilename] = useState("");
+  const [formJuryImagePreview, setFormJuryImagePreview] = useState("");
+  
   const [formVisibility, setFormVisibility] = useState<"Public" | "Internal Only">("Public");
 
   const [formSpeakerName, setFormSpeakerName] = useState("");
@@ -203,6 +226,26 @@ const EventManagementPage: React.FC = () => {
   const [formSpeakerLinkedin, setFormSpeakerLinkedin] = useState("");
   const [formSpeakerImageFilename, setFormSpeakerImageFilename] = useState("");
   const [formSpeakerImagePreview, setFormSpeakerImagePreview] = useState("");
+
+  // Sync Jury info to Speaker info if Same as Speaker is enabled
+  useEffect(() => {
+    if (formJurySameAsSpeaker) {
+      setFormSpeakerName(formJuryName);
+      setFormSpeakerRole(formJuryRole);
+      setFormSpeakerBio(formJuryBio);
+      setFormSpeakerLinkedin(formJuryLinkedin);
+      setFormSpeakerImageFilename(formJuryImageFilename);
+      setFormSpeakerImagePreview(formJuryImagePreview);
+    }
+  }, [
+    formJurySameAsSpeaker,
+    formJuryName,
+    formJuryRole,
+    formJuryBio,
+    formJuryLinkedin,
+    formJuryImageFilename,
+    formJuryImagePreview
+  ]);
   
   // Alumni Meetup Specific Fields
   const [formCompany, setFormCompany] = useState("");
@@ -372,6 +415,13 @@ const EventManagementPage: React.FC = () => {
       whatsGroupLink: formWhatsGroupLink,
       facultyCoordinator: formFacultyCoordinator,
       studentCoordinator: formStudentCoordinator,
+      juryName: formJuryName,
+      juryRole: formJuryRole,
+      juryBio: formJuryBio,
+      juryLinkedin: formJuryLinkedin,
+      jurySameAsSpeaker: formJurySameAsSpeaker,
+      juryImageFilename: formJuryImageFilename,
+      juryImagePreview: formJuryImagePreview,
       company: formCategory === "Alumni Meetup" ? formCompany : "",
       batch: formCategory === "Alumni Meetup" ? formBatch : "",
       customRegLink: formCategory !== "Hackathon" ? formCustomRegLink : "",
@@ -496,6 +546,13 @@ const EventManagementPage: React.FC = () => {
       setFormWhatsGroupLink("");
       setFormFacultyCoordinator("");
       setFormStudentCoordinator("");
+      setFormJuryName("");
+      setFormJuryRole("");
+      setFormJuryBio("");
+      setFormJuryLinkedin("");
+      setFormJurySameAsSpeaker(false);
+      setFormJuryImageFilename("");
+      setFormJuryImagePreview("");
 
       setFormSpeakerName("");
       setFormSpeakerRole("");
@@ -578,6 +635,13 @@ const EventManagementPage: React.FC = () => {
         setFormWhatsGroupLink(data.whatsGroupLink || "");
         setFormFacultyCoordinator(data.facultyCoordinator || "");
         setFormStudentCoordinator(data.studentCoordinator || "");
+        setFormJuryName(data.juryName || "");
+        setFormJuryRole(data.juryRole || "");
+        setFormJuryBio(data.juryBio || "");
+        setFormJuryLinkedin(data.juryLinkedin || "");
+        setFormJurySameAsSpeaker(Boolean(data.jurySameAsSpeaker));
+        setFormJuryImageFilename(data.juryImageFilename || "");
+        setFormJuryImagePreview(data.juryImagePreview || "");
         
         setFormSpeakerName(data.speakerName || "");
         setFormSpeakerRole(data.speakerRole || "");
@@ -697,6 +761,13 @@ const EventManagementPage: React.FC = () => {
               setFormSpeakerLinkedin("");
               setFormSpeakerImageFilename("");
               setFormSpeakerImagePreview("");
+              setFormJuryName("");
+              setFormJuryRole("");
+              setFormJuryBio("");
+              setFormJuryLinkedin("");
+              setFormJurySameAsSpeaker(false);
+              setFormJuryImageFilename("");
+              setFormJuryImagePreview("");
               setFormCompany("");
               setFormBatch("");
               setFormIsPastEvent(false);
@@ -1171,21 +1242,19 @@ const EventManagementPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Date</label>
-                    <input
-                      type="date"
+                    <DatePicker
                       value={formStartDate}
-                      onChange={(e) => setFormStartDate(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                      onChange={(val) => setFormStartDate(val)}
+                      placeholder="Select start date"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">End Date</label>
-                    <input
-                      type="date"
+                    <DatePicker
                       value={formEndDate}
-                      onChange={(e) => setFormEndDate(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                      onChange={(val) => setFormEndDate(val)}
+                      placeholder="Select end date"
                     />
                   </div>
                 </div>
@@ -1193,21 +1262,19 @@ const EventManagementPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Time</label>
-                    <input
-                      type="time"
+                    <TimePicker
                       value={formStartTime}
-                      onChange={(e) => setFormStartTime(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                      onChange={(val) => setFormStartTime(val)}
+                      placeholder="Select start time"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">End Time</label>
-                    <input
-                      type="time"
+                    <TimePicker
                       value={formEndTime}
-                      onChange={(e) => setFormEndTime(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                      onChange={(val) => setFormEndTime(val)}
+                      placeholder="Select end time"
                     />
                   </div>
                 </div>
@@ -1259,27 +1326,13 @@ const EventManagementPage: React.FC = () => {
                   Registration Details
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Registration Deadline</label>
-                    <input
-                      type="date"
-                      value={formRegDeadline}
-                      onChange={(e) => setFormRegDeadline(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Max Participants</label>
-                    <input
-                      type="number"
-                      placeholder="0 for unlimited"
-                      value={formMaxParticipants}
-                      onChange={(e) => setFormMaxParticipants(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Registration Deadline</label>
+                  <DatePicker
+                    value={formRegDeadline}
+                    onChange={(val) => setFormRegDeadline(val)}
+                    placeholder="Select deadline"
+                  />
                 </div>
 
                 {formCategory === "Hackathon" && (
@@ -1308,37 +1361,6 @@ const EventManagementPage: React.FC = () => {
                   </div>
                 )}
 
-                <div className="mt-3">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Registration Fee ($)</label>
-                  <input
-                    type="number"
-                    placeholder="0 for Free"
-                    value={formRegistrationFee}
-                    onChange={(e) => setFormRegistrationFee(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-slate-50/60 mt-3">
-                  <div className="text-left flex items-start gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center mt-0.5 border border-slate-100">
-                      <Clock className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-bold text-slate-700 block">Enable Waitlist</span>
-                      <span className="text-[10px] text-slate-400 font-semibold block leading-tight">Automatically add users to a waitlist when capacity is reached.</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setFormEnableWaitlist(!formEnableWaitlist)}
-                    className="w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 bg-slate-200"
-                  >
-                    <div 
-                      className="w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform translate-x-0"
-                    />
-                  </button>
-                </div>
               </div>
 
               {/* WhatsApp Integration Card */}
@@ -1407,6 +1429,133 @@ const EventManagementPage: React.FC = () => {
                       <option key={u.id} value={u.name || u.displayName || u.email}>{u.name || u.displayName || u.email}</option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              {/* Set Jury Card */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                      <ShieldCheck className="h-4 w-4" />
+                    </div>
+                    Set Jury
+                  </h3>
+
+                  {/* Same as Speaker Toggle */}
+                  <div className="flex items-center gap-2 bg-indigo-50/60 border border-indigo-100/80 px-3 py-1.5 rounded-xl">
+                    <span className="text-xs font-bold text-indigo-900">Same as Speaker</span>
+                    <button
+                      type="button"
+                      onClick={() => setFormJurySameAsSpeaker(!formJurySameAsSpeaker)}
+                      className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${
+                        formJurySameAsSpeaker ? "bg-indigo-600" : "bg-slate-200"
+                      }`}
+                    >
+                      <div 
+                        className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                          formJurySameAsSpeaker ? "translate-x-4" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Jury Image Upload */}
+                <div className="flex items-center gap-4 border border-slate-100 bg-slate-50/20 p-4 rounded-2xl">
+                  <div className="relative w-16 h-16 rounded-full overflow-hidden border border-slate-200 bg-white shadow-inner flex items-center justify-center shrink-0 group">
+                    <input 
+                      type="file" 
+                      ref={juryFileInputRef} 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={handleJuryFileChange} 
+                      onClick={(e) => e.stopPropagation()} 
+                    />
+                    {formJuryImagePreview ? (
+                      <img 
+                        src={formJuryImagePreview} 
+                        alt="Jury Avatar" 
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Users className="h-6 w-6 text-slate-350" />
+                    )}
+                  </div>
+                  
+                  <div className="space-y-1.5 text-left">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Jury Image</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => juryFileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-white border border-slate-250 rounded-xl text-slate-700 font-bold text-[10px] shadow-sm hover:bg-slate-50 transition-colors"
+                      >
+                        {formJuryImagePreview ? "Change Image" : "Upload Image"}
+                      </button>
+                      {formJuryImagePreview && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormJuryImageFilename("");
+                            setFormJuryImagePreview("");
+                          }}
+                          className="px-3 py-1.5 bg-red-50 text-red-650 border border-red-100 rounded-xl font-bold text-[10px] hover:bg-red-100/50 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    {formJuryImageFilename && (
+                      <span className="text-[9px] font-bold text-emerald-600 block truncate max-w-[200px]">{formJuryImageFilename}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Dr. Sarah Jenkins"
+                      value={formJuryName}
+                      onChange={(e) => setFormJuryName(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Role</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Chief Judge / External Evaluator"
+                      value={formJuryRole}
+                      onChange={(e) => setFormJuryRole(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Bio</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Short professional background summary..."
+                    value={formJuryBio}
+                    onChange={(e) => setFormJuryBio(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">LinkedIn Profile URL</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. https://linkedin.com/in/username"
+                    value={formJuryLinkedin}
+                    onChange={(e) => setFormJuryLinkedin(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                  />
                 </div>
               </div>
               </>

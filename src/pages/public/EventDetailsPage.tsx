@@ -207,8 +207,6 @@ const EventDetailsPage: React.FC = () => {
     );
   }
 
-  const seatsLeft = Math.max(0, event.maxReg - event.currentReg);
-
   return (
     <div className="bg-[#F8FAFC] pb-24 text-left font-sans animate-in fade-in duration-200">
       <SEO 
@@ -267,8 +265,8 @@ const EventDetailsPage: React.FC = () => {
               <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xl w-full flex flex-col space-y-4 text-left">
                 <div className="flex justify-between items-center border-b border-slate-50 pb-3">
                   <span className="text-[10px] font-black text-slate-400 tracking-wider uppercase">REGISTRATION</span>
-                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-                    {seatsLeft > 0 ? `${seatsLeft} Seats Left` : "RSVP Full"}
+                  <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                    {event.currentReg} Registered
                   </span>
                 </div>
 

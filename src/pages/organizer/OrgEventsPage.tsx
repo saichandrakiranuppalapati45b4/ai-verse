@@ -418,8 +418,7 @@ const OrgEventsPage: React.FC = () => {
                   ) : (
                     <div className="space-y-1.5 pt-1">
                       <div className="flex justify-between items-center text-xs font-bold">
-                        <span className="text-slate-400">{event.currentReg} / {event.maxReg} Registered</span>
-                        <span className="text-aether-blue-600">{percentRegistered}%</span>
+                        <span className="text-slate-500 font-extrabold">{event.currentReg} Registered</span>
                       </div>
                       <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                         <div

@@ -54,3 +54,22 @@
   min-height: 100vh !important;
   text-align: left !important;
 }
+
+/* Custom Native Date & Time Picker Overrides */
+input[type="date"], input[type="time"] {
+  accent-color: #2563EB;
+  color-scheme: light;
+}
+
+::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(32%) sepia(90%) saturate(1900%) hue-rotate(212deg) brightness(98%) contrast(96%);
+  transition: transform 0.15s ease, filter 0.15s ease;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+::-webkit-calendar-picker-indicator:hover {
+  background-color: rgba(37, 99, 235, 0.1);
+  transform: scale(1.1);
+}

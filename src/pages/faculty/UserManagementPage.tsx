@@ -28,9 +28,7 @@ import {
   Eye
 } from "lucide-react";
 import Papa from "papaparse";
-import { db, firebaseConfig, app } from "../../config/firebase";
-import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { db, app } from "../../config/firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { collection, addDoc, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
 import Button from "../../components/ui/Button";
@@ -149,8 +147,8 @@ const UserManagementPage: React.FC = () => {
   const [formGithub, setFormGithub] = useState("");
   const [formPhotoPreview, setFormPhotoPreview] = useState("");
   const [formShowInAbout, setFormShowInAbout] = useState<string>("No");
-  const [formPassword, setFormPassword] = useState("");
-  const [formConfirmPassword, setFormConfirmPassword] = useState("");
+  const [, setFormPassword] = useState("");
+  const [, setFormConfirmPassword] = useState("");
   const [addingToTeam, setAddingToTeam] = useState(false);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [showDownloadRoleModal, setShowDownloadRoleModal] = useState(false);

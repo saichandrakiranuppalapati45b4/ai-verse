@@ -14,7 +14,7 @@ import galleryCollab from "../../assets/images/gallery_collab.png";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs } from "firebase/firestore";
-import { Calendar, ImageIcon, X, FolderOpen, Plus, Sparkles, ChevronRight, ExternalLink } from "lucide-react";
+import { Calendar, ImageIcon, X, FolderOpen, Sparkles, ChevronRight, ExternalLink } from "lucide-react";
 
 interface AlbumItem {
   id: string;
@@ -212,22 +212,22 @@ const GalleryPage: React.FC = () => {
                 transition={{ duration: 0.4 }}
                 className="group bg-white rounded-[24px] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.012)] border border-slate-100 hover:shadow-card hover:-translate-y-1 transition-all duration-300 cursor-pointer"
               >
-                <div className="relative overflow-hidden aspect-[4/3] bg-slate-50">
+                <div className="relative overflow-hidden aspect-[16/10] bg-slate-50 flex items-center justify-center">
                   <img
                     src={album.coverImage}
                     alt={album.title}
-                    className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
                   
                   {/* Category overlay */}
-                  <div className="absolute top-4 left-4">
+                  <div className="absolute top-4 left-4 z-10">
                     <span className={`px-2.5 py-1 text-[9px] font-bold rounded-lg uppercase tracking-wider ${getCategoryStyles(album.category)}`}>
                       {album.category}
                     </span>
                   </div>
 
                   {/* Photos count overlay */}
-                  <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[9px] font-bold text-slate-700 uppercase tracking-wider shadow-sm flex items-center gap-1.5 border border-slate-100">
+                  <div className="absolute bottom-4 right-4 z-10 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[9px] font-bold text-slate-700 uppercase tracking-wider shadow-sm flex items-center gap-1.5 border border-slate-100">
                     <ImageIcon className="w-3.5 h-3.5 text-[#2563EB]" />
                     <span>{(album.images && album.images.length) || album.photosCount} Photos</span>
                   </div>
@@ -283,13 +283,13 @@ const GalleryPage: React.FC = () => {
                 {/* Top Row: Event Poster + Details Description */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
                   {/* Event Poster Column */}
-                  <div className="md:col-span-5 bg-slate-50 border border-slate-100 rounded-2xl overflow-hidden aspect-[4/3] md:aspect-square relative shadow-inner">
+                  <div className="md:col-span-5 bg-slate-50 border border-slate-100 rounded-2xl overflow-hidden relative shadow-sm flex items-center justify-center p-1">
                     <img 
                       src={selectedAlbum.coverImage} 
                       alt={selectedAlbum.title} 
-                      className="w-full h-full object-cover" 
+                      className="w-full h-auto max-h-[320px] object-contain rounded-xl" 
                     />
-                    <div className="absolute top-3 left-3">
+                    <div className="absolute top-3 left-3 z-10">
                       <span className={`px-2.5 py-1 text-[9px] font-bold rounded-lg uppercase tracking-wider ${getCategoryStyles(selectedAlbum.category)}`}>
                         {selectedAlbum.category}
                       </span>

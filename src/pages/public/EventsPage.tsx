@@ -12,7 +12,7 @@ import {
 import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
-import { collection, getDocs, query, orderBy, deleteDoc, doc } from "firebase/firestore";
+import { collection, getDocs, query, orderBy } from "firebase/firestore";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -29,15 +29,16 @@ interface Event {
   location: string;
   description: string;
   image: string;
-  status: "Draft" | "Active" | "Opened";
+  status: "Draft" | "Active" | "Opened" | "Completed" | "Archived";
   currentReg: number;
   maxReg: number;
   endDate?: string;
+  isPastEvent?: boolean;
 }
 
 const EventsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"All" | "Workshop" | "Hackathon" | "Seminar">("All");
+  const [activeTab, setActiveTab] = useState<"All" | "Workshop" | "Hackathon" | "Seminar" | "Completed">("All");
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -97,7 +98,8 @@ const EventsPage: React.FC = () => {
             status: data.status || "Opened",
             currentReg: Math.max(0, Number(data.currentReg) || 0),
             maxReg: data.maxReg || 100,
-            endDate: data.endDate || data.startDate || ""
+            endDate: data.endDate || data.startDate || "",
+            isPastEvent: Boolean(data.isPastEvent)
           });
         });
         setEvents(list);
@@ -109,6 +111,33 @@ const EventsPage: React.FC = () => {
     };
     fetchEvents();
   }, []);
+
+  const parseEventDate = (dateStr?: string, endDateStr?: string): number => {
+    if (endDateStr) {
+      const parsedEnd = Date.parse(endDateStr);
+      if (!isNaN(parsedEnd)) return parsedEnd;
+    }
+    if (!dateStr) return Infinity;
+    const parsed = Date.parse(dateStr);
+    if (!isNaN(parsed)) return parsed;
+    const currentYear = new Date().getFullYear();
+    const parsedWithYear = Date.parse(`${dateStr}, ${currentYear}`);
+    if (!isNaN(parsedWithYear)) return parsedWithYear;
+    return Infinity;
+  };
+
+  const isCompletedEvent = (event: Event): boolean => {
+    if (event.status === "Completed") return true;
+    if (event.isPastEvent) return true;
+
+    const eventTime = parseEventDate(event.date, event.endDate);
+    if (eventTime !== Infinity) {
+      const now = Date.now();
+      const endOfDay = new Date(eventTime).setHours(23, 59, 59, 999);
+      if (now > endOfDay) return true;
+    }
+    return false;
+  };
 
   const timelineEvents = events.slice(0, 5).map(e => ({
     date: e.date,
@@ -132,7 +161,17 @@ const EventsPage: React.FC = () => {
   // Filter events based on active tab and search query
   const filteredEvents = events.filter((event) => {
     if (event.status === "Draft") return false;
-    const matchesTab = activeTab === "All" || event.type === activeTab;
+    const isCompleted = isCompletedEvent(event);
+
+    let matchesTab = false;
+    if (activeTab === "Completed") {
+      matchesTab = isCompleted;
+    } else if (activeTab === "All") {
+      matchesTab = true;
+    } else {
+      matchesTab = event.type === activeTab;
+    }
+
     const matchesSearch = event.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           event.description.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesTab && matchesSearch;
@@ -208,20 +247,21 @@ const EventsPage: React.FC = () => {
 
       {/* ================= TABS NAVIGATION SECTION ================= */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-        <div className="flex border-b border-slate-200">
-          {(["All", "Workshop", "Hackathon", "Seminar"] as const).map((tab) => {
+        <div className="flex border-b border-slate-200 overflow-x-auto">
+          {(["All", "Workshop", "Hackathon", "Seminar", "Completed"] as const).map((tab) => {
             const isActive = activeTab === tab;
             const labelMap = {
               All: "All Events",
               Workshop: "Workshops",
               Hackathon: "Hackathons",
-              Seminar: "Seminars"
+              Seminar: "Seminars",
+              Completed: "Completed"
             };
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`py-3 px-5 text-xs sm:text-sm font-semibold border-b-2 transition-all relative
+                className={`py-3 px-5 text-xs sm:text-sm font-semibold border-b-2 transition-all relative shrink-0
                   ${isActive 
                     ? "border-[#2563EB] text-[#2563EB]" 
                     : "border-transparent text-slate-500 hover:text-[#2563EB]"
@@ -251,84 +291,96 @@ const EventsPage: React.FC = () => {
                 Loading events from database...
               </div>
             ) : filteredEvents.length > 0 ? (
-              filteredEvents.map((event) => (
-                <motion.div
-                  key={event.id}
-                  variants={fadeInUp}
-                  initial="hidden"
-                  whileInView="visible"
-                  viewport={{ once: true, margin: "-50px" }}
-                  className="bg-white rounded-[24px] shadow-sm border border-slate-100 p-4 sm:p-5 flex flex-col md:flex-row gap-5 items-stretch group hover:shadow-card transition-all duration-300"
-                >
-                  {/* Event Thumbnail */}
-                  <div className="w-full md:w-56 aspect-[4/3] rounded-xl overflow-hidden relative shrink-0 bg-slate-100">
-                    <img 
-                      src={event.image} 
-                      alt={event.title} 
-                      className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
-                    />
-                    {/* Floating badge label */}
-                    <span className={`absolute top-3 left-3 bg-white/95 backdrop-blur-sm text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-lg uppercase shadow-sm ${getCategoryStyles(event.type)}`}>
-                      {event.type}
-                    </span>
-                  </div>
+              filteredEvents.map((event) => {
+                const isCompleted = isCompletedEvent(event);
 
-                  {/* Event Copy Details */}
-                  <div className="flex flex-col justify-between py-1 text-left flex-grow space-y-4">
-                    <div className="space-y-2">
-                      <h3 className="text-lg font-extrabold text-slate-800 leading-tight group-hover:text-[#2563EB] transition-colors line-clamp-1">
-                        {event.title}
-                      </h3>
-                      
-                      {/* Meta Details */}
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 font-medium">
-                        <span className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5 text-[#2563EB]" />
-                          {event.date} • {event.time}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                          {event.location}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <Users className="h-3.5 w-3.5 text-slate-400" />
-                          {event.currentReg} / {event.maxReg} Registered
-                        </span>
+                return (
+                  <motion.div
+                    key={event.id}
+                    variants={fadeInUp}
+                    initial="hidden"
+                    whileInView="visible"
+                    viewport={{ once: true, margin: "-50px" }}
+                    className="bg-white rounded-[24px] shadow-sm border border-slate-100 p-4 sm:p-5 flex flex-col md:flex-row gap-5 items-stretch group hover:shadow-card transition-all duration-300"
+                  >
+                    {/* Event Thumbnail */}
+                    <div className="w-full md:w-56 aspect-[4/3] rounded-xl overflow-hidden shrink-0 bg-slate-100">
+                      <img 
+                        src={event.image} 
+                        alt={event.title} 
+                        className={`w-full h-full object-cover group-hover:scale-102 transition-transform duration-500 ${isCompleted ? "grayscale contrast-[0.85]" : ""}`}
+                      />
+                    </div>
+
+                    {/* Event Copy Details */}
+                    <div className="flex flex-col justify-between py-1 text-left flex-grow space-y-4">
+                      <div className="space-y-2">
+                        <h3 className="text-lg font-extrabold text-slate-800 leading-tight group-hover:text-[#2563EB] transition-colors line-clamp-1">
+                          {event.title}
+                        </h3>
+                        
+                        {/* Meta Details */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 font-medium">
+                          <span className="flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5 text-[#2563EB]" />
+                            {event.date} • {event.time}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                            {event.location}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <Users className="h-3.5 w-3.5 text-slate-400" />
+                            {event.currentReg} Registered
+                          </span>
+                        </div>
+
+                        <p className="text-slate-500 text-xs sm:text-sm font-normal leading-relaxed pt-1.5 line-clamp-2">
+                          {event.description}
+                        </p>
                       </div>
 
-                      <p className="text-slate-500 text-xs sm:text-sm font-normal leading-relaxed pt-1.5 line-clamp-2">
-                        {event.description}
-                      </p>
-                    </div>
-
-                    {/* Action Row */}
-                    <div className="flex items-center gap-3 pt-2">
-                      {(event.type === "Hackathon" || event.category === "HACKATHONS" || event.category === "Hackathon" || event.category?.toLowerCase()?.includes("hackathon")) && (
-                        event.endDate && new Date(event.endDate).setHours(23, 59, 59, 999) < new Date().getTime() ? (
-                          <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
-                            Event Completed
-                          </Button>
-                        ) : event.status === "Active" ? (
-                          <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
-                            Registration Closed
-                          </Button>
-                        ) : (
-                          <Link to={`/events/${event.id}/register`}>
-                            <Button variant="gradient" size="sm" className="rounded-lg font-bold text-xs px-5 py-2 hover:scale-102 transition-transform">
-                              Register Now
+                      {/* Action Row */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                        <div className="flex items-center gap-3">
+                          {isCompleted ? (
+                            <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                              Event Completed
+                            </Button>
+                          ) : event.status === "Active" ? (
+                            <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
+                              Registration Closed
+                            </Button>
+                          ) : (
+                            <Link to={`/events/${event.id}/register`}>
+                              <Button variant="gradient" size="sm" className="rounded-lg font-bold text-xs px-5 py-2 hover:scale-102 transition-transform">
+                                Register Now
+                              </Button>
+                            </Link>
+                          )}
+                          <Link to={`/events/${event.id}`}>
+                            <Button variant="secondary" size="sm" className="rounded-lg font-bold text-xs bg-slate-50 border border-slate-200/50 hover:bg-slate-100 hover:scale-102 transition-transform px-5 py-2 text-slate-600">
+                              View Details
                             </Button>
                           </Link>
-                        )
-                      )}
-                      <Link to={`/events/${event.id}`}>
-                        <Button variant="secondary" size="sm" className="rounded-lg font-bold text-xs bg-slate-50 border border-slate-200/50 hover:bg-slate-100 hover:scale-102 transition-transform px-5 py-2 text-slate-600">
-                          View Details
-                        </Button>
-                      </Link>
+                        </div>
+
+                        {/* Category & Status Tags in right box region */}
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-lg uppercase shadow-sm ${getCategoryStyles(event.type)}`}>
+                            {event.type}
+                          </span>
+                          {isCompleted && (
+                            <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-lg uppercase shadow-sm">
+                              Completed
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))
+                  </motion.div>
+                );
+              })
             ) : (
               <div className="bg-white rounded-card shadow-sm border border-slate-100 py-16 text-center text-slate-500 font-medium">
                 No events found matching your search.

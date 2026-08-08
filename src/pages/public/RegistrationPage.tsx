@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  ArrowRight, 
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  ArrowRight,
   ArrowLeft,
-  Check, 
-  Users, 
+  Check,
+  Users,
   Info,
   ShieldAlert,
   Loader2,
@@ -24,7 +24,7 @@ interface Teammate {
   name: string;
   email: string;
   studentId: string;
-  role?: string;
+  phone?: string;
 }
 
 interface EventData {
@@ -44,7 +44,7 @@ interface EventData {
 
 const RegistrationPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  
+
   const [event, setEvent] = useState<EventData | null>(null);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(1);
@@ -57,6 +57,7 @@ const RegistrationPage: React.FC = () => {
   const [leadName, setLeadName] = useState("");
   const [leadEmail, setLeadEmail] = useState("");
   const [leadStudentId, setLeadStudentId] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
 
   // Step 2 Form States (Additional Members)
   const [members, setMembers] = useState<Teammate[]>([]);
@@ -73,7 +74,7 @@ const RegistrationPage: React.FC = () => {
           const data = docSnap.data();
           const minT = data.minTeamSize || 1;
           const maxT = data.maxTeamSize || 1;
-          
+
           let timeText = data.time || "10:00 AM";
           if (data.startTime) {
             timeText = data.startTime;
@@ -147,6 +148,10 @@ const RegistrationPage: React.FC = () => {
       alert("Please enter the Team Lead's Student ID.");
       return false;
     }
+    if (!leadPhone.trim()) {
+      alert("Please enter the Team Lead's Phone Number.");
+      return false;
+    }
     return true;
   };
 
@@ -180,6 +185,8 @@ const RegistrationPage: React.FC = () => {
         teamLeadName: leadName,
         teamLeadEmail: leadEmail,
         teamLeadStudentId: leadStudentId,
+        teamLeadPhone: leadPhone,
+        phoneNumber: leadPhone,
         members: members,
         teamSize: members.length + 1,
         createdAt: Date.now()
@@ -229,9 +236,9 @@ const RegistrationPage: React.FC = () => {
     );
   }
 
-  const isHackathon = 
-    event.category === "HACKATHONS" || 
-    event.category === "Hackathon" || 
+  const isHackathon =
+    event.category === "HACKATHONS" ||
+    event.category === "Hackathon" ||
     event.category?.toLowerCase()?.includes("hackathon");
 
   if (!isHackathon) {
@@ -253,7 +260,7 @@ const RegistrationPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans text-center px-4 py-16">
         <SEO title="Registration Confirmed" description="Success screen confirming your event booking." />
-        
+
         {/* Success Checkmark Badge */}
         <div className="w-16 h-16 rounded-full bg-white border border-slate-100 flex items-center justify-center text-blue-600 shadow-[0_8px_30px_rgba(37,99,235,0.15)] mb-6 animate-bounce">
           <Check className="h-8 w-8 stroke-[3]" />
@@ -263,7 +270,7 @@ const RegistrationPage: React.FC = () => {
         <h1 className="text-4xl font-black text-slate-800 tracking-tight leading-none">
           Registration <span className="text-[#2563EB]">Successful!</span>
         </h1>
-        
+
         {/* Subtitle description */}
         <p className="text-slate-500 text-sm mt-3 max-w-xl font-semibold leading-relaxed">
           Welcome aboard. Your spot is reserved for the next frontier of intelligence. Get ready to push the boundaries of what's possible.
@@ -273,7 +280,7 @@ const RegistrationPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start w-full max-w-5xl mt-12">
           {/* Left Column (span 7) */}
           <div className="lg:col-span-7 space-y-6 text-left">
-            
+
             {/* Confirmed Registration card */}
             <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] border-l-4 border-l-[#2563EB] flex items-center gap-4">
               <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
@@ -290,7 +297,7 @@ const RegistrationPage: React.FC = () => {
             <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6">
               <h3 className="text-base font-extrabold text-slate-850 leading-tight">What's Next?</h3>
               <div className="space-y-6">
-                
+
                 {/* Step 1 */}
                 <div className="flex gap-4">
                   <div className="w-7 h-7 rounded-full bg-blue-50/50 text-blue-600 border border-blue-100/50 flex items-center justify-center font-bold text-xs shrink-0">
@@ -341,10 +348,10 @@ const RegistrationPage: React.FC = () => {
               {/* Image banner with "In Person" badge */}
               <div className="relative rounded-2xl overflow-hidden h-32 bg-slate-150 border border-slate-100 flex items-center justify-center">
                 {event.posterPreview ? (
-                  <img 
-                    src={event.posterPreview} 
-                    alt={event.title} 
-                    className="w-full h-full object-cover" 
+                  <img
+                    src={event.posterPreview}
+                    alt={event.title}
+                    className="w-full h-full object-cover"
                   />
                 ) : (
                   <>
@@ -362,7 +369,7 @@ const RegistrationPage: React.FC = () => {
               </div>
 
               <h3 className="text-sm font-black text-slate-850 leading-tight">Event Logistics</h3>
-              
+
               <div className="space-y-3.5 text-xs text-slate-550 font-semibold pt-1 border-t border-slate-50">
                 <div className="flex items-center gap-2.5">
                   <Calendar className="h-4.5 w-4.5 text-blue-600 shrink-0" />
@@ -408,19 +415,19 @@ const RegistrationPage: React.FC = () => {
 
   return (
     <div className="bg-[#F8FAFC] pb-24 text-left font-sans pt-24 min-h-screen">
-      <SEO 
+      <SEO
         title={`Register for ${event.title} - AI Verse`}
         description={`Complete registration details to secure your spot for ${event.title}.`}
       />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
+
         {/* ================= STEPPER ================= */}
         <div className="max-w-3xl mx-auto mb-10">
           <div className="flex items-center justify-between relative">
             {/* Background progress track */}
             <div className="absolute left-0 right-0 top-1/2 h-[2px] bg-slate-200 -translate-y-1/2 -z-10" />
-            <div 
+            <div
               className="absolute left-0 top-1/2 h-[2px] bg-blue-600 -translate-y-1/2 -z-10 transition-all duration-300"
               style={{ width: `${((step - 1) / 2) * 100}%` }}
             />
@@ -513,7 +520,7 @@ const RegistrationPage: React.FC = () => {
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Student ID</label>
                     <input
                       type="text"
-                      placeholder="ID-2024-XXXX"
+                      placeholder="24pa******"
                       value={leadStudentId}
                       onChange={(e) => setLeadStudentId(e.target.value)}
                       className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
@@ -521,19 +528,32 @@ const RegistrationPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Email</label>
-                  <input
-                    type="email"
-                    placeholder="student@university.edu"
-                    value={leadEmail}
-                    onChange={(e) => setLeadEmail(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Email</label>
+                    <input
+                      type="email"
+                      placeholder="student@vishnu.edu.in"
+                      value={leadEmail}
+                      onChange={(e) => setLeadEmail(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Lead Phone Number</label>
+                    <input
+                      type="tel"
+                      placeholder="1234567890"
+                      value={leadPhone}
+                      onChange={(e) => setLeadPhone(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                    />
+                  </div>
                 </div>
 
                 <div className="pt-4 flex justify-end">
-                  <Button 
+                  <Button
                     variant="gradient"
                     onClick={() => {
                       if (validateStep1()) {
@@ -621,7 +641,7 @@ const RegistrationPage: React.FC = () => {
                     <ClipboardList className="h-4 w-4 text-blue-600" />
                     Registration Summary
                   </h3>
-                  
+
                   {event.maxTeamSize > 1 && (
                     <div className="space-y-1 bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100/50">
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Group Name</span>
@@ -651,7 +671,7 @@ const RegistrationPage: React.FC = () => {
               {/* Right Column (span 8): Member Details form */}
               <div className="lg:col-span-8 space-y-6 text-left">
                 <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6">
-                  
+
                   <div className="flex justify-between items-center border-b border-slate-50 pb-3">
                     <div>
                       <h3 className="text-base font-extrabold text-slate-855 leading-tight">Member Details</h3>
@@ -707,7 +727,7 @@ const RegistrationPage: React.FC = () => {
                             <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Student ID</label>
                             <input
                               type="text"
-                              placeholder="ID-2024-XXXX"
+                              placeholder="24pa******"
                               value={member.studentId}
                               onChange={(e) => handleMemberChange(idx, "studentId", e.target.value)}
                               className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
@@ -717,9 +737,9 @@ const RegistrationPage: React.FC = () => {
                             <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</label>
                             <input
                               type="tel"
-                              placeholder="e.g. +1 (555) 000-0000"
-                              value={member.role || ""}
-                              onChange={(e) => handleMemberChange(idx, "role", e.target.value)}
+                              placeholder="1234567890"
+                              value={member.phone || ""}
+                              onChange={(e) => handleMemberChange(idx, "phone", e.target.value)}
                               className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
                             />
                           </div>
@@ -747,7 +767,7 @@ const RegistrationPage: React.FC = () => {
                       <ArrowLeft className="h-4 w-4" />
                       Previous Step
                     </button>
-                    <Button 
+                    <Button
                       variant="gradient"
                       onClick={() => {
                         if (validateStep2()) {
@@ -783,7 +803,7 @@ const RegistrationPage: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start animate-in fade-in duration-200">
             {/* Left Column (span 8): Group Identity + Team Roster */}
             <div className="lg:col-span-8 space-y-6">
-              
+
               {/* Group Identity Card */}
               <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6 text-left">
                 <div className="flex justify-between items-center border-b border-slate-55 pb-3">
@@ -791,8 +811,8 @@ const RegistrationPage: React.FC = () => {
                     <Users className="h-4.5 w-4.5 text-blue-600" />
                     Group Identity
                   </h3>
-                  <button 
-                    onClick={() => setStep(1)} 
+                  <button
+                    onClick={() => setStep(1)}
                     className="text-xs text-blue-600 hover:text-blue-700 font-bold"
                   >
                     Edit
@@ -829,8 +849,8 @@ const RegistrationPage: React.FC = () => {
                       <ClipboardList className="h-4.5 w-4.5 text-blue-600" />
                       Team Roster
                     </h3>
-                    <button 
-                      onClick={() => setStep(2)} 
+                    <button
+                      onClick={() => setStep(2)}
                       className="text-xs text-blue-600 hover:text-blue-700 font-bold"
                     >
                       Edit
@@ -844,33 +864,16 @@ const RegistrationPage: React.FC = () => {
                           <th className="pb-3 pr-4 font-bold text-left">Name</th>
                           <th className="pb-3 px-4 font-bold text-left">Email</th>
                           <th className="pb-3 px-4 font-bold text-left">Phone Number</th>
-                          <th className="pb-3 pl-4 font-bold text-right">Role</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50 font-medium text-slate-750">
-                        {members.map((m, idx) => {
-                          const roles = ["Developer", "Researcher", "Analyst"];
-                          const badgeStyles = [
-                            "bg-sky-50 text-sky-700 border-sky-100",
-                            "bg-emerald-50 text-emerald-700 border-emerald-100",
-                            "bg-indigo-50 text-indigo-700 border-indigo-100"
-                          ];
-                          const roleName = roles[idx % roles.length];
-                          const badgeStyle = badgeStyles[idx % badgeStyles.length];
-                          
-                          return (
-                            <tr key={idx} className="hover:bg-slate-50/20">
-                              <td className="py-3.5 pr-4 font-bold text-slate-800">{m.name}</td>
-                              <td className="py-3.5 px-4 font-semibold text-slate-550">{m.email}</td>
-                              <td className="py-3.5 px-4 text-slate-500 font-bold">{m.role || "N/A"}</td>
-                              <td className="py-3.5 pl-4 text-right">
-                                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-black border tracking-wide uppercase ${badgeStyle}`}>
-                                  {roleName}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                        {members.map((m, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/20">
+                            <td className="py-3.5 pr-4 font-bold text-slate-800">{m.name}</td>
+                            <td className="py-3.5 px-4 font-semibold text-slate-550">{m.email}</td>
+                            <td className="py-3.5 px-4 text-slate-500 font-bold">{m.phone || "N/A"}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -881,7 +884,7 @@ const RegistrationPage: React.FC = () => {
 
             {/* Right Column (span 4): Event Recap + Terms Checkbox & Submit */}
             <div className="lg:col-span-4 space-y-6">
-              
+
               {/* Event Recap Card */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
                 <h3 className="text-sm font-black text-slate-800 tracking-tight pb-3 border-b border-slate-50">
@@ -892,10 +895,10 @@ const RegistrationPage: React.FC = () => {
                   {/* Premium illustration or map badge banner */}
                   <div className="relative rounded-2xl overflow-hidden h-28 bg-slate-150 border border-slate-100 flex items-center justify-center">
                     {event.posterPreview ? (
-                      <img 
-                        src={event.posterPreview} 
-                        alt={event.title} 
-                        className="w-full h-full object-cover" 
+                      <img
+                        src={event.posterPreview}
+                        alt={event.title}
+                        className="w-full h-full object-cover"
                       />
                     ) : (
                       <>
@@ -942,11 +945,11 @@ const RegistrationPage: React.FC = () => {
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
                 <div className="space-y-3.5">
                   <label className="flex gap-3 cursor-pointer">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       checked={agreedTerms}
                       onChange={(e) => setAgreedTerms(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded border-slate-350 text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                      className="mt-0.5 h-4 w-4 rounded border-slate-350 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                     <span className="text-[10px] font-semibold text-slate-500 leading-normal select-none cursor-pointer">
                       I agree to the <span className="text-blue-600 hover:underline font-bold">Terms and Conditions</span> of the AI Innovation Club.
@@ -954,11 +957,11 @@ const RegistrationPage: React.FC = () => {
                   </label>
 
                   <label className="flex gap-3 cursor-pointer">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       checked={confirmedInfo}
                       onChange={(e) => setConfirmedInfo(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded border-slate-350 text-blue-600 focus:ring-blue-500 cursor-pointer" 
+                      className="mt-0.5 h-4 w-4 rounded border-slate-350 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                     <span className="text-[10px] font-semibold text-slate-500 leading-normal select-none cursor-pointer">
                       I confirm all provided information is accurate and final.
@@ -967,7 +970,7 @@ const RegistrationPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-2 pt-2">
-                  <Button 
+                  <Button
                     variant="gradient"
                     onClick={handleSubmit}
                     disabled={submitting || !agreedTerms || !confirmedInfo}

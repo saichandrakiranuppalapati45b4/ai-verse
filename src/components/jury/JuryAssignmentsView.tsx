@@ -4,18 +4,12 @@ import {
   Clock, 
   Search, 
   Filter, 
-  ExternalLink,
-  ChevronRight,
   Send,
   X,
   FileSpreadsheet,
   Download,
-  Edit3,
-  Code2,
-  Globe,
   Eye,
   EyeOff,
-  Check,
   Lock,
   Flame
 } from "lucide-react";
@@ -349,23 +343,6 @@ const JuryAssignmentsView: React.FC = () => {
     } catch (err) {
       console.error("Firebase Firestore Save Error:", err);
       alert("Failed to save score to Firebase. Please try again.");
-    }
-  };
-
-  const handleOpenEvaluation = (project: HackathonProject) => {
-    setSelectedProject(project);
-    if (project.status === "Evaluated") {
-      setCommunication(project.communication);
-      setInnovationUniqueness(project.innovationUniqueness);
-      setFeasibilityViability(project.feasibilityViability);
-      setStatistics(project.statistics);
-      setRevenue(project.revenue);
-    } else {
-      setCommunication(18);
-      setInnovationUniqueness(18);
-      setFeasibilityViability(18);
-      setStatistics(18);
-      setRevenue(18);
     }
   };
 

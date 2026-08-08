@@ -20,7 +20,6 @@ import {
   ArrowLeft,
   Save,
   Info,
-  Cloud,
   Settings as SettingsIcon,
   Bell,
   Link as LinkIcon,
@@ -160,7 +159,6 @@ const GalleryManagementPage: React.FC = () => {
   const [newTagText, setNewTagText] = useState("");
   const [selectedPhotos, setSelectedPhotos] = useState<{ name: string; size: string; preview: string }[]>([]);
 
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const bannerInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleOpenEditAlbum = (album: AlbumItem) => {
@@ -172,24 +170,6 @@ const GalleryManagementPage: React.FC = () => {
     setBannerImage(album.coverImage || (album as any).bannerImage || "");
     setFormStatus(album.status);
     setShowCreateAlbumView(true);
-  };
-
-  const readAndAppendFiles = (files: File[]) => {
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64Str = reader.result as string;
-        setSelectedPhotos(prev => [
-          ...prev,
-          {
-            name: file.name,
-            size: (file.size / (1024 * 1024)).toFixed(1) + " MB",
-            preview: base64Str
-          }
-        ]);
-      };
-      reader.readAsDataURL(file);
-    });
   };
 
   const compressImage = (base64Str: string, maxWidth = 500, quality = 0.6): Promise<string> => {
@@ -222,23 +202,6 @@ const GalleryManagementPage: React.FC = () => {
         resolve(base64Str);
       };
     });
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const filesArr = Array.from(e.target.files);
-      readAndAppendFiles(filesArr);
-      addToast(`Selected ${filesArr.length} photos!`);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.files) {
-      const filesArr = Array.from(e.dataTransfer.files);
-      readAndAppendFiles(filesArr);
-      addToast(`Selected ${filesArr.length} photos!`);
-    }
   };
 
   const handleSaveAlbum = async (status: "Published" | "Draft") => {

@@ -1,24 +1,12 @@
-import React, { useState } from "react";
+import React from "react";
 import { 
   Trophy, 
-  BarChart3, 
-  Award, 
-  Download, 
-  Search, 
-  Filter, 
-  CheckCircle2, 
-  Clock, 
-  Eye, 
-  Medal, 
-  ChevronRight,
-  Sparkles,
   FileSpreadsheet
 } from "lucide-react";
 import JuryResultsView from "../../components/jury/JuryResultsView";
 import SEO from "../../components/layout/SEO";
 
 const FacResultsPage: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<"Standings" | "Track Breakdown">("Standings");
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200 font-sans text-left">

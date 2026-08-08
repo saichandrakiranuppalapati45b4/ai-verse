@@ -212,7 +212,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (email: string, passwordOrRole: string, name: string, role: "faculty" | "organizer" | "member") => {
+  const register = async (email: string, passwordOrRole: string, name: string, role: "faculty" | "organizer" | "member" | "jury") => {
     setLoading(true);
     const cleanEmail = email.toLowerCase().trim();
 
@@ -252,7 +252,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const setMockRole = (role: "faculty" | "organizer" | "member" | null) => {
+  const setMockRole = (role: "faculty" | "organizer" | "member" | "jury" | null) => {
     if (role === null) {
       setUser(null);
       localStorage.removeItem("aether_mock_user");

@@ -21,7 +21,6 @@ import { collection, onSnapshot, doc } from "firebase/firestore";
 
 interface JuryDashboardViewProps {
   onNavigateTab: (tab: "Dashboard" | "Assignments") => void;
-  onOpenSubmitModal: () => void;
 }
 
 interface JuryEvaluationDoc {
@@ -47,8 +46,7 @@ interface FirestoreEventDoc {
 }
 
 const JuryDashboardView: React.FC<JuryDashboardViewProps> = ({
-  onNavigateTab,
-  onOpenSubmitModal
+  onNavigateTab
 }) => {
   const [evaluations, setEvaluations] = useState<JuryEvaluationDoc[]>([]);
   const [dbEvents, setDbEvents] = useState<FirestoreEventDoc[]>([]);

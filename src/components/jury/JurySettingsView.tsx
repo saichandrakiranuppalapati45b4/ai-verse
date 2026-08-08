@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { User, Bell, Shield, Key, Save, CheckCircle2 } from "lucide-react";
+import { User, Bell, Save, CheckCircle2 } from "lucide-react";
 
 const JurySettingsView: React.FC = () => {
   const [name, setName] = useState("Dr. Sarah Chen");

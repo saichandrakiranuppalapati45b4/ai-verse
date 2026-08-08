@@ -1,7 +1,5 @@
 import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { auth, db } from "../../config/firebase";
-import { doc, getDoc } from "firebase/firestore";
 import { useNavigate, Link } from "react-router-dom";
 import { Mail, Lock, Eye, EyeOff, User, Box, Cpu, Network } from "lucide-react";
 import Button from "../../components/ui/Button";

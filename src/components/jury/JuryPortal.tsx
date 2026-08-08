@@ -8,7 +8,7 @@ import SubmitScoresModal from "./SubmitScoresModal";
 import SEO from "../layout/SEO";
 import { Lock, ShieldAlert } from "lucide-react";
 import { db } from "../../config/firebase";
-import { doc, getDoc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 
 interface JuryPortalProps {
   initialTab?: JurySidebarTab;
@@ -116,7 +116,6 @@ const JuryPortal: React.FC<JuryPortalProps> = ({
           {activeTab === "Dashboard" && (
             <JuryDashboardView
               onNavigateTab={setActiveTab}
-              onOpenSubmitModal={() => setIsSubmitModalOpen(true)}
             />
           )}
 

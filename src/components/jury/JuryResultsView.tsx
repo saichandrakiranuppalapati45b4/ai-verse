@@ -1,17 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { 
   Trophy, 
-  Award, 
-  Medal, 
-  ArrowUpRight, 
   BarChart3, 
-  CheckCircle2, 
   Calendar, 
   ArrowLeft, 
   ChevronRight, 
-  Users, 
-  Sparkles, 
-  Layers 
+  Users
 } from "lucide-react";
 import { db } from "../../config/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
