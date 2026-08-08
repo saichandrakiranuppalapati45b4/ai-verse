@@ -711,7 +711,7 @@ const EventManagementPage: React.FC = () => {
         description="Control center for all faculty-led academic activities, workshop tracking and hackathon registrations."
       />
 
-      {view === "list" && (
+      {view === "list" && !isDetailsModalOpen && (
         <>
           {/* ================= HEADER ================= */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-left">
@@ -929,14 +929,13 @@ const EventManagementPage: React.FC = () => {
                     <th className="px-6 py-4">Event Details</th>
                     <th className="px-6 py-4">Category</th>
                     <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4">Progress</th>
+                    <th className="px-6 py-4">Registrations</th>
                     <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedEvents.length > 0 ? (
                     paginatedEvents.map((event) => {
-                      const progressPercent = Math.min(100, Math.round(((event.currentReg || 0) / (event.maxReg || 50)) * 100));
                       return (
                         <tr 
                           key={event.id} 
@@ -1009,18 +1008,10 @@ const EventManagementPage: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4 w-44">
-                            <div className="space-y-1.5">
-                              <div className="flex justify-between items-center text-[9px] font-bold text-slate-400">
-                                <span>{event.currentReg || 0} / {event.maxReg || 50}</span>
-                                <span>{progressPercent}%</span>
-                              </div>
-                              <div className="w-full bg-slate-100 rounded-full h-1">
-                                <div 
-                                  className="bg-[#2563EB] h-1 rounded-full" 
-                                  style={{ width: `${progressPercent}%` }}
-                                ></div>
-                              </div>
-                            </div>
+                            <span className="px-3 py-1 bg-blue-50 text-[#2563EB] font-black text-xs rounded-full border border-blue-100/60 inline-flex items-center gap-1.5 shadow-xs">
+                              <Users className="h-3.5 w-3.5" />
+                              {event.currentReg || 0} Registered
+                            </span>
                           </td>
                           <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                             <button
@@ -2113,35 +2104,67 @@ const EventManagementPage: React.FC = () => {
         </div>
       )}
 
-      {/* ================= TOTAL EVENT INFORMATION DETAILS MODAL (ULTRA PREMIUM RE-DESIGN) ================= */}
+      {/* ================= TOTAL EVENT INFORMATION DETAILS FULL PAGE VIEW ================= */}
       {isDetailsModalOpen && (
-        <div 
-          onClick={() => setIsDetailsModalOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-300 font-sans cursor-pointer"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-slate-50 rounded-[32px] max-w-5xl w-full shadow-2xl border border-white/20 overflow-hidden text-left relative my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200 cursor-default"
-          >
-            
-            {/* 🌟 HERO BANNER HEADER */}
-            <div className="relative bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white p-6 sm:p-8 shrink-0 overflow-hidden">
-              {/* Background Glow Blobs */}
-              <div className="absolute top-0 right-1/4 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none"></div>
-              <div className="absolute -bottom-10 left-10 w-72 h-72 bg-purple-600/15 rounded-full blur-3xl pointer-events-none"></div>
-              
-              {/* Close Button */}
+        <div className="space-y-6 pb-12 text-left font-sans animate-in fade-in duration-200">
+          <SEO 
+            title={`${selectedEventDetails?.title || "Event Details"} - Faculty Portal`} 
+            description="Control center for faculty-led event information, coordinator roster, and parameters."
+          />
+
+          {/* BREADCRUMB & TOP ACTION BAR */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+            <div>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                <span>Dashboard</span>
+                <span>&gt;</span>
+                <span>Events</span>
+                <span>&gt;</span>
+                <span className="text-[#2563EB]">Event Details</span>
+              </div>
+              <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">
+                {selectedEventDetails?.title || "Event Details"}
+              </h1>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Full event configuration, venue location, speaker details, and coordinator assignments.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsDetailsModalOpen(false);
-                }}
-                className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-all backdrop-blur-md border border-white/20 shadow-xl z-30 cursor-pointer active:scale-90"
-                aria-label="Close modal"
+                onClick={() => setIsDetailsModalOpen(false)}
+                className="px-4 py-2 border border-slate-200 text-slate-650 font-bold rounded-2xl hover:bg-slate-50 transition-all text-xs bg-white flex items-center gap-1.5 shadow-sm"
               >
-                <X className="h-5 w-5 text-white" />
+                <ChevronLeft className="h-4 w-4" />
+                Back to Events
               </button>
+              {selectedEventDetails && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDetailsModalOpen(false);
+                    if (selectedEventDetails?.id) {
+                      handleStartEditEvent(selectedEventDetails.id);
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-2xl shadow-md text-xs flex items-center gap-1.5 shadow-blue-600/10"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Edit Event
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* MAIN EVENT DETAILS FULL CONTAINER */}
+          <div className="bg-slate-50 rounded-[32px] w-full shadow-sm border border-slate-200/80 overflow-hidden text-left relative flex flex-col">
+            
+            {/* 🌟 HERO BANNER HEADER */}
+            <div className="relative bg-gradient-to-r from-[#1E3A8A] via-[#2563EB] to-[#1D4ED8] text-white p-6 sm:p-8 shrink-0 overflow-hidden shadow-md">
+              {/* Background Glow Blobs */}
+              <div className="absolute top-0 right-1/4 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="absolute -bottom-10 left-10 w-72 h-72 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none"></div>
 
               <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
                 
@@ -2153,7 +2176,7 @@ const EventManagementPage: React.FC = () => {
                       const src = selectedEventDetails?.posterPreview || selectedEventDetails?.image || sparkImg;
                       if (src) setActiveImageLightbox(src);
                     }}
-                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-slate-900/60 border border-white/20 overflow-hidden shrink-0 shadow-2xl flex items-center justify-center p-1 backdrop-blur-sm cursor-pointer group relative hover:border-blue-400/60 transition-all"
+                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white/15 border border-white/30 overflow-hidden shrink-0 shadow-2xl flex items-center justify-center p-1 backdrop-blur-sm cursor-pointer group relative hover:border-white/60 transition-all"
                     title="Click to view full poster"
                   >
                     <img
@@ -2172,28 +2195,28 @@ const EventManagementPage: React.FC = () => {
                   <div className="space-y-2">
                     {/* Category & Status Pills */}
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/25 text-blue-300 border border-blue-400/30 backdrop-blur-md shadow-sm">
+                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white/20 text-white border border-white/30 backdrop-blur-md shadow-sm">
                         {selectedEventDetails?.category || "EVENT"}
                       </span>
                       {selectedEventDetails?.status && (
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border backdrop-blur-md flex items-center gap-1.5 ${
                           selectedEventDetails.status === "Opened" 
-                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" 
+                            ? "bg-emerald-400/25 text-emerald-100 border-emerald-300/40" 
                             : selectedEventDetails.status === "Active"
-                            ? "bg-blue-500/20 text-blue-300 border-blue-500/40"
-                            : "bg-slate-500/20 text-slate-300 border-slate-500/40"
+                            ? "bg-sky-400/25 text-sky-100 border-sky-300/40"
+                            : "bg-slate-400/25 text-slate-100 border-slate-300/40"
                         }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${selectedEventDetails.status === "Opened" ? "bg-emerald-400 animate-ping" : "bg-blue-400"}`}></span>
+                          <span className={`w-1.5 h-1.5 rounded-full ${selectedEventDetails.status === "Opened" ? "bg-emerald-300 animate-ping" : "bg-sky-300"}`}></span>
                           {selectedEventDetails.status}
                         </span>
                       )}
                       {selectedEventDetails?.visibility && (
-                        <span className="px-3 py-1 rounded-full text-[10px] font-bold text-slate-300 bg-white/10 border border-white/10">
+                        <span className="px-3 py-1 rounded-full text-[10px] font-bold text-blue-100 bg-white/10 border border-white/20">
                           {selectedEventDetails.visibility}
                         </span>
                       )}
                       {selectedEventDetails?.primaryTag && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold text-blue-200 bg-blue-900/40 border border-blue-500/30">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold text-blue-100 bg-white/15 border border-white/25">
                           #{selectedEventDetails.primaryTag}
                         </span>
                       )}
@@ -2218,27 +2241,11 @@ const EventManagementPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-
-                {/* Edit Event Action Button */}
-                {selectedEventDetails && (
-                  <div className="shrink-0 self-end md:self-center">
-                    <button
-                      onClick={() => {
-                        setIsDetailsModalOpen(false);
-                        handleStartEditEvent(selectedEventDetails.id);
-                      }}
-                      className="px-5 py-2.5 bg-white text-slate-900 hover:bg-blue-50 rounded-2xl text-xs font-black transition-all shadow-xl hover:shadow-blue-500/20 flex items-center gap-2 border border-white/40 active:scale-95"
-                    >
-                      <Pencil className="h-4 w-4 text-[#2563EB]" />
-                      Edit Event
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* 📜 SCROLLABLE BODY */}
-            <div className="p-6 sm:p-8 overflow-y-auto bg-slate-100/60 flex-grow">
+            {/* 📜 BODY DETAILS */}
+            <div className="p-6 sm:p-8 bg-slate-100/60 flex-grow">
               {loadingDetails ? (
                 <div className="py-20 text-center space-y-4">
                   <div className="animate-spin rounded-full h-12 w-12 border-4 border-slate-200 border-t-[#2563EB] mx-auto shadow-md"></div>
@@ -2350,19 +2357,15 @@ const EventManagementPage: React.FC = () => {
                         4. Registration Status & Rules
                       </h3>
 
-                      {/* Progress Bar */}
-                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2">
-                        <div className="flex justify-between items-center text-xs font-extrabold">
-                          <span className="text-slate-600">Capacity Filled</span>
-                          <span className="text-[#2563EB]">
-                            {selectedEventDetails?.currentReg || 0} / {selectedEventDetails?.maxReg || "Unlimited"} Seats
-                          </span>
+                      {/* Total Registered Seats Display */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                        <div className="space-y-0.5 text-left">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Registrations Count</span>
+                          <span className="text-xs font-bold text-slate-700">Total Registered Seats</span>
                         </div>
-                        <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                          <div 
-                            className="bg-[#2563EB] h-2 rounded-full transition-all duration-500"
-                            style={{ width: `${Math.min(100, Math.round(((Number(selectedEventDetails?.currentReg) || 0) / (Number(selectedEventDetails?.maxReg) || 50)) * 100))}%` }}
-                          ></div>
+                        <div className="px-4 py-2 bg-blue-50 text-[#2563EB] rounded-2xl border border-blue-100/60 font-black text-sm shadow-xs flex items-center gap-2">
+                          <Users className="h-4 w-4 text-[#2563EB]" />
+                          <span>{selectedEventDetails?.currentReg || 0} Registered Seats</span>
                         </div>
                       </div>
 
@@ -2570,15 +2573,20 @@ const EventManagementPage: React.FC = () => {
                   <div className="space-y-6">
 
                     {/* 6 & 7. Coordinators Widget */}
-                    <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-3">
-                        Coordinators
-                      </h3>
+                    <div className="bg-white p-6 rounded-3xl border border-blue-100 shadow-sm space-y-4">
+                      <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                        <div className="w-7 h-7 rounded-xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold">
+                          <Users className="h-4 w-4" />
+                        </div>
+                        <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                          Event Coordinators
+                        </h3>
+                      </div>
 
                       {/* 6. Faculty Coordinator */}
-                      <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-100 space-y-1">
+                      <div className="bg-gradient-to-r from-purple-50 to-indigo-50/60 p-4 rounded-2xl border border-purple-100 space-y-1">
                         <span className="text-[9px] font-black text-purple-600 uppercase tracking-wider block">
-                          6. Faculty Coordinator
+                          Faculty Coordinator
                         </span>
                         <span className="text-xs font-black text-slate-800 block">
                           {selectedEventDetails?.facultyCoordinator || "Not Assigned"}
@@ -2586,9 +2594,9 @@ const EventManagementPage: React.FC = () => {
                       </div>
 
                       {/* 7. Student Coordinator */}
-                      <div className="bg-orange-50/50 p-4 rounded-2xl border border-orange-100 space-y-1">
-                        <span className="text-[9px] font-black text-orange-600 uppercase tracking-wider block">
-                          7. Student Coordinator
+                      <div className="bg-gradient-to-r from-amber-50 to-orange-50/60 p-4 rounded-2xl border border-amber-100 space-y-1">
+                        <span className="text-[9px] font-black text-amber-700 uppercase tracking-wider block">
+                          Student Coordinator
                         </span>
                         <span className="text-xs font-black text-slate-800 block">
                           {selectedEventDetails?.studentCoordinator || "Not Assigned"}
@@ -2647,17 +2655,18 @@ const EventManagementPage: React.FC = () => {
               )}
             </div>
 
-            {/* MODAL FOOTER */}
+            {/* VIEW FOOTER */}
             <div className="p-4 sm:px-8 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
                 <ShieldCheck className="h-4 w-4 text-blue-600" />
-                <span>AI Verse Event Portal • Read Only</span>
+                <span>AI Verse Event Portal • Read Only Details</span>
               </div>
               <button
                 onClick={() => setIsDetailsModalOpen(false)}
-                className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-2xl text-xs transition-colors shadow-sm active:scale-95"
+                className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-2xl text-xs transition-colors shadow-sm active:scale-95 flex items-center gap-1.5"
               >
-                Close View
+                <ChevronLeft className="h-4 w-4 text-slate-600" />
+                Back to Events List
               </button>
             </div>
 

@@ -11,7 +11,9 @@ import {
   Eye,
   EyeOff,
   Lock,
-  Flame
+  Flame,
+  Maximize2,
+  Minimize2
 } from "lucide-react";
 import { db } from "../../config/firebase";
 import { collection, onSnapshot, doc, setDoc } from "firebase/firestore";
@@ -124,6 +126,35 @@ const JuryAssignmentsView: React.FC = () => {
   const [statistics, setStatistics] = useState(18);
   const [revenue, setRevenue] = useState(18);
   const [feedbackNotes, setFeedbackNotes] = useState("");
+
+  // Full Screen distraction-free scoring mode state
+  const [isFullScreenMode, setIsFullScreenMode] = useState(false);
+
+  const toggleFullScreen = () => {
+    if (!isFullScreenMode) {
+      setIsFullScreenMode(true);
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } else {
+      setIsFullScreenMode(false);
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleFullScreenChange = () => {
+      if (!document.fullscreenElement) {
+        setIsFullScreenMode(false);
+      }
+    };
+    document.addEventListener("fullscreenchange", handleFullScreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullScreenChange);
+    };
+  }, []);
 
   // Active event configuration configured in Admin Settings -> Jury Control
   const [activeEventConfig, setActiveEventConfig] = useState<{ id: string; title: string }>({
@@ -420,8 +451,30 @@ const JuryAssignmentsView: React.FC = () => {
     : "N/A";
 
   return (
-    <div className="space-y-5 animate-in fade-in duration-200 text-left font-sans">
-      {/* Header with Excel Export Button */}
+    <div className={isFullScreenMode ? "fixed inset-0 z-[9999] bg-[#F8FAFC] p-4 sm:p-6 overflow-y-auto space-y-5 animate-in fade-in duration-200 text-left font-sans" : "space-y-5 animate-in fade-in duration-200 text-left font-sans"}>
+      {/* Fullscreen Sticky Control Header */}
+      {isFullScreenMode && (
+        <div className="bg-slate-950 text-white px-6 py-3.5 rounded-2xl flex items-center justify-between shadow-xl shrink-0 border border-slate-800 animate-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-sm">
+              <Maximize2 className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-extrabold tracking-tight text-white">Full Screen Scoring Mode</h2>
+              <p className="text-[10px] text-slate-300 font-medium">Distraction-free jury evaluation grid • Press Esc or click Exit to return</p>
+            </div>
+          </div>
+          <button
+            onClick={toggleFullScreen}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2 border border-white/20 active:scale-95 cursor-pointer"
+          >
+            <Minimize2 className="h-4 w-4 text-blue-400" />
+            Exit Full Screen
+          </button>
+        </div>
+      )}
+
+      {/* Header with Excel Export & Fullscreen Buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
         <div>
           <div className="flex items-center gap-2.5">
@@ -437,42 +490,118 @@ const JuryAssignmentsView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={exportToCSV}
-          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 shrink-0"
-        >
-          <Download className="h-4 w-4" />
-          Export to Excel (CSV)
-        </button>
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          <button
+            onClick={toggleFullScreen}
+            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 shrink-0 active:scale-95 cursor-pointer"
+            title="Enter distraction-free full screen scoring mode"
+          >
+            {isFullScreenMode ? (
+              <>
+                <Minimize2 className="h-4 w-4" />
+                Exit Full Screen
+              </>
+            ) : (
+              <>
+                <Maximize2 className="h-4 w-4" />
+                Enter Full Screen
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={exportToCSV}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 shrink-0 active:scale-95 cursor-pointer"
+          >
+            <Download className="h-4 w-4" />
+            Export to Excel (CSV)
+          </button>
+        </div>
       </div>
 
-      {/* Active Evaluation Event Banner */}
-      <div className="bg-blue-50/80 border border-blue-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-        <div className="flex items-center gap-3">
-          <span className="p-2.5 rounded-xl bg-[#2563EB] text-white shadow-xs">
-            <Flame className="h-5 w-5" />
-          </span>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest bg-white px-2.5 py-0.5 rounded-full border border-blue-100">
-                ACTIVE EVALUATION EVENT
-              </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold tracking-wide uppercase bg-emerald-100 text-emerald-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                LIVE SCORING OPEN
-              </span>
-            </div>
-            <h2 className="text-base font-extrabold text-slate-900 mt-1">
-              {activeEventConfig.title}
+      {!isFullScreenMode ? (
+        /* STANDBY / LAUNCHER CARD WHEN NOT IN FULLSCREEN MODE */
+        <div className="bg-white rounded-3xl p-8 sm:p-12 border border-slate-200/80 shadow-md text-center space-y-6 max-w-2xl mx-auto my-6 animate-in fade-in duration-200">
+          <div className="w-16 h-16 rounded-3xl bg-blue-50 text-[#2563EB] mx-auto flex items-center justify-center border border-blue-100 shadow-inner">
+            <Maximize2 className="h-8 w-8" />
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-3.5 py-1 rounded-full border border-blue-100/80">
+              FULL SCREEN SCORING REQUIRED
+            </span>
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight pt-2">
+              Jury Evaluation Grid & Score Board
             </h2>
+            <p className="text-xs text-slate-500 font-semibold leading-relaxed max-w-md mx-auto">
+              To evaluate assigned projects, enter marks, and lock evaluation matrices, please enter full-screen scoring mode. The score board loads distraction-free without sidebars.
+            </p>
+          </div>
+
+          {/* Quick Metrics Summary */}
+          <div className="grid grid-cols-3 gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-left">
+            <div>
+              <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Active Event</span>
+              <span className="text-xs font-black text-slate-800 truncate block mt-0.5">{activeEventConfig.title}</span>
+            </div>
+            <div>
+              <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Assigned Projects</span>
+              <span className="text-xs font-black text-blue-600 block mt-0.5">{projects.length} Submissions</span>
+            </div>
+            <div>
+              <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Evaluated</span>
+              <span className="text-xs font-black text-emerald-600 block mt-0.5">{evaluatedCount} / {projects.length}</span>
+            </div>
+          </div>
+
+          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={toggleFullScreen}
+              className="w-full sm:w-auto px-8 py-3.5 bg-[#2563EB] hover:bg-blue-700 text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-blue-600/20 transition-all flex items-center justify-center gap-2.5 active:scale-95 cursor-pointer"
+            >
+              <Maximize2 className="h-4.5 w-4.5" />
+              Enter Full Screen Score Board
+            </button>
+
+            <button
+              onClick={exportToCSV}
+              className="w-full sm:w-auto px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+            >
+              <Download className="h-4 w-4 text-slate-500" />
+              Export CSV
+            </button>
           </div>
         </div>
+      ) : (
+        /* FULL SCREEN ACTIVE: RENDER ACTIVE EVENT BANNER & SCORING SPREADSHEET MATRIX */
+        <>
+          {/* Active Evaluation Event Banner */}
+          <div className="bg-blue-50/80 border border-blue-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <span className="p-2.5 rounded-xl bg-[#2563EB] text-white shadow-xs">
+                <Flame className="h-5 w-5" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest bg-white px-2.5 py-0.5 rounded-full border border-blue-100">
+                    ACTIVE EVALUATION EVENT
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold tracking-wide uppercase bg-emerald-100 text-emerald-700">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                    LIVE SCORING OPEN
+                  </span>
+                </div>
+                <h2 className="text-base font-extrabold text-slate-900 mt-1">
+                  {activeEventConfig.title}
+                </h2>
+              </div>
+            </div>
 
-        <div className="text-xs text-slate-600 font-bold bg-white px-4 py-2 rounded-xl border border-blue-100 shrink-0 flex items-center gap-2">
-          <span>Active Track Filter:</span>
-          <span className="text-[#2563EB] font-black">{activeEventConfig.title}</span>
-        </div>
-      </div>
+            <div className="text-xs text-slate-600 font-bold bg-white px-4 py-2 rounded-xl border border-blue-100 shrink-0 flex items-center gap-2">
+              <span>Active Track Filter:</span>
+              <span className="text-[#2563EB] font-black">{activeEventConfig.title}</span>
+            </div>
+          </div>
 
       {/* Filter & Reveal Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -914,6 +1043,8 @@ const JuryAssignmentsView: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

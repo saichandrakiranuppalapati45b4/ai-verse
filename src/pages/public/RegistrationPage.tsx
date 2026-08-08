@@ -131,6 +131,8 @@ const RegistrationPage: React.FC = () => {
     setMembers(prev => prev.map((m, idx) => idx === index ? { ...m, [field]: value } : m));
   };
 
+  const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
   const validateStep1 = () => {
     if (event && event.maxTeamSize > 1 && !groupName.trim()) {
       alert("Please enter a Group/Team Name.");
@@ -140,12 +142,16 @@ const RegistrationPage: React.FC = () => {
       alert("Please enter the Team Lead's name.");
       return false;
     }
-    if (!leadEmail.trim() || !leadEmail.includes("@")) {
-      alert("Please enter a valid Team Lead email address.");
+    if (!leadEmail.trim() || !EMAIL_REGEX.test(leadEmail.trim())) {
+      alert("Please enter a valid Team Lead email address with a domain (e.g. student@vishnu.edu.in or name@gmail.com).");
       return false;
     }
     if (!leadStudentId.trim()) {
       alert("Please enter the Team Lead's Student ID.");
+      return false;
+    }
+    if (leadStudentId.includes("@")) {
+      alert("Team Lead Student ID should not be an email address. Please check your inputs.");
       return false;
     }
     if (!leadPhone.trim()) {
@@ -162,12 +168,16 @@ const RegistrationPage: React.FC = () => {
         alert(`Please enter a name for Member ${i + 1}.`);
         return false;
       }
-      if (!member.email.trim() || !member.email.includes("@")) {
-        alert(`Please enter a valid email for Member ${i + 1}.`);
+      if (!member.email.trim() || !EMAIL_REGEX.test(member.email.trim())) {
+        alert(`Please enter a valid email address with a domain (e.g. member@vishnu.edu.in or member@gmail.com) for Member ${i + 1}.`);
         return false;
       }
       if (!member.studentId.trim()) {
         alert(`Please enter a Student ID for Member ${i + 1}.`);
+        return false;
+      }
+      if (member.studentId.includes("@")) {
+        alert(`Student ID for Member ${i + 1} appears to be an email address. Please make sure Email and Student ID fields are not swapped.`);
         return false;
       }
     }
@@ -523,8 +533,13 @@ const RegistrationPage: React.FC = () => {
                       placeholder="24pa******"
                       value={leadStudentId}
                       onChange={(e) => setLeadStudentId(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                      className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
+                        leadStudentId.includes("@") ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
+                      }`}
                     />
+                    {leadStudentId.includes("@") && (
+                      <span className="text-[10px] text-red-500 font-semibold mt-1 block">Student ID should not contain '@'</span>
+                    )}
                   </div>
                 </div>
 
@@ -536,8 +551,13 @@ const RegistrationPage: React.FC = () => {
                       placeholder="student@vishnu.edu.in"
                       value={leadEmail}
                       onChange={(e) => setLeadEmail(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                      className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
+                        leadEmail.trim() && !EMAIL_REGEX.test(leadEmail.trim()) ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
+                      }`}
                     />
+                    {leadEmail.trim() && !EMAIL_REGEX.test(leadEmail.trim()) && (
+                      <span className="text-[10px] text-red-500 font-semibold mt-1 block">Enter a valid email address with a domain (e.g. name@domain.com)</span>
+                    )}
                   </div>
 
                   <div>
@@ -711,14 +731,19 @@ const RegistrationPage: React.FC = () => {
                             />
                           </div>
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">University Email</label>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">University / Member Email</label>
                             <input
                               type="email"
-                              placeholder="s.jenkins@univ.edu"
+                              placeholder="e.g. member@vishnu.edu.in or member@gmail.com"
                               value={member.email}
                               onChange={(e) => handleMemberChange(idx, "email", e.target.value)}
-                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
+                              className={`w-full px-3 py-2 border rounded-xl focus:outline-none font-semibold text-xs text-slate-800 bg-white transition-colors ${
+                                member.email.trim() && !EMAIL_REGEX.test(member.email.trim()) ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
+                              }`}
                             />
+                            {member.email.trim() && !EMAIL_REGEX.test(member.email.trim()) && (
+                              <span className="text-[9px] text-red-500 font-semibold mt-1 block">Must be a valid email with a domain (e.g. name@domain.com)</span>
+                            )}
                           </div>
                         </div>
 
@@ -730,8 +755,13 @@ const RegistrationPage: React.FC = () => {
                               placeholder="24pa******"
                               value={member.studentId}
                               onChange={(e) => handleMemberChange(idx, "studentId", e.target.value)}
-                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-800 bg-white"
+                              className={`w-full px-3 py-2 border rounded-xl focus:outline-none font-semibold text-xs text-slate-800 bg-white transition-colors ${
+                                member.studentId.includes("@") ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
+                              }`}
                             />
+                            {member.studentId.includes("@") && (
+                              <span className="text-[9px] text-red-500 font-semibold mt-1 block">Student ID should not contain '@'</span>
+                            )}
                           </div>
                           <div>
                             <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</label>
