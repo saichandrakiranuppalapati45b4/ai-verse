@@ -3,19 +3,19 @@ import SEO from "../../components/layout/SEO";
 import Papa from "papaparse";
 import { db } from "../../config/firebase";
 import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment } from "firebase/firestore";
-import { 
-  Calendar, 
-  Users, 
+import {
+  Calendar,
+  Users,
   UserPlus,
-  TrendingUp, 
-  Clock, 
-  Plus, 
-  SlidersHorizontal, 
-  Download, 
-  HelpCircle, 
-  Search, 
-  ChevronLeft, 
-  ChevronRight, 
+  TrendingUp,
+  Clock,
+  Plus,
+  SlidersHorizontal,
+  Download,
+  HelpCircle,
+  Search,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
   MapPin,
   Trash2,
@@ -31,8 +31,7 @@ import {
   Check,
   Sparkles,
   ShieldCheck,
-  FileText,
-  X
+  FileText
 } from "lucide-react";
 import DatePicker from "../../components/ui/DatePicker";
 import TimePicker from "../../components/ui/TimePicker";
@@ -205,11 +204,11 @@ const EventManagementPage: React.FC = () => {
   const [formMinTeamSize, setFormMinTeamSize] = useState("1");
   const [formMaxTeamSize, setFormMaxTeamSize] = useState("4");
   const [formRegistrationFee, setFormRegistrationFee] = useState("0");
-  const [formPosterImages, setFormPosterImages] = useState<{filename: string, preview: string}[]>([]);
+  const [formPosterImages, setFormPosterImages] = useState<{ filename: string, preview: string }[]>([]);
   const [formWhatsGroupLink, setFormWhatsGroupLink] = useState("");
   const [formFacultyCoordinator, setFormFacultyCoordinator] = useState("");
   const [formStudentCoordinator, setFormStudentCoordinator] = useState("");
-  
+
   const [formJuryName, setFormJuryName] = useState("");
   const [formJuryRole, setFormJuryRole] = useState("");
   const [formJuryBio, setFormJuryBio] = useState("");
@@ -217,7 +216,7 @@ const EventManagementPage: React.FC = () => {
   const [formJurySameAsSpeaker, setFormJurySameAsSpeaker] = useState(false);
   const [formJuryImageFilename, setFormJuryImageFilename] = useState("");
   const [formJuryImagePreview, setFormJuryImagePreview] = useState("");
-  
+
   const [formVisibility, setFormVisibility] = useState<"Public" | "Internal Only">("Public");
 
   const [formSpeakerName, setFormSpeakerName] = useState("");
@@ -246,7 +245,7 @@ const EventManagementPage: React.FC = () => {
     formJuryImageFilename,
     formJuryImagePreview
   ]);
-  
+
   // Alumni Meetup Specific Fields
   const [formCompany, setFormCompany] = useState("");
   const [formBatch, setFormBatch] = useState("");
@@ -325,7 +324,7 @@ const EventManagementPage: React.FC = () => {
 
   // Filter logic
   const filteredEvents = useMemo(() => {
-    return events.filter(e => 
+    return events.filter(e =>
       e.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.category.toLowerCase().includes(searchQuery.toLowerCase())
@@ -434,93 +433,93 @@ const EventManagementPage: React.FC = () => {
     };
 
     try {
-        let targetEventId = editingEventId;
-        if (editingEventId) {
-          await setDoc(doc(db, "events", editingEventId), payload, { merge: true });
-          const existingReg = events.find(e => e.id === editingEventId)?.currentReg || 0;
-          const updatedEvent: EventItem = {
-            id: editingEventId,
-            title: formTitle,
-            date: displayDate,
-            location: formLocation || "Virtual Hub",
-            category: mappedCategory,
-            status: formStatus,
-            currentReg: existingReg,
-            maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
-            image: formPosterImages[0]?.preview || imageFile
-          };
-          setEvents(prev => prev.map(e => e.id === editingEventId ? { ...e, ...updatedEvent } : e));
-          setEditingEventId(null);
-        } else {
-          const docRef = await addDoc(collection(db, "events"), payload);
-          targetEventId = docRef.id;
-          const newEvent: EventItem = {
-            id: docRef.id,
-            title: formTitle,
-            date: displayDate,
-            location: formLocation || "Virtual Hub",
-            category: mappedCategory,
-            status: formStatus,
-            currentReg: 0,
-            maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
-            image: formPosterImages[0]?.preview || imageFile
-          };
-          setEvents(prev => [newEvent, ...prev]);
-        }
+      let targetEventId = editingEventId;
+      if (editingEventId) {
+        await setDoc(doc(db, "events", editingEventId), payload, { merge: true });
+        const existingReg = events.find(e => e.id === editingEventId)?.currentReg || 0;
+        const updatedEvent: EventItem = {
+          id: editingEventId,
+          title: formTitle,
+          date: displayDate,
+          location: formLocation || "Virtual Hub",
+          category: mappedCategory,
+          status: formStatus,
+          currentReg: existingReg,
+          maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
+          image: formPosterImages[0]?.preview || imageFile
+        };
+        setEvents(prev => prev.map(e => e.id === editingEventId ? { ...e, ...updatedEvent } : e));
+        setEditingEventId(null);
+      } else {
+        const docRef = await addDoc(collection(db, "events"), payload);
+        targetEventId = docRef.id;
+        const newEvent: EventItem = {
+          id: docRef.id,
+          title: formTitle,
+          date: displayDate,
+          location: formLocation || "Virtual Hub",
+          category: mappedCategory,
+          status: formStatus,
+          currentReg: 0,
+          maxReg: formMaxParticipants ? Number(formMaxParticipants) : 100,
+          image: formPosterImages[0]?.preview || imageFile
+        };
+        setEvents(prev => [newEvent, ...prev]);
+      }
 
-        // Process bulk CSV registrations into registrations collection in Firestore
-        if (targetEventId && formCategory !== "Hackathon" && bulkRegCsvData && bulkRegCsvData.length > 0) {
-          let addedCount = 0;
-          for (const row of bulkRegCsvData) {
-            const rollNo = (row["RollNumber"] || row["rollNumber"] || row["Roll Number"] || "").toString().trim();
-            const name = (row["Name"] || row["name"] || row["Full Name"] || "").toString().trim();
-            const email = (row["CollegeEmailID"] || row["collegeEmailID"] || row["Email"] || row["Email Address"] || "").toString().trim();
-            const branch = (row["Branch"] || row["branch"] || "").toString().trim();
-            const section = (row["Section"] || row["section"] || "").toString().trim();
-            const year = (row["Year"] || row["year"] || "").toString().trim();
-            const phone = (row["PhoneNumber"] || row["phoneNumber"] || row["Phone"] || "").toString().trim();
+      // Process bulk CSV registrations into registrations collection in Firestore
+      if (targetEventId && formCategory !== "Hackathon" && bulkRegCsvData && bulkRegCsvData.length > 0) {
+        let addedCount = 0;
+        for (const row of bulkRegCsvData) {
+          const rollNo = (row["RollNumber"] || row["rollNumber"] || row["Roll Number"] || "").toString().trim();
+          const name = (row["Name"] || row["name"] || row["Full Name"] || "").toString().trim();
+          const email = (row["CollegeEmailID"] || row["collegeEmailID"] || row["Email"] || row["Email Address"] || "").toString().trim();
+          const branch = (row["Branch"] || row["branch"] || "").toString().trim();
+          const section = (row["Section"] || row["section"] || "").toString().trim();
+          const year = (row["Year"] || row["year"] || "").toString().trim();
+          const phone = (row["PhoneNumber"] || row["phoneNumber"] || row["Phone"] || "").toString().trim();
 
-            if (name || email || rollNo) {
-              const regPayload = {
-                eventId: targetEventId,
-                eventTitle: formTitle,
-                groupName: rollNo ? `${name} (${rollNo})` : name || "Student Registrant",
-                teamLeadName: name || "Student Registrant",
-                teamLeadEmail: email,
-                teamLeadStudentId: rollNo,
-                phoneNumber: phone,
-                branch: branch,
-                section: section,
-                year: year,
-                teamSize: 1,
-                members: [
-                  {
-                    name: name,
-                    email: email,
-                    studentId: rollNo,
-                    phoneNumber: phone,
-                    branch: branch,
-                    section: section,
-                    year: year
-                  }
-                ],
-                status: "Confirmed",
-                createdAt: Date.now()
-              };
-              const regDocRef = await addDoc(collection(db, "registrations"), regPayload);
-              await setDoc(doc(db, "registrations", regDocRef.id), { qrCodeData: regDocRef.id }, { merge: true });
-              addedCount++;
-            }
-          }
-
-          if (addedCount > 0) {
-            await updateDoc(doc(db, "events", targetEventId), {
-              currentReg: increment(addedCount)
-            });
-            setEvents(prev => prev.map(e => e.id === targetEventId ? { ...e, currentReg: (e.currentReg || 0) + addedCount } : e));
+          if (name || email || rollNo) {
+            const regPayload = {
+              eventId: targetEventId,
+              eventTitle: formTitle,
+              groupName: rollNo ? `${name} (${rollNo})` : name || "Student Registrant",
+              teamLeadName: name || "Student Registrant",
+              teamLeadEmail: email,
+              teamLeadStudentId: rollNo,
+              phoneNumber: phone,
+              branch: branch,
+              section: section,
+              year: year,
+              teamSize: 1,
+              members: [
+                {
+                  name: name,
+                  email: email,
+                  studentId: rollNo,
+                  phoneNumber: phone,
+                  branch: branch,
+                  section: section,
+                  year: year
+                }
+              ],
+              status: "Confirmed",
+              createdAt: Date.now()
+            };
+            const regDocRef = await addDoc(collection(db, "registrations"), regPayload);
+            await setDoc(doc(db, "registrations", regDocRef.id), { qrCodeData: regDocRef.id }, { merge: true });
+            addedCount++;
           }
         }
-      
+
+        if (addedCount > 0) {
+          await updateDoc(doc(db, "events", targetEventId), {
+            currentReg: increment(addedCount)
+          });
+          setEvents(prev => prev.map(e => e.id === targetEventId ? { ...e, currentReg: (e.currentReg || 0) + addedCount } : e));
+        }
+      }
+
       // Reset form fields
       setFormTitle("");
       setFormCategory("Workshop");
@@ -574,7 +573,7 @@ const EventManagementPage: React.FC = () => {
         { time: "11:30 AM - 01:00 PM", title: "Workshop: Transformer Efficiency", description: "Hands-on FlashAttention, quantization, and sparse computation models." },
         { time: "03:00 PM - 04:30 PM", title: "Panel: Ethical Scaling", description: "A roundtable discussion with industry leaders on model deployment." }
       ]);
-      
+
       setView("list");
     } catch (err) {
       console.error("Error saving event to Firestore:", err);
@@ -599,20 +598,20 @@ const EventManagementPage: React.FC = () => {
     try {
       const docRef = doc(db, "events", id);
       const docSnap = await getDoc(docRef);
-      
+
       if (docSnap.exists()) {
         const data = docSnap.data();
         setEditingEventId(id);
-        
+
         setFormTitle(data.title || "");
-        
+
         let cat: "Workshop" | "Hackathon" | "Seminar" | "Tech Event" | "Alumni Meetup" = "Workshop";
         if (data.category === "HACKATHONS") cat = "Hackathon";
         else if (data.category === "LECTURES") cat = "Seminar";
         else if (data.category === "TECH_EVENTS") cat = "Tech Event";
         else if (data.category === "ALUMNI_MEETUPS") cat = "Alumni Meetup";
         setFormCategory(cat);
-        
+
         setFormPrimaryTag(data.primaryTag || "");
         setFormDescription(data.description || "");
         setFormStartDate(data.startDate || "");
@@ -642,7 +641,7 @@ const EventManagementPage: React.FC = () => {
         setFormJurySameAsSpeaker(Boolean(data.jurySameAsSpeaker));
         setFormJuryImageFilename(data.juryImageFilename || "");
         setFormJuryImagePreview(data.juryImagePreview || "");
-        
+
         setFormSpeakerName(data.speakerName || "");
         setFormSpeakerRole(data.speakerRole || "");
         setFormSpeakerBio(data.speakerBio || "");
@@ -658,7 +657,7 @@ const EventManagementPage: React.FC = () => {
         setBulkRegCsvData(data.bulkRegCsvData || []);
         setFormIsPastEvent(data.isPastEvent || false);
         setFormHasAgenda(data.hasAgenda !== false);
-        
+
         if (data.agendaItems && Array.isArray(data.agendaItems)) {
           setFormAgendaItems(data.agendaItems);
         } else {
@@ -668,7 +667,7 @@ const EventManagementPage: React.FC = () => {
             { time: data.agendaTime3 || "03:00 PM - 04:30 PM", title: data.agendaTitle3 || "Panel: Ethical Scaling", description: data.agendaDesc3 || "A roundtable discussion with industry leaders on model deployment." }
           ]);
         }
-        
+
         setView("create");
       } else {
         alert("Could not load event data.");
@@ -706,378 +705,377 @@ const EventManagementPage: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12 font-sans">
-      <SEO 
-        title="Event Management - Faculty Portal" 
+      <SEO
+        title="Event Management - Faculty Portal"
         description="Control center for all faculty-led academic activities, workshop tracking and hackathon registrations."
       />
 
       {view === "list" && !isDetailsModalOpen && (
         <>
           {/* ================= HEADER ================= */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-left">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Event Management</h1>
-          <p className="text-slate-500 text-xs sm:text-sm mt-1 max-w-2xl font-medium leading-relaxed">
-            Control center for all faculty-led academic activities.
-          </p>
-        </div>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-left">
+            <div>
+              <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">Event Management</h1>
+              <p className="text-slate-500 text-xs sm:text-sm mt-1 max-w-2xl font-medium leading-relaxed">
+                Control center for all faculty-led academic activities.
+              </p>
+            </div>
 
-        <div className="flex items-center gap-3 self-start md:self-center">
-          <button
-            onClick={() => alert("Exporting event records...")}
-            className="flex items-center gap-2 justify-center px-4 py-2 border border-slate-200 text-slate-650 font-bold rounded-2xl hover:bg-slate-50 transition-all text-xs whitespace-nowrap bg-white"
-          >
-            <Download className="h-4 w-4" />
-            Export
-          </button>
-          <button
-            onClick={() => {
-              setEditingEventId(null);
-              setFormTitle("");
-              setFormCategory("Workshop");
-              setFormPrimaryTag("");
-              setFormDescription("");
-              setFormStartDate("");
-              setFormEndDate("");
-              setFormStartTime("");
-              setFormEndTime("");
-              setFormIsVirtual(true);
-              setFormLocation("");
-              setFormRegDeadline("");
-              setFormMaxParticipants("");
-              setFormEnableWaitlist(false);
-              setFormPosterImages([]);
-              setFormVisibility("Public");
-              setFormIsFeatured(false);
-              setFormSendEmail(true);
-              setFormStatus("Draft");
-              setFormMinTeamSize("1");
-              setFormMaxTeamSize("4");
-              setFormRegistrationFee("0");
+            <div className="flex items-center gap-3 self-start md:self-center">
+              <button
+                onClick={() => alert("Exporting event records...")}
+                className="flex items-center gap-2 justify-center px-4 py-2 border border-slate-200 text-slate-650 font-bold rounded-2xl hover:bg-slate-50 transition-all text-xs whitespace-nowrap bg-white"
+              >
+                <Download className="h-4 w-4" />
+                Export
+              </button>
+              <button
+                onClick={() => {
+                  setEditingEventId(null);
+                  setFormTitle("");
+                  setFormCategory("Workshop");
+                  setFormPrimaryTag("");
+                  setFormDescription("");
+                  setFormStartDate("");
+                  setFormEndDate("");
+                  setFormStartTime("");
+                  setFormEndTime("");
+                  setFormIsVirtual(true);
+                  setFormLocation("");
+                  setFormRegDeadline("");
+                  setFormMaxParticipants("");
+                  setFormEnableWaitlist(false);
+                  setFormPosterImages([]);
+                  setFormVisibility("Public");
+                  setFormIsFeatured(false);
+                  setFormSendEmail(true);
+                  setFormStatus("Draft");
+                  setFormMinTeamSize("1");
+                  setFormMaxTeamSize("4");
+                  setFormRegistrationFee("0");
 
-              setFormSpeakerName("");
-              setFormSpeakerRole("");
-              setFormSpeakerBio("");
-              setFormSpeakerLinkedin("");
-              setFormSpeakerImageFilename("");
-              setFormSpeakerImagePreview("");
-              setFormJuryName("");
-              setFormJuryRole("");
-              setFormJuryBio("");
-              setFormJuryLinkedin("");
-              setFormJurySameAsSpeaker(false);
-              setFormJuryImageFilename("");
-              setFormJuryImagePreview("");
-              setFormCompany("");
-              setFormBatch("");
-              setFormIsPastEvent(false);
-              setFormAgendaItems([
-                { time: "09:00 AM - 10:30 AM", title: "Morning Keynote: The Future of Compute", description: "Opening session detailing next-gen silicon compute." },
-                { time: "11:30 AM - 01:00 PM", title: "Workshop: Transformer Efficiency", description: "Hands-on FlashAttention, quantization, and sparse computation models." },
-                { time: "03:00 PM - 04:30 PM", title: "Panel: Ethical Scaling", description: "A roundtable discussion with industry leaders on model deployment." }
-              ]);
-              setView("create");
-            }}
-            className="flex items-center gap-2 justify-center px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-2xl shadow-md shadow-blue-600/10 hover:shadow-lg transition-all text-xs whitespace-nowrap"
-          >
-            <Plus className="h-4 w-4" />
-            Create New Event
-          </button>
-        </div>
-      </div>
+                  setFormSpeakerName("");
+                  setFormSpeakerRole("");
+                  setFormSpeakerBio("");
+                  setFormSpeakerLinkedin("");
+                  setFormSpeakerImageFilename("");
+                  setFormSpeakerImagePreview("");
+                  setFormJuryName("");
+                  setFormJuryRole("");
+                  setFormJuryBio("");
+                  setFormJuryLinkedin("");
+                  setFormJurySameAsSpeaker(false);
+                  setFormJuryImageFilename("");
+                  setFormJuryImagePreview("");
+                  setFormCompany("");
+                  setFormBatch("");
+                  setFormIsPastEvent(false);
+                  setFormAgendaItems([
+                    { time: "09:00 AM - 10:30 AM", title: "Morning Keynote: The Future of Compute", description: "Opening session detailing next-gen silicon compute." },
+                    { time: "11:30 AM - 01:00 PM", title: "Workshop: Transformer Efficiency", description: "Hands-on FlashAttention, quantization, and sparse computation models." },
+                    { time: "03:00 PM - 04:30 PM", title: "Panel: Ethical Scaling", description: "A roundtable discussion with industry leaders on model deployment." }
+                  ]);
+                  setView("create");
+                }}
+                className="flex items-center gap-2 justify-center px-4 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold rounded-2xl shadow-md shadow-blue-600/10 hover:shadow-lg transition-all text-xs whitespace-nowrap"
+              >
+                <Plus className="h-4 w-4" />
+                Create New Event
+              </button>
+            </div>
+          </div>
 
-      {/* ================= METRICS CARDS ================= */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Events */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] flex flex-col justify-between text-left group hover:shadow-md transition-all duration-300">
-          <div>
-            <div className="flex justify-between items-start">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner">
-                <Calendar className="h-4.5 w-4.5" />
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-0.5">
-                +12.5%
-              </span>
-            </div>
-            <div className="mt-3">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Total Events</span>
-              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">{events.length}</h3>
-            </div>
-          </div>
-          {/* Sparkline chart bar visual */}
-          <div className="flex items-end gap-1 h-6 mt-4 opacity-80">
-            <div className="bg-blue-100/50 w-full h-2 rounded-sm"></div>
-            <div className="bg-blue-100/50 w-full h-3 rounded-sm"></div>
-            <div className="bg-blue-100/50 w-full h-2.5 rounded-sm"></div>
-            <div className="bg-blue-200/60 w-full h-4 rounded-sm"></div>
-            <div className="bg-[#2563EB] w-full h-6 rounded-sm"></div>
-          </div>
-        </div>
-
-        {/* Registrations */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] flex flex-col justify-between text-left group hover:shadow-md transition-all duration-300">
-          <div>
-            <div className="flex justify-between items-start">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner">
-                <Users className="h-4.5 w-4.5" />
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-0.5">
-                +8.2%
-              </span>
-            </div>
-            <div className="mt-3">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Registrations</span>
-              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
-                {events.reduce((sum, e) => sum + (e.currentReg || 0), 0).toLocaleString()}
-              </h3>
-            </div>
-          </div>
-          {/* Sparkline chart bar visual */}
-          <div className="flex items-end gap-1 h-6 mt-4 opacity-80">
-            <div className="bg-sky-100/50 w-full h-1.5 rounded-sm"></div>
-            <div className="bg-sky-100/50 w-full h-2 rounded-sm"></div>
-            <div className="bg-sky-200/50 w-full h-4 rounded-sm"></div>
-            <div className="bg-sky-300/60 w-full h-3.5 rounded-sm"></div>
-            <div className="bg-sky-400 w-full h-5.5 rounded-sm"></div>
-          </div>
-        </div>
-
-        {/* Avg. Attendance */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] flex flex-col justify-between text-left group hover:shadow-md transition-all duration-300">
-          <div>
-            <div className="flex justify-between items-start">
-              <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
-                <TrendingUp className="h-4.5 w-4.5" />
-              </div>
-              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100/30">
-                High
-              </span>
-            </div>
-            <div className="mt-3">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Avg. Attendance</span>
-              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">94%</h3>
-            </div>
-          </div>
-          <div className="mt-4 space-y-1">
-            <div className="w-full bg-slate-100 rounded-full h-1.5">
-              <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: "94%" }}></div>
-            </div>
-            <div className="text-[9px] text-slate-400 font-bold">Target reached: 90%</div>
-          </div>
-        </div>
-
-        {/* Weekly Sessions */}
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] flex flex-col justify-between text-left group hover:shadow-md transition-all duration-300">
-          <div>
-            <div className="flex justify-between items-start">
-              <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shadow-inner">
-                <Clock className="h-4.5 w-4.5" />
-              </div>
-              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706]">
-                Steady
-              </span>
-            </div>
-            <div className="mt-3">
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Weekly Sessions</span>
-              <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
-                {String(events.filter(e => e.status === "Opened" || e.status === "Active").length).padStart(2, '0')}
-              </h3>
-            </div>
-          </div>
-          <div className="mt-4 text-[9px] text-slate-500 font-bold flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-            {events.filter(e => e.status === "Opened" || e.status === "Active").length} Scheduled for this week
-          </div>
-        </div>
-      </div>
-
-      {/* ================= CONTENT GRID ================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* LEFT COLUMN: Event Directory (100% / 12 grid cols) */}
-        <div className="lg:col-span-12 space-y-6">
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden text-left">
-            {/* Header / Filter row */}
-            <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <h3 className="text-base font-bold text-slate-800 tracking-tight">Event Directory</h3>
-              
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <div className="relative flex-1 sm:w-60">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search events..."
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="w-full pl-10 pr-4 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-700 placeholder-slate-400 text-xs focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium"
-                  />
+          {/* ================= METRICS CARDS ================= */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Events */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] flex flex-col justify-between text-left group hover:shadow-md transition-all duration-300">
+              <div>
+                <div className="flex justify-between items-start">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner">
+                    <Calendar className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-0.5">
+                    +12.5%
+                  </span>
                 </div>
-                <button className="p-2 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 text-slate-500 transition-colors">
-                  <SlidersHorizontal className="h-4 w-4" />
-                </button>
+                <div className="mt-3">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Total Events</span>
+                  <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">{events.length}</h3>
+                </div>
+              </div>
+              {/* Sparkline chart bar visual */}
+              <div className="flex items-end gap-1 h-6 mt-4 opacity-80">
+                <div className="bg-blue-100/50 w-full h-2 rounded-sm"></div>
+                <div className="bg-blue-100/50 w-full h-3 rounded-sm"></div>
+                <div className="bg-blue-100/50 w-full h-2.5 rounded-sm"></div>
+                <div className="bg-blue-200/60 w-full h-4 rounded-sm"></div>
+                <div className="bg-[#2563EB] w-full h-6 rounded-sm"></div>
               </div>
             </div>
 
-            {/* Table Container */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                    <th className="px-6 py-4">Event Details</th>
-                    <th className="px-6 py-4">Category</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4">Registrations</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedEvents.length > 0 ? (
-                    paginatedEvents.map((event) => {
-                      return (
-                        <tr 
-                          key={event.id} 
-                          onClick={() => handleOpenEventDetails(event.id)}
-                          className="border-b border-slate-150/40 hover:bg-blue-50/40 transition-colors group/row cursor-pointer"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-xl bg-slate-55 overflow-hidden shrink-0 border border-slate-100 flex items-center justify-center">
-                                <img
-                                  src={event.image || sparkImg}
-                                  alt={event.title}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).src = sparkImg;
-                                  }}
-                                />
-                              </div>
-                              <div className="leading-tight">
-                                <span className="font-extrabold text-slate-800 text-xs line-clamp-1 group-hover/row:text-[#2563EB] transition-colors">
-                                  {event.title}
-                                </span>
-                                <div className="flex items-center gap-x-2 gap-y-0.5 mt-1.5 flex-wrap text-[9px] font-bold text-slate-450">
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="h-3 w-3 text-blue-500" />
-                                    {event.date}
-                                  </span>
-                                  <span>•</span>
-                                  <span className="flex items-center gap-1">
-                                    <MapPin className="h-3 w-3 text-sky-500" />
-                                    {event.location}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border
-                              ${event.category === "HACKATHONS" 
-                                ? "bg-rose-50 text-rose-600 border-rose-100/50" 
-                                : event.category === "LECTURES"
-                                  ? "bg-amber-50 text-amber-600 border-amber-100/50"
-                                  : "bg-blue-50 text-[#2563EB] border-blue-100/50"
-                              }`}
-                            >
-                              {event.category || "WORKSHOPS"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                            <div className="relative inline-block">
-                              <select
-                                value={event.status}
-                                onChange={(e) => handleStatusChange(event.id, e.target.value as any)}
-                                className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border appearance-none pr-7 transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer ${
-                                  event.status === "Opened"
-                                    ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100/80"
-                                    : event.status === "Active"
-                                    ? "text-[#2563EB] bg-blue-50 border-blue-200 hover:bg-blue-100/80"
-                                    : event.status === "Completed"
-                                    ? "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100/80"
-                                    : "text-slate-600 bg-slate-100 border-slate-200 hover:bg-slate-200/60"
-                                }`}
-                              >
-                                <option value="Draft" className="bg-white text-slate-700 font-bold uppercase text-[10px]">DRAFT</option>
-                                <option value="Active" className="bg-white text-[#2563EB] font-bold uppercase text-[10px]">ACTIVE</option>
-                                <option value="Opened" className="bg-white text-emerald-700 font-bold uppercase text-[10px]">OPENED</option>
-                                <option value="Completed" className="bg-white text-purple-700 font-bold uppercase text-[10px]">COMPLETED</option>
-                              </select>
-                              <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-60 text-slate-600" />
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 w-44">
-                            <span className="px-3 py-1 bg-blue-50 text-[#2563EB] font-black text-xs rounded-full border border-blue-100/60 inline-flex items-center gap-1.5 shadow-xs">
-                              <Users className="h-3.5 w-3.5" />
-                              {event.currentReg || 0} Registered
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                            <button
+            {/* Registrations */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] flex flex-col justify-between text-left group hover:shadow-md transition-all duration-300">
+              <div>
+                <div className="flex justify-between items-start">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner">
+                    <Users className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-0.5">
+                    +8.2%
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Registrations</span>
+                  <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
+                    {events.reduce((sum, e) => sum + (e.currentReg || 0), 0).toLocaleString()}
+                  </h3>
+                </div>
+              </div>
+              {/* Sparkline chart bar visual */}
+              <div className="flex items-end gap-1 h-6 mt-4 opacity-80">
+                <div className="bg-sky-100/50 w-full h-1.5 rounded-sm"></div>
+                <div className="bg-sky-100/50 w-full h-2 rounded-sm"></div>
+                <div className="bg-sky-200/50 w-full h-4 rounded-sm"></div>
+                <div className="bg-sky-300/60 w-full h-3.5 rounded-sm"></div>
+                <div className="bg-sky-400 w-full h-5.5 rounded-sm"></div>
+              </div>
+            </div>
+
+            {/* Avg. Attendance */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] flex flex-col justify-between text-left group hover:shadow-md transition-all duration-300">
+              <div>
+                <div className="flex justify-between items-start">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-inner">
+                    <TrendingUp className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100/30">
+                    High
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Avg. Attendance</span>
+                  <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">94%</h3>
+                </div>
+              </div>
+              <div className="mt-4 space-y-1">
+                <div className="w-full bg-slate-100 rounded-full h-1.5">
+                  <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: "94%" }}></div>
+                </div>
+                <div className="text-[9px] text-slate-400 font-bold">Target reached: 90%</div>
+              </div>
+            </div>
+
+            {/* Weekly Sessions */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] flex flex-col justify-between text-left group hover:shadow-md transition-all duration-300">
+              <div>
+                <div className="flex justify-between items-start">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shadow-inner">
+                    <Clock className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706]">
+                    Steady
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Weekly Sessions</span>
+                  <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
+                    {String(events.filter(e => e.status === "Opened" || e.status === "Active").length).padStart(2, '0')}
+                  </h3>
+                </div>
+              </div>
+              <div className="mt-4 text-[9px] text-slate-500 font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                {events.filter(e => e.status === "Opened" || e.status === "Active").length} Scheduled for this week
+              </div>
+            </div>
+          </div>
+
+          {/* ================= CONTENT GRID ================= */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            {/* LEFT COLUMN: Event Directory (100% / 12 grid cols) */}
+            <div className="lg:col-span-12 space-y-6">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden text-left">
+                {/* Header / Filter row */}
+                <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <h3 className="text-base font-bold text-slate-800 tracking-tight">Event Directory</h3>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-60">
+                      <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search events..."
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setCurrentPage(1);
+                        }}
+                        className="w-full pl-10 pr-4 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-700 placeholder-slate-400 text-xs focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium"
+                      />
+                    </div>
+                    <button className="p-2 border border-slate-200 rounded-xl bg-white hover:bg-slate-50 text-slate-500 transition-colors">
+                      <SlidersHorizontal className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Table Container */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        <th className="px-6 py-4">Event Details</th>
+                        <th className="px-6 py-4">Category</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">Registrations</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedEvents.length > 0 ? (
+                        paginatedEvents.map((event) => {
+                          return (
+                            <tr
+                              key={event.id}
                               onClick={() => handleOpenEventDetails(event.id)}
-                              className="p-1.5 text-slate-400 hover:text-[#2563EB] hover:bg-blue-50 rounded-xl transition-all mr-1"
-                              title="View Information Modal"
+                              className="border-b border-slate-150/40 hover:bg-blue-50/40 transition-colors group/row cursor-pointer"
                             >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleStartEditEvent(event.id)}
-                              className="p-1.5 text-slate-400 hover:text-[#2563EB] hover:bg-blue-50 rounded-xl transition-all mr-1"
-                              title="Edit Event Page"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteEvent(event.id, event.title)}
-                              className="p-1.5 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-xl transition-all"
-                              title="Delete Event"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-12 h-12 rounded-xl bg-slate-55 overflow-hidden shrink-0 border border-slate-100 flex items-center justify-center">
+                                    <img
+                                      src={event.image || sparkImg}
+                                      alt={event.title}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).src = sparkImg;
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="leading-tight">
+                                    <span className="font-extrabold text-slate-800 text-xs line-clamp-1 group-hover/row:text-[#2563EB] transition-colors">
+                                      {event.title}
+                                    </span>
+                                    <div className="flex items-center gap-x-2 gap-y-0.5 mt-1.5 flex-wrap text-[9px] font-bold text-slate-450">
+                                      <span className="flex items-center gap-1">
+                                        <Calendar className="h-3 w-3 text-blue-500" />
+                                        {event.date}
+                                      </span>
+                                      <span>•</span>
+                                      <span className="flex items-center gap-1">
+                                        <MapPin className="h-3 w-3 text-sky-500" />
+                                        {event.location}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border
+                              ${event.category === "HACKATHONS"
+                                    ? "bg-rose-50 text-rose-600 border-rose-100/50"
+                                    : event.category === "LECTURES"
+                                      ? "bg-amber-50 text-amber-600 border-amber-100/50"
+                                      : "bg-blue-50 text-[#2563EB] border-blue-100/50"
+                                  }`}
+                                >
+                                  {event.category || "WORKSHOPS"}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                                <div className="relative inline-block">
+                                  <select
+                                    value={event.status}
+                                    onChange={(e) => handleStatusChange(event.id, e.target.value as any)}
+                                    className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border appearance-none pr-7 transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer ${event.status === "Opened"
+                                        ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100/80"
+                                        : event.status === "Active"
+                                          ? "text-[#2563EB] bg-blue-50 border-blue-200 hover:bg-blue-100/80"
+                                          : event.status === "Completed"
+                                            ? "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100/80"
+                                            : "text-slate-600 bg-slate-100 border-slate-200 hover:bg-slate-200/60"
+                                      }`}
+                                  >
+                                    <option value="Draft" className="bg-white text-slate-700 font-bold uppercase text-[10px]">DRAFT</option>
+                                    <option value="Active" className="bg-white text-[#2563EB] font-bold uppercase text-[10px]">ACTIVE</option>
+                                    <option value="Opened" className="bg-white text-emerald-700 font-bold uppercase text-[10px]">OPENED</option>
+                                    <option value="Completed" className="bg-white text-purple-700 font-bold uppercase text-[10px]">COMPLETED</option>
+                                  </select>
+                                  <ChevronDown className="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-60 text-slate-600" />
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 w-44">
+                                <span className="px-3 py-1 bg-blue-50 text-[#2563EB] font-black text-xs rounded-full border border-blue-100/60 inline-flex items-center gap-1.5 shadow-xs">
+                                  <Users className="h-3.5 w-3.5" />
+                                  {event.currentReg || 0} Registered
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => handleOpenEventDetails(event.id)}
+                                  className="p-1.5 text-slate-400 hover:text-[#2563EB] hover:bg-blue-50 rounded-xl transition-all mr-1"
+                                  title="View Information Modal"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleStartEditEvent(event.id)}
+                                  className="p-1.5 text-slate-400 hover:text-[#2563EB] hover:bg-blue-50 rounded-xl transition-all mr-1"
+                                  title="Edit Event Page"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteEvent(event.id, event.title)}
+                                  className="p-1.5 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-xl transition-all"
+                                  title="Delete Event"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-10 text-center text-xs font-semibold text-slate-400">
+                            No events found matching search query.
                           </td>
                         </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-10 text-center text-xs font-semibold text-slate-400">
-                        No events found matching search query.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                <div className="p-4 border-t border-slate-150/50 bg-slate-50/40 flex items-center justify-end gap-2">
+                  <button
+                    onClick={handlePrevPage}
+                    disabled={currentPage === 1}
+                    className="p-1.5 border border-slate-200 rounded-lg bg-white text-slate-650 font-bold hover:bg-slate-50 transition-all disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                    className="p-1.5 border border-slate-200 rounded-lg bg-white text-slate-655 font-bold hover:bg-slate-50 transition-all disabled:opacity-40"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {/* Pagination */}
-            <div className="p-4 border-t border-slate-150/50 bg-slate-50/40 flex items-center justify-end gap-2">
-              <button
-                onClick={handlePrevPage}
-                disabled={currentPage === 1}
-                className="p-1.5 border border-slate-200 rounded-lg bg-white text-slate-650 font-bold hover:bg-slate-50 transition-all disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                onClick={handleNextPage}
-                disabled={currentPage === totalPages}
-                className="p-1.5 border border-slate-200 rounded-lg bg-white text-slate-655 font-bold hover:bg-slate-50 transition-all disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
           </div>
-        </div>
-
-      </div>
-      </>
+        </>
       )}
       {/* ================= CREATE EVENT FULL PAGE FORM ================= */}
       {view === "create" && (
         <div className="space-y-6 pb-12 text-left font-sans animate-in fade-in duration-200">
-          <SEO 
-            title="Create New Event - Faculty Portal" 
+          <SEO
+            title="Create New Event - Faculty Portal"
             description="Design and publish a new club activity, guest lecture, or student hackathon."
           />
 
@@ -1118,7 +1116,7 @@ const EventManagementPage: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             {/* Left Panel: Form Input Fields (span 2) */}
             <div className="lg:col-span-2 space-y-6">
-              
+
               {/* 1. Basic Information */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-50 pb-3">
@@ -1135,13 +1133,13 @@ const EventManagementPage: React.FC = () => {
                       onClick={() => setFormIsPastEvent(!formIsPastEvent)}
                       className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formIsPastEvent ? "bg-[#2563EB]" : "bg-slate-200"}`}
                     >
-                      <div 
+                      <div
                         className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formIsPastEvent ? "translate-x-4" : "translate-x-0"}`}
                       />
                     </button>
                   </div>
                 </div>
-                
+
                 <div className="space-y-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Event Title</label>
@@ -1229,7 +1227,7 @@ const EventManagementPage: React.FC = () => {
                   </div>
                   Date & Time
                 </h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Date</label>
@@ -1287,7 +1285,7 @@ const EventManagementPage: React.FC = () => {
                       onClick={() => setFormIsVirtual(!formIsVirtual)}
                       className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formIsVirtual ? "bg-[#2563EB]" : "bg-slate-200"}`}
                     >
-                      <div 
+                      <div
                         className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formIsVirtual ? "translate-x-4" : "translate-x-0"}`}
                       />
                     </button>
@@ -1309,247 +1307,245 @@ const EventManagementPage: React.FC = () => {
               {/* 4. Registration Details */}
               {!formIsPastEvent && (
                 <>
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
-                    <SlidersHorizontal className="h-4 w-4" />
-                  </div>
-                  Registration Details
-                </h3>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Registration Deadline</label>
-                  <DatePicker
-                    value={formRegDeadline}
-                    onChange={(val) => setFormRegDeadline(val)}
-                    placeholder="Select deadline"
-                  />
-                </div>
-
-                {formCategory === "Hackathon" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Min Team Size</label>
-                      <input
-                        type="number"
-                        placeholder="e.g. 1"
-                        value={formMinTeamSize}
-                        onChange={(e) => setFormMinTeamSize(e.target.value)}
-                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                      />
-                    </div>
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
+                        <SlidersHorizontal className="h-4 w-4" />
+                      </div>
+                      Registration Details
+                    </h3>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Max Team Size</label>
-                      <input
-                        type="number"
-                        placeholder="e.g. 4"
-                        value={formMaxTeamSize}
-                        onChange={(e) => setFormMaxTeamSize(e.target.value)}
-                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Registration Deadline</label>
+                      <DatePicker
+                        value={formRegDeadline}
+                        onChange={(val) => setFormRegDeadline(val)}
+                        placeholder="Select deadline"
                       />
                     </div>
-                  </div>
-                )}
 
-              </div>
+                    {formCategory === "Hackathon" && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Min Team Size</label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 1"
+                            value={formMinTeamSize}
+                            onChange={(e) => setFormMinTeamSize(e.target.value)}
+                            className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                          />
+                        </div>
 
-              {/* WhatsApp Integration Card */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center text-emerald-600">
-                    <MessageSquare className="h-4 w-4" />
-                  </div>
-                  WhatsApp Group Link
-                </h3>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">WhatsApp Group URL</label>
-                  <input
-                    type="url"
-                    placeholder="https://chat.whatsapp.com/..."
-                    value={formWhatsGroupLink}
-                    onChange={(e) => setFormWhatsGroupLink(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-green-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* Faculty Coordinator Card */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600">
-                    <Users className="h-4 w-4" />
-                  </div>
-                  Set Faculty Coordinator
-                </h3>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Coordinator Name</label>
-                  <select
-                    value={formFacultyCoordinator}
-                    onChange={(e) => setFormFacultyCoordinator(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-purple-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all cursor-pointer"
-                  >
-                    <option value="">Select Faculty Coordinator</option>
-                    {allUsers.filter(u => u.role === "Faculty Coordinator").map(u => (
-                      <option key={u.id} value={u.name || u.displayName || u.email}>{u.name || u.displayName || u.email}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Student Coordinator Card */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600">
-                    <Users className="h-4 w-4" />
-                  </div>
-                  Set Student Coordinator
-                </h3>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Coordinator Name</label>
-                  <select
-                    value={formStudentCoordinator}
-                    onChange={(e) => setFormStudentCoordinator(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-orange-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all cursor-pointer"
-                  >
-                    <option value="">Select Student Coordinator</option>
-                    {allUsers.filter(u => u.role !== "Faculty Coordinator").map(u => (
-                      <option key={u.id} value={u.name || u.displayName || u.email}>{u.name || u.displayName || u.email}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Set Jury Card */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
-                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
-                  <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-                      <ShieldCheck className="h-4 w-4" />
-                    </div>
-                    Set Jury
-                  </h3>
-
-                  {/* Same as Speaker Toggle */}
-                  <div className="flex items-center gap-2 bg-indigo-50/60 border border-indigo-100/80 px-3 py-1.5 rounded-xl">
-                    <span className="text-xs font-bold text-indigo-900">Same as Speaker</span>
-                    <button
-                      type="button"
-                      onClick={() => setFormJurySameAsSpeaker(!formJurySameAsSpeaker)}
-                      className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${
-                        formJurySameAsSpeaker ? "bg-indigo-600" : "bg-slate-200"
-                      }`}
-                    >
-                      <div 
-                        className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
-                          formJurySameAsSpeaker ? "translate-x-4" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Jury Image Upload */}
-                <div className="flex items-center gap-4 border border-slate-100 bg-slate-50/20 p-4 rounded-2xl">
-                  <div className="relative w-16 h-16 rounded-full overflow-hidden border border-slate-200 bg-white shadow-inner flex items-center justify-center shrink-0 group">
-                    <input 
-                      type="file" 
-                      ref={juryFileInputRef} 
-                      className="hidden" 
-                      accept="image/*" 
-                      onChange={handleJuryFileChange} 
-                      onClick={(e) => e.stopPropagation()} 
-                    />
-                    {formJuryImagePreview ? (
-                      <img 
-                        src={formJuryImagePreview} 
-                        alt="Jury Avatar" 
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <Users className="h-6 w-6 text-slate-350" />
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Max Team Size</label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 4"
+                            value={formMaxTeamSize}
+                            onChange={(e) => setFormMaxTeamSize(e.target.value)}
+                            className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                          />
+                        </div>
+                      </div>
                     )}
+
                   </div>
-                  
-                  <div className="space-y-1.5 text-left">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Jury Image</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => juryFileInputRef.current?.click()}
-                        className="px-3 py-1.5 bg-white border border-slate-250 rounded-xl text-slate-700 font-bold text-[10px] shadow-sm hover:bg-slate-50 transition-colors"
+
+                  {/* WhatsApp Integration Card */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-green-50 flex items-center justify-center text-emerald-600">
+                        <MessageSquare className="h-4 w-4" />
+                      </div>
+                      WhatsApp Group Link
+                    </h3>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">WhatsApp Group URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://chat.whatsapp.com/..."
+                        value={formWhatsGroupLink}
+                        onChange={(e) => setFormWhatsGroupLink(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-green-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Faculty Coordinator Card */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600">
+                        <Users className="h-4 w-4" />
+                      </div>
+                      Set Faculty Coordinator
+                    </h3>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Coordinator Name</label>
+                      <select
+                        value={formFacultyCoordinator}
+                        onChange={(e) => setFormFacultyCoordinator(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-purple-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all cursor-pointer"
                       >
-                        {formJuryImagePreview ? "Change Image" : "Upload Image"}
-                      </button>
-                      {formJuryImagePreview && (
+                        <option value="">Select Faculty Coordinator</option>
+                        {allUsers.filter(u => u.role === "Faculty Coordinator").map(u => (
+                          <option key={u.id} value={u.name || u.displayName || u.email}>{u.name || u.displayName || u.email}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Student Coordinator Card */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600">
+                        <Users className="h-4 w-4" />
+                      </div>
+                      Set Student Coordinator
+                    </h3>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Coordinator Name</label>
+                      <select
+                        value={formStudentCoordinator}
+                        onChange={(e) => setFormStudentCoordinator(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-orange-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all cursor-pointer"
+                      >
+                        <option value="">Select Student Coordinator</option>
+                        {allUsers.filter(u => u.role !== "Faculty Coordinator").map(u => (
+                          <option key={u.id} value={u.name || u.displayName || u.email}>{u.name || u.displayName || u.email}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Set Jury Card */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                    <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                      <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                          <ShieldCheck className="h-4 w-4" />
+                        </div>
+                        Set Jury
+                      </h3>
+
+                      {/* Same as Speaker Toggle */}
+                      <div className="flex items-center gap-2 bg-indigo-50/60 border border-indigo-100/80 px-3 py-1.5 rounded-xl">
+                        <span className="text-xs font-bold text-indigo-900">Same as Speaker</span>
                         <button
                           type="button"
-                          onClick={() => {
-                            setFormJuryImageFilename("");
-                            setFormJuryImagePreview("");
-                          }}
-                          className="px-3 py-1.5 bg-red-50 text-red-650 border border-red-100 rounded-xl font-bold text-[10px] hover:bg-red-100/50 transition-colors"
+                          onClick={() => setFormJurySameAsSpeaker(!formJurySameAsSpeaker)}
+                          className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formJurySameAsSpeaker ? "bg-indigo-600" : "bg-slate-200"
+                            }`}
                         >
-                          Remove
+                          <div
+                            className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formJurySameAsSpeaker ? "translate-x-4" : "translate-x-0"
+                              }`}
+                          />
                         </button>
-                      )}
+                      </div>
                     </div>
-                    {formJuryImageFilename && (
-                      <span className="text-[9px] font-bold text-emerald-600 block truncate max-w-[200px]">{formJuryImageFilename}</span>
-                    )}
+
+                    {/* Jury Image Upload */}
+                    <div className="flex items-center gap-4 border border-slate-100 bg-slate-50/20 p-4 rounded-2xl">
+                      <div className="relative w-16 h-16 rounded-full overflow-hidden border border-slate-200 bg-white shadow-inner flex items-center justify-center shrink-0 group">
+                        <input
+                          type="file"
+                          ref={juryFileInputRef}
+                          className="hidden"
+                          accept="image/*"
+                          onChange={handleJuryFileChange}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        {formJuryImagePreview ? (
+                          <img
+                            src={formJuryImagePreview}
+                            alt="Jury Avatar"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Users className="h-6 w-6 text-slate-350" />
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 text-left">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Jury Image</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => juryFileInputRef.current?.click()}
+                            className="px-3 py-1.5 bg-white border border-slate-250 rounded-xl text-slate-700 font-bold text-[10px] shadow-sm hover:bg-slate-50 transition-colors"
+                          >
+                            {formJuryImagePreview ? "Change Image" : "Upload Image"}
+                          </button>
+                          {formJuryImagePreview && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormJuryImageFilename("");
+                                setFormJuryImagePreview("");
+                              }}
+                              className="px-3 py-1.5 bg-red-50 text-red-650 border border-red-100 rounded-xl font-bold text-[10px] hover:bg-red-100/50 transition-colors"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        {formJuryImageFilename && (
+                          <span className="text-[9px] font-bold text-emerald-600 block truncate max-w-[200px]">{formJuryImageFilename}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Dr. Sarah Jenkins"
+                          value={formJuryName}
+                          onChange={(e) => setFormJuryName(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Role</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Chief Judge / External Evaluator"
+                          value={formJuryRole}
+                          onChange={(e) => setFormJuryRole(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Bio</label>
+                      <textarea
+                        rows={3}
+                        placeholder="Short professional background summary..."
+                        value={formJuryBio}
+                        onChange={(e) => setFormJuryBio(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all resize-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">LinkedIn Profile URL</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. https://linkedin.com/in/username"
+                        value={formJuryLinkedin}
+                        onChange={(e) => setFormJuryLinkedin(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                      />
+                    </div>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Dr. Sarah Jenkins"
-                      value={formJuryName}
-                      onChange={(e) => setFormJuryName(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Role</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Chief Judge / External Evaluator"
-                      value={formJuryRole}
-                      onChange={(e) => setFormJuryRole(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jury Bio</label>
-                  <textarea
-                    rows={3}
-                    placeholder="Short professional background summary..."
-                    value={formJuryBio}
-                    onChange={(e) => setFormJuryBio(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all resize-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">LinkedIn Profile URL</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. https://linkedin.com/in/username"
-                    value={formJuryLinkedin}
-                    onChange={(e) => setFormJuryLinkedin(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
-                  />
-                </div>
-              </div>
-              </>
+                </>
               )}
 
               {/* 5. Media */}
@@ -1560,26 +1556,26 @@ const EventManagementPage: React.FC = () => {
                   </div>
                   Media
                 </h3>
-                
+
                 <div className="space-y-4">
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept="image/*" 
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    accept="image/*"
                     multiple
-                    onChange={handleFileChange} 
+                    onChange={handleFileChange}
                   />
-                  
+
                   {formPosterImages.length > 0 ? (
                     <div className="space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {formPosterImages.map((img, idx) => (
                           <div key={idx} className="relative w-full rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-slate-50 flex flex-col group">
                             <div className="relative w-full flex justify-center items-center h-44 bg-slate-100/50">
-                              <img 
-                                src={img.preview} 
-                                alt={`Poster Preview ${idx + 1}`} 
+                              <img
+                                src={img.preview}
+                                alt={`Poster Preview ${idx + 1}`}
                                 className="w-full h-full object-contain p-2"
                               />
                             </div>
@@ -1602,7 +1598,7 @@ const EventManagementPage: React.FC = () => {
                           </div>
                         ))}
                       </div>
-                      
+
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
@@ -1613,7 +1609,7 @@ const EventManagementPage: React.FC = () => {
                       </button>
                     </div>
                   ) : (
-                    <div 
+                    <div
                       onClick={() => fileInputRef.current?.click()}
                       className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-3xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50/40 hover:bg-blue-50/10 group min-h-[160px] overflow-hidden"
                     >
@@ -1623,9 +1619,9 @@ const EventManagementPage: React.FC = () => {
                       <span className="text-xs font-black text-slate-700 block">Upload Event Poster</span>
                       <span className="text-[10px] text-slate-450 font-semibold mt-1">Drag and drop your image here, or click to browse</span>
                       <span className="text-[9px] text-slate-400 mt-0.5 font-semibold">(Any size, Max 5MB)</span>
-                      
-                      <button 
-                        type="button" 
+
+                      <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           fileInputRef.current?.click();
@@ -1647,29 +1643,29 @@ const EventManagementPage: React.FC = () => {
                   </div>
                   {getSpeakerSectionTitle()}
                 </h3>
-                
+
                 {/* Speaker Photo Upload Block */}
                 <div className="flex items-center gap-4 border border-slate-100 bg-slate-50/20 p-4 rounded-2xl">
                   <div className="relative w-16 h-16 rounded-full overflow-hidden border border-slate-200 bg-white shadow-inner flex items-center justify-center shrink-0 group">
-                    <input 
-                      type="file" 
-                      ref={speakerFileInputRef} 
-                      className="hidden" 
-                      accept="image/*" 
-                      onChange={handleSpeakerFileChange} 
-                      onClick={(e) => e.stopPropagation()} 
+                    <input
+                      type="file"
+                      ref={speakerFileInputRef}
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleSpeakerFileChange}
+                      onClick={(e) => e.stopPropagation()}
                     />
                     {formSpeakerImagePreview ? (
-                      <img 
-                        src={formSpeakerImagePreview} 
-                        alt="Speaker Avatar" 
+                      <img
+                        src={formSpeakerImagePreview}
+                        alt="Speaker Avatar"
                         className="w-full h-full object-cover"
                       />
                     ) : (
                       <Users className="h-6 w-6 text-slate-350" />
                     )}
                   </div>
-                  
+
                   <div className="space-y-1.5 text-left">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{getSpeakerPrefix()} Photo</span>
                     <div className="flex items-center gap-2">
@@ -1772,7 +1768,7 @@ const EventManagementPage: React.FC = () => {
                     </p>
 
                     {/* CSV File Upload Section */}
-                    <input 
+                    <input
                       type="file"
                       ref={bulkCsvFileInputRef}
                       className="hidden"
@@ -1815,7 +1811,7 @@ const EventManagementPage: React.FC = () => {
                         </div>
                       </div>
                     ) : (
-                      <div 
+                      <div
                         onClick={() => bulkCsvFileInputRef.current?.click()}
                         className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50/40 hover:bg-blue-50/10 group text-center"
                       >
@@ -1835,270 +1831,270 @@ const EventManagementPage: React.FC = () => {
 
               {/* Event Agenda */}
               {!formIsPastEvent && (
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
-                      <SlidersHorizontal className="h-4 w-4" />
-                    </div>
-                    Event Agenda
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer" checked={formHasAgenda} onChange={(e) => setFormHasAgenda(e.target.checked)} />
-                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </h3>
-
-                {formHasAgenda && (
-                  <div className="space-y-4 pt-2 animate-in fade-in slide-in-from-top-2">
-                    {formAgendaItems.map((item, index) => (
-                      <div key={index} className="p-4 border border-slate-100 bg-slate-50/20 rounded-2xl space-y-3 relative">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-black text-blue-600 block">AGENDA ITEM {index + 1}</span>
-                          {formAgendaItems.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFormAgendaItems(prev => prev.filter((_, idx) => idx !== index));
-                              }}
-                              className="text-red-500 hover:text-red-700 font-bold text-[10px] hover:bg-red-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="md:col-span-1">
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Time Block</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. 09:00 AM - 10:30 AM"
-                              value={item.time}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setFormAgendaItems(prev => prev.map((it, idx) => idx === index ? { ...it, time: val } : it));
-                              }}
-                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-850 bg-white"
-                            />
-                          </div>
-                          <div className="md:col-span-2">
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Session Title</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Morning Keynote"
-                              value={item.title}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setFormAgendaItems(prev => prev.map((it, idx) => idx === index ? { ...it, title: val } : it));
-                              }}
-                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-855 bg-white"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Short Outline</label>
-                          <input
-                            type="text"
-                            placeholder="Brief session outline..."
-                            value={item.description}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setFormAgendaItems(prev => prev.map((it, idx) => idx === index ? { ...it, description: val } : it));
-                            }}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-medium text-xs text-slate-850 bg-white"
-                          />
-                        </div>
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
+                        <SlidersHorizontal className="h-4 w-4" />
                       </div>
-                    ))}
+                      Event Agenda
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={formHasAgenda} onChange={(e) => setFormHasAgenda(e.target.checked)} />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </h3>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormAgendaItems(prev => [
-                          ...prev,
-                          { time: "", title: "", description: "" }
-                        ]);
-                      }}
-                      className="w-full py-3 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-xs hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50/50 transition-all flex items-center justify-center gap-2 mt-2"
-                    >
-                      <Plus className="h-4 w-4" /> Add Agenda Item
-                    </button>
-                  </div>
-                )}
-              </div>
+                  {formHasAgenda && (
+                    <div className="space-y-4 pt-2 animate-in fade-in slide-in-from-top-2">
+                      {formAgendaItems.map((item, index) => (
+                        <div key={index} className="p-4 border border-slate-100 bg-slate-50/20 rounded-2xl space-y-3 relative">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-black text-blue-600 block">AGENDA ITEM {index + 1}</span>
+                            {formAgendaItems.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormAgendaItems(prev => prev.filter((_, idx) => idx !== index));
+                                }}
+                                className="text-red-500 hover:text-red-700 font-bold text-[10px] hover:bg-red-50 px-2 py-1 rounded-lg transition-colors flex items-center gap-1"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="md:col-span-1">
+                              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Time Block</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. 09:00 AM - 10:30 AM"
+                                value={item.time}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setFormAgendaItems(prev => prev.map((it, idx) => idx === index ? { ...it, time: val } : it));
+                                }}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-850 bg-white"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Session Title</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Morning Keynote"
+                                value={item.title}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setFormAgendaItems(prev => prev.map((it, idx) => idx === index ? { ...it, title: val } : it));
+                                }}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-semibold text-xs text-slate-855 bg-white"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Short Outline</label>
+                            <input
+                              type="text"
+                              placeholder="Brief session outline..."
+                              value={item.description}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setFormAgendaItems(prev => prev.map((it, idx) => idx === index ? { ...it, description: val } : it));
+                              }}
+                              className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 font-medium text-xs text-slate-850 bg-white"
+                            />
+                          </div>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormAgendaItems(prev => [
+                            ...prev,
+                            { time: "", title: "", description: "" }
+                          ]);
+                        }}
+                        className="w-full py-3 border-2 border-dashed border-slate-200 rounded-2xl text-slate-500 font-bold text-xs hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50/50 transition-all flex items-center justify-center gap-2 mt-2"
+                      >
+                        <Plus className="h-4 w-4" /> Add Agenda Item
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
             </div>
 
             {/* Right Panel: Live Preview & Status Configuration (span 1) */}
             {!formIsPastEvent && (
-            <div className="space-y-6">
-              
-              {/* 1. Publishing Settings */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5 text-left">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
-                  <Settings2 className="h-4.5 w-4.5 text-[#2563EB]" />
-                  Publishing Settings
-                </h3>
+              <div className="space-y-6">
 
-                <div className="space-y-4">
-                  {/* Visibility Button Segments */}
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Visibility</label>
-                    <div className="grid grid-cols-2 gap-2 border border-slate-100 bg-slate-50/50 p-1 rounded-2xl">
+                {/* 1. Publishing Settings */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5 text-left">
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
+                    <Settings2 className="h-4.5 w-4.5 text-[#2563EB]" />
+                    Publishing Settings
+                  </h3>
+
+                  <div className="space-y-4">
+                    {/* Visibility Button Segments */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Visibility</label>
+                      <div className="grid grid-cols-2 gap-2 border border-slate-100 bg-slate-50/50 p-1 rounded-2xl">
+                        <button
+                          type="button"
+                          onClick={() => setFormVisibility("Public")}
+                          className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formVisibility === "Public" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                        >
+                          Public
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormVisibility("Internal Only")}
+                          className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formVisibility === "Internal Only" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                        >
+                          Internal Only
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Status configuration segments */}
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Status</label>
+                      <div className="grid grid-cols-3 gap-1 border border-slate-100 bg-slate-50/50 p-1 rounded-2xl">
+                        <button
+                          type="button"
+                          onClick={() => setFormStatus("Draft")}
+                          className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Draft" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                        >
+                          Draft
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormStatus("Active")}
+                          className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Active" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                        >
+                          Active
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFormStatus("Opened")}
+                          className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Opened" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                        >
+                          Opened
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Featured Event toggle */}
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="text-left">
+                        <span className="text-xs font-bold text-slate-700 block">Featured Event</span>
+                        <span className="text-[9px] text-slate-450 font-semibold leading-none">Display at the top of the portal</span>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setFormVisibility("Public")}
-                        className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formVisibility === "Public" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                        onClick={() => setFormIsFeatured(!formIsFeatured)}
+                        className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formIsFeatured ? "bg-[#2563EB]" : "bg-slate-200"}`}
                       >
-                        Public
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFormVisibility("Internal Only")}
-                        className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formVisibility === "Internal Only" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                      >
-                        Internal Only
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formIsFeatured ? "translate-x-4" : "translate-x-0"}`}
+                        />
                       </button>
                     </div>
-                  </div>
 
-                  {/* Status configuration segments */}
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">Status</label>
-                    <div className="grid grid-cols-3 gap-1 border border-slate-100 bg-slate-50/50 p-1 rounded-2xl">
+                    {/* Send Email Notifications toggle */}
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-50/50">
+                      <div className="text-left">
+                        <span className="text-xs font-bold text-slate-700 block">Send Email Notifications</span>
+                        <span className="text-[9px] text-slate-450 font-semibold leading-none">Notify all registered members</span>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setFormStatus("Draft")}
-                        className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Draft" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                        onClick={() => setFormSendEmail(!formSendEmail)}
+                        className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formSendEmail ? "bg-[#2563EB]" : "bg-slate-200"}`}
                       >
-                        Draft
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFormStatus("Active")}
-                        className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Active" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                      >
-                        Active
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFormStatus("Opened")}
-                        className={`py-1.5 text-center text-[10px] font-bold rounded-xl transition-all ${formStatus === "Opened" ? "bg-[#2563EB] text-white shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-                      >
-                        Opened
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formSendEmail ? "translate-x-4" : "translate-x-0"}`}
+                        />
                       </button>
                     </div>
-                  </div>
-
-                  {/* Featured Event toggle */}
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="text-left">
-                      <span className="text-xs font-bold text-slate-700 block">Featured Event</span>
-                      <span className="text-[9px] text-slate-450 font-semibold leading-none">Display at the top of the portal</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFormIsFeatured(!formIsFeatured)}
-                      className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formIsFeatured ? "bg-[#2563EB]" : "bg-slate-200"}`}
-                    >
-                      <div 
-                        className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formIsFeatured ? "translate-x-4" : "translate-x-0"}`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Send Email Notifications toggle */}
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-50/50">
-                    <div className="text-left">
-                      <span className="text-xs font-bold text-slate-700 block">Send Email Notifications</span>
-                      <span className="text-[9px] text-slate-450 font-semibold leading-none">Notify all registered members</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFormSendEmail(!formSendEmail)}
-                      className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formSendEmail ? "bg-[#2563EB]" : "bg-slate-200"}`}
-                    >
-                      <div 
-                        className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formSendEmail ? "translate-x-4" : "translate-x-0"}`}
-                      />
-                    </button>
                   </div>
                 </div>
-              </div>
 
-              {/* 2. Event Preview */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4 text-left">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex justify-between items-center">
-                  <span>Event Preview</span>
-                  <span className="text-[9px] font-black text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider">Live</span>
-                </h3>
+                {/* 2. Event Preview */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4 text-left">
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex justify-between items-center">
+                    <span>Event Preview</span>
+                    <span className="text-[9px] font-black text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded uppercase tracking-wider">Live</span>
+                  </h3>
 
-                {/* Event Card preview styling */}
-                <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-inner bg-slate-50/20">
-                  <div className="relative h-32 bg-slate-100/50">
-                    {formPosterImages.length > 0 ? (
-                      <img
-                        src={formPosterImages[0].preview}
-                        alt="Preview"
-                        className="w-full h-full object-cover animate-in fade-in duration-200"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 border-b border-slate-100">
-                        <span className="text-[10px] font-semibold">Update banner to preview</span>
-                      </div>
-                    )}
-                    <div className="absolute top-2.5 right-2.5">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-black tracking-wider uppercase text-white
+                  {/* Event Card preview styling */}
+                  <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-inner bg-slate-50/20">
+                    <div className="relative h-32 bg-slate-100/50">
+                      {formPosterImages.length > 0 ? (
+                        <img
+                          src={formPosterImages[0].preview}
+                          alt="Preview"
+                          className="w-full h-full object-cover animate-in fade-in duration-200"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 border-b border-slate-100">
+                          <span className="text-[10px] font-semibold">Update banner to preview</span>
+                        </div>
+                      )}
+                      <div className="absolute top-2.5 right-2.5">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-black tracking-wider uppercase text-white
                         ${formCategory === "Hackathon" ? "bg-[#2563EB]" : ""}
                         ${formCategory === "Seminar" ? "bg-sky-600" : ""}
                         ${formCategory === "Workshop" ? "bg-emerald-600" : ""}
                       `}>
-                        {formCategory.toUpperCase()}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 space-y-3.5">
-                    <div>
-                      <h4 className="font-extrabold text-slate-800 text-xs truncate">
-                        {formTitle || "Event Title Preview..."}
-                      </h4>
-                      {formPrimaryTag && (
-                        <span className="inline-block mt-1 text-[9px] font-semibold text-slate-400 bg-slate-100/60 px-2 py-0.5 rounded-full border border-slate-200/20">
-                          #{formPrimaryTag}
+                          {formCategory.toUpperCase()}
                         </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-slate-100 pt-3">
-                      <span className="flex items-center gap-0.5">
-                        <Clock className="h-3 w-3 inline text-slate-350" />
-                        {formStartDate ? new Date(formStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : "Oct 24, 2023"} {formStartTime && `• ${formStartTime}`}
-                      </span>
-                      <span className="flex items-center gap-0.5">
-                        <MapPin className="h-3 w-3 inline text-slate-350" />
-                        {formLocation || "Virtual Hub"}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center pt-2.5 border-t border-dashed border-slate-100/80">
-                      {/* Registered Attendees Avatars Preview */}
-                      <div className="flex -space-x-1.5 overflow-hidden">
-                        <div className="w-5 h-5 rounded-full bg-slate-200 border border-white"></div>
-                        <div className="w-5 h-5 rounded-full bg-slate-300 border border-white"></div>
-                        <div className="w-5 h-5 rounded-full bg-slate-400 border border-white"></div>
                       </div>
-                      <span className="text-[9px] font-black text-blue-600 border border-blue-100 px-2 py-0.5 rounded bg-blue-50/50 uppercase tracking-wider">
-                        Register
-                      </span>
+                    </div>
+
+                    <div className="p-4 space-y-3.5">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-xs truncate">
+                          {formTitle || "Event Title Preview..."}
+                        </h4>
+                        {formPrimaryTag && (
+                          <span className="inline-block mt-1 text-[9px] font-semibold text-slate-400 bg-slate-100/60 px-2 py-0.5 rounded-full border border-slate-200/20">
+                            #{formPrimaryTag}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-slate-100 pt-3">
+                        <span className="flex items-center gap-0.5">
+                          <Clock className="h-3 w-3 inline text-slate-350" />
+                          {formStartDate ? new Date(formStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : "Oct 24, 2023"} {formStartTime && `• ${formStartTime}`}
+                        </span>
+                        <span className="flex items-center gap-0.5">
+                          <MapPin className="h-3 w-3 inline text-slate-350" />
+                          {formLocation || "Virtual Hub"}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center pt-2.5 border-t border-dashed border-slate-100/80">
+                        {/* Registered Attendees Avatars Preview */}
+                        <div className="flex -space-x-1.5 overflow-hidden">
+                          <div className="w-5 h-5 rounded-full bg-slate-200 border border-white"></div>
+                          <div className="w-5 h-5 rounded-full bg-slate-300 border border-white"></div>
+                          <div className="w-5 h-5 rounded-full bg-slate-400 border border-white"></div>
+                        </div>
+                        <span className="text-[9px] font-black text-blue-600 border border-blue-100 px-2 py-0.5 rounded bg-blue-50/50 uppercase tracking-wider">
+                          Register
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-            </div>
+              </div>
             )}
           </div>
         </div>
@@ -2107,8 +2103,8 @@ const EventManagementPage: React.FC = () => {
       {/* ================= TOTAL EVENT INFORMATION DETAILS FULL PAGE VIEW ================= */}
       {isDetailsModalOpen && (
         <div className="space-y-6 pb-12 text-left font-sans animate-in fade-in duration-200">
-          <SEO 
-            title={`${selectedEventDetails?.title || "Event Details"} - Faculty Portal`} 
+          <SEO
+            title={`${selectedEventDetails?.title || "Event Details"} - Faculty Portal`}
             description="Control center for faculty-led event information, coordinator roster, and parameters."
           />
 
@@ -2159,7 +2155,7 @@ const EventManagementPage: React.FC = () => {
 
           {/* MAIN EVENT DETAILS FULL CONTAINER */}
           <div className="bg-slate-50 rounded-[32px] w-full shadow-sm border border-slate-200/80 overflow-hidden text-left relative flex flex-col">
-            
+
             {/* 🌟 HERO BANNER HEADER */}
             <div className="relative bg-gradient-to-r from-[#1E3A8A] via-[#2563EB] to-[#1D4ED8] text-white p-6 sm:p-8 shrink-0 overflow-hidden shadow-md">
               {/* Background Glow Blobs */}
@@ -2167,11 +2163,11 @@ const EventManagementPage: React.FC = () => {
               <div className="absolute -bottom-10 left-10 w-72 h-72 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none"></div>
 
               <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                
+
                 {/* Poster & Main Titles */}
                 <div className="flex items-start sm:items-center gap-5 max-w-3xl">
                   {/* Event Thumbnail / Poster Preview */}
-                  <div 
+                  <div
                     onClick={() => {
                       const src = selectedEventDetails?.posterPreview || selectedEventDetails?.image || sparkImg;
                       if (src) setActiveImageLightbox(src);
@@ -2199,13 +2195,12 @@ const EventManagementPage: React.FC = () => {
                         {selectedEventDetails?.category || "EVENT"}
                       </span>
                       {selectedEventDetails?.status && (
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border backdrop-blur-md flex items-center gap-1.5 ${
-                          selectedEventDetails.status === "Opened" 
-                            ? "bg-emerald-400/25 text-emerald-100 border-emerald-300/40" 
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border backdrop-blur-md flex items-center gap-1.5 ${selectedEventDetails.status === "Opened"
+                            ? "bg-emerald-400/25 text-emerald-100 border-emerald-300/40"
                             : selectedEventDetails.status === "Active"
-                            ? "bg-sky-400/25 text-sky-100 border-sky-300/40"
-                            : "bg-slate-400/25 text-slate-100 border-slate-300/40"
-                        }`}>
+                              ? "bg-sky-400/25 text-sky-100 border-sky-300/40"
+                              : "bg-slate-400/25 text-slate-100 border-slate-300/40"
+                          }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${selectedEventDetails.status === "Opened" ? "bg-emerald-300 animate-ping" : "bg-sky-300"}`}></span>
                           {selectedEventDetails.status}
                         </span>
@@ -2460,7 +2455,7 @@ const EventManagementPage: React.FC = () => {
                           {selectedEventDetails.posterImages.map((img: any, idx: number) => {
                             const imgSrc = img.preview || img;
                             return (
-                              <div 
+                              <div
                                 key={idx}
                                 onClick={() => setActiveImageLightbox(imgSrc)}
                                 className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-900/5 p-2 shadow-sm group relative flex items-center justify-center cursor-pointer hover:border-blue-300 transition-all"
@@ -2480,13 +2475,13 @@ const EventManagementPage: React.FC = () => {
                           })}
                         </div>
                       ) : (selectedEventDetails?.posterPreview || selectedEventDetails?.image) ? (
-                        <div 
+                        <div
                           onClick={() => setActiveImageLightbox(selectedEventDetails?.posterPreview || selectedEventDetails?.image || sparkImg)}
                           className="w-full rounded-2xl overflow-hidden border border-slate-200 bg-slate-900/5 p-3 shadow-sm flex flex-col items-center justify-center cursor-pointer group relative hover:border-blue-300 transition-all"
                         >
-                          <img 
-                            src={selectedEventDetails?.posterPreview || selectedEventDetails?.image || sparkImg} 
-                            alt="Full Event Poster" 
+                          <img
+                            src={selectedEventDetails?.posterPreview || selectedEventDetails?.image || sparkImg}
+                            alt="Full Event Poster"
                             className="w-full max-h-[550px] object-contain rounded-xl transition-transform duration-300 group-hover:scale-[1.01]"
                             onError={(e) => {
                               (e.target as HTMLImageElement).src = sparkImg;
@@ -2609,7 +2604,7 @@ const EventManagementPage: React.FC = () => {
                       <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-3">
                         Event Metadata
                       </h3>
-                      
+
                       <div className="space-y-2.5 text-xs">
                         <div className="flex justify-between items-center">
                           <span className="text-[10px] font-bold text-slate-400 uppercase">Visibility</span>
@@ -2699,13 +2694,13 @@ const EventManagementPage: React.FC = () => {
 
       {/* ================= LIGHTBOX FULL POSTER PREVIEW MODAL ================= */}
       {activeImageLightbox && (
-        <div 
+        <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4 sm:p-8 animate-in fade-in duration-200 cursor-pointer"
           onClick={() => setActiveImageLightbox(null)}
         >
-          <img 
-            src={activeImageLightbox} 
-            alt="Full Resolution Event Poster" 
+          <img
+            src={activeImageLightbox}
+            alt="Full Resolution Event Poster"
             onClick={(e) => e.stopPropagation()}
             className="max-h-[90vh] max-w-full object-contain rounded-2xl shadow-2xl border border-white/20 bg-slate-900 cursor-default select-none"
           />
