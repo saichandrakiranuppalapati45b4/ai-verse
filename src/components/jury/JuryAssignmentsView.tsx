@@ -130,6 +130,14 @@ const JuryAssignmentsView: React.FC = () => {
 
   // Full Screen distraction-free scoring mode state
   const [isFullScreenMode, setIsFullScreenMode] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  };
 
   const toggleFullScreen = () => {
     if (!isFullScreenMode) {
@@ -322,7 +330,7 @@ const JuryAssignmentsView: React.FC = () => {
 
   const calculatedTotal = communication + innovationUniqueness + feasibilityViability + statistics + revenue;
 
-  // Inline cell score change handler (Only allowed if row is NOT saved)
+  // Inline cell score change handler (Always allowed and editable)
   const handleCellChange = (
     projectId: string,
     field: "communication" | "innovationUniqueness" | "feasibilityViability" | "statistics" | "revenue",
@@ -330,7 +338,7 @@ const JuryAssignmentsView: React.FC = () => {
   ) => {
     const numVal = Math.min(20, Math.max(0, parseInt(rawVal, 10) || 0));
     setProjects(prev => prev.map(p => {
-      if (p.id !== projectId || p.isSaved) return p;
+      if (p.id !== projectId) return p;
       const updated = {
         ...p,
         [field]: rawVal === "" ? 0 : numVal,
@@ -345,11 +353,11 @@ const JuryAssignmentsView: React.FC = () => {
     }));
   };
 
-  // Lock and save scores to Firebase Firestore for a team row
+  // Save or update scores in Firebase Firestore for a team row
   const handleSaveRowScores = async (project: HackathonProject) => {
     const total = project.communication + project.innovationUniqueness + project.feasibilityViability + project.statistics + project.revenue;
     if (total === 0) {
-      alert(`Please enter marks for "${project.teamName}" before saving.`);
+      showToast(`Please enter marks for "${project.teamName}" before saving.`);
       return;
     }
 
@@ -371,10 +379,10 @@ const JuryAssignmentsView: React.FC = () => {
 
     try {
       await setDoc(doc(db, "jury_evaluations", project.id), payload, { merge: true });
-      alert(`Scores for "${project.teamName}" have been saved to Firebase Firestore and locked! Scores are now masked as password dots.`);
+      showToast(`Scores for "${project.teamName}" saved successfully (${total}/100)!`);
     } catch (err) {
       console.error("Firebase Firestore Save Error:", err);
-      alert("Failed to save score to Firebase. Please try again.");
+      showToast("Failed to save score to Firebase. Please try again.");
     }
   };
 
@@ -409,11 +417,11 @@ const JuryAssignmentsView: React.FC = () => {
 
     try {
       await setDoc(doc(db, "jury_evaluations", selectedProject.id), payload, { merge: true });
-      alert(`Evaluation for "${selectedProject.teamName}" saved to Firebase Firestore and locked with score ${calculatedTotal}/100!`);
+      showToast(`Evaluation for "${selectedProject.teamName}" saved (${calculatedTotal}/100)!`);
       setSelectedProject(null);
     } catch (err) {
       console.error("Firebase Firestore Modal Save Error:", err);
-      alert("Failed to save evaluation to Firebase. Please try again.");
+      showToast("Failed to save evaluation to Firebase. Please try again.");
     }
   };
 
@@ -462,6 +470,17 @@ const JuryAssignmentsView: React.FC = () => {
 
   return (
     <div className={isFullScreenMode ? "fixed inset-0 z-[9999] bg-[#F8FAFC] p-4 sm:p-6 overflow-y-auto space-y-5 animate-in fade-in duration-200 text-left font-sans" : "space-y-5 animate-in fade-in duration-200 text-left font-sans"}>
+      {/* Toast Notification Banner (Does not exit Full Screen mode!) */}
+      {toastMessage && (
+        <div className="fixed top-5 right-5 z-[10000] bg-slate-900/95 backdrop-blur-md text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-2.5 animate-in slide-in-from-top-3 duration-200">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+          <button onClick={() => setToastMessage(null)} className="ml-2 text-slate-400 hover:text-white p-0.5 rounded-lg">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Fullscreen Sticky Control Header */}
       {isFullScreenMode && (
         <div className="bg-slate-950 text-white px-6 py-3.5 rounded-2xl flex items-center justify-between shadow-xl shrink-0 border border-slate-800 animate-in slide-in-from-top-2 duration-200">
