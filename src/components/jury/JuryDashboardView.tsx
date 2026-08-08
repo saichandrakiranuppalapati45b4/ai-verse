@@ -4,17 +4,12 @@ import {
   Clock, 
   CheckCircle2, 
   ArrowRight,
-  Brain,
-  Eye,
   BookOpen,
   MessageSquare,
   History,
   Headphones,
-  Calendar,
-  Download,
   Flame,
-  Layers,
-  Sparkles
+  Layers
 } from "lucide-react";
 import { db } from "../../config/firebase";
 import { collection, onSnapshot, doc } from "firebase/firestore";
@@ -207,18 +202,6 @@ const JuryDashboardView: React.FC<JuryDashboardViewProps> = ({
     }))
     .filter((track) => track.percentage < 100);
 
-  // Parse helper for calendar date badges
-  const parseCalendarDate = (dateStr: string) => {
-    if (!dateStr) return { month: "EVENT", day: "01" };
-    const parts = dateStr.trim().split(" ");
-    if (parts.length >= 2) {
-      const m = parts[0].substring(0, 3).toUpperCase();
-      const d = parts[1].replace(/\D/g, "") || "01";
-      return { month: m, day: d.padStart(2, "0") };
-    }
-    return { month: "EVENT", day: dateStr.substring(0, 2) || "01" };
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       {/* ================= WELCOME HEADER ================= */}
@@ -334,200 +317,103 @@ const JuryDashboardView: React.FC<JuryDashboardViewProps> = ({
         </div>
       </div>
 
-      {/* ================= TWO COLUMN CONTENT ================= */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Section (span 8) */}
-        <div className="lg:col-span-8 space-y-6">
-          {/* Active Jury Tracks Card */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-                  Active Jury Tracks
-                </h2>
-                <p className="text-xs text-slate-400 font-medium">Real-time team evaluation progress by event track</p>
-              </div>
-              <button 
-                onClick={() => onNavigateTab("Assignments")}
-                className="text-xs font-extrabold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100"
-              >
-                View All Tracks <ArrowRight className="h-3.5 w-3.5" />
-              </button>
+      {/* ================= MAIN CONTENT ================= */}
+      <div className="space-y-6">
+        {/* Active Jury Tracks Card */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+                Active Jury Tracks
+              </h2>
+              <p className="text-xs text-slate-400 font-medium">Real-time team evaluation progress by event track</p>
             </div>
-
-            {/* Tracks List */}
-            <div className="space-y-4">
-              {tracksList.length > 0 ? (
-                tracksList.map((track, idx) => (
-                  <div 
-                    key={idx} 
-                    className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-all space-y-3 cursor-pointer" 
-                    onClick={() => onNavigateTab("Assignments")}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-blue-100/60 text-blue-600 flex items-center justify-center shrink-0">
-                          {idx % 2 === 0 ? <Brain className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                        </div>
-                        <div className="truncate">
-                          <h3 className="text-sm font-bold text-slate-800 truncate">
-                            {track.trackName}
-                          </h3>
-                          <p className="text-xs text-slate-400 font-medium">
-                            Live evaluation track
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <div className="text-right">
-                          <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">EVALUATED</span>
-                          <span className="text-xs font-black text-slate-800">{track.evaluated}/{track.total}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">STATUS</span>
-                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black tracking-wide uppercase ${track.percentage === 100 ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
-                            {track.percentage === 100 ? "COMPLETED" : "IN PROGRESS"}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div className="w-full bg-slate-200/60 h-2 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-[#2563EB] h-full rounded-full transition-all duration-500" 
-                        style={{ width: `${Math.max(5, track.percentage)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-8 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 text-slate-400 font-medium text-xs">
-                  No evaluation tracks currently registered. Create events or submit registrations to start scoring.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Quick Action Grid (4 Cards) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {/* Action 1: Guidelines */}
-            <button 
-              onClick={() => alert("Opening Judging Guidelines...")}
-              className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group"
-            >
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                <BookOpen className="h-4.5 w-4.5" />
-              </div>
-              <span className="text-xs font-bold text-slate-700">Guidelines</span>
-            </button>
-
-            {/* Action 2: Messages */}
-            <button 
-              onClick={() => alert("Opening Jury Communication Hub...")}
-              className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group"
-            >
-              <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center group-hover:bg-sky-600 group-hover:text-white transition-colors">
-                <MessageSquare className="h-4.5 w-4.5" />
-              </div>
-              <span className="text-xs font-bold text-slate-700">Messages</span>
-            </button>
-
-            {/* Action 3: History */}
             <button 
               onClick={() => onNavigateTab("Assignments")}
-              className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group"
+              className="text-xs font-extrabold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-100"
             >
-              <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                <History className="h-4.5 w-4.5" />
-              </div>
-              <span className="text-xs font-bold text-slate-700">History</span>
+              View All Tracks <ArrowRight className="h-3.5 w-3.5" />
             </button>
+          </div>
 
-            {/* Action 4: Support */}
-            <button 
-              onClick={() => alert("Connecting to Jury Technical Support...")}
-              className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group"
-            >
-              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                <Headphones className="h-4.5 w-4.5" />
+          {/* Tracks List */}
+          <div className="space-y-4">
+            {tracksList.length > 0 ? (
+              tracksList.map((track, idx) => (
+                <div 
+                  key={idx} 
+                  className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-all space-y-3 cursor-pointer" 
+                  onClick={() => onNavigateTab("Assignments")}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">{track.trackName}</span>
+                    <span className="text-[10px] font-extrabold text-slate-500 bg-white px-2.5 py-1 rounded-full border border-slate-100 shadow-xs">
+                      {track.evaluated} / {track.total} Evaluated
+                    </span>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-[#2563EB] rounded-full transition-all duration-500" 
+                      style={{ width: `${track.percentage}%` }} 
+                    />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-8 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 text-slate-400 font-medium text-xs">
+                No evaluation tracks currently registered. Create events or submit registrations to start scoring.
               </div>
-              <span className="text-xs font-bold text-slate-700">Support</span>
-            </button>
+            )}
           </div>
         </div>
 
-        {/* Right Section (span 4) */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Judging Calendar Card */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5">
-            <div className="flex items-center justify-between text-slate-800">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-blue-600" />
-                <h3 className="text-sm font-bold">Judging Calendar</h3>
-              </div>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100">
-                DATABASE SYNC
-              </span>
+        {/* Quick Action Grid (4 Cards) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {/* Action 1: Guidelines */}
+          <button 
+            onClick={() => alert("Opening Judging Guidelines...")}
+            className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group cursor-pointer"
+          >
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              <BookOpen className="h-4.5 w-4.5" />
             </div>
+            <span className="text-xs font-bold text-slate-700">Guidelines</span>
+          </button>
 
-            {/* Calendar Events */}
-            <div className="space-y-3">
-              {dbEvents.length > 0 ? (
-                dbEvents.slice(0, 3).map((ev, index) => {
-                  const dateInfo = parseCalendarDate(ev.date);
-                  return (
-                    <div key={ev.id || index} className="p-3 rounded-2xl bg-slate-50/70 border border-slate-100 flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100/50 flex flex-col items-center justify-center shrink-0">
-                        <span className="text-[9px] font-extrabold text-blue-600 uppercase">{dateInfo.month}</span>
-                        <span className="text-sm font-black text-blue-700 leading-none">{dateInfo.day}</span>
-                      </div>
-                      <div className="truncate">
-                        <h4 className="text-xs font-bold text-slate-800 truncate">{ev.title}</h4>
-                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5 truncate">{ev.time} - {ev.location}</p>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-[10px] text-slate-400 font-semibold text-center">
-                  No upcoming database events found.
-                </div>
-              )}
+          {/* Action 2: Messages */}
+          <button 
+            onClick={() => alert("Opening Jury Communication Hub...")}
+            className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group cursor-pointer"
+          >
+            <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center group-hover:bg-sky-600 group-hover:text-white transition-colors">
+              <MessageSquare className="h-4.5 w-4.5" />
             </div>
+            <span className="text-xs font-bold text-slate-700">Messages</span>
+          </button>
 
-            {/* Sync Button */}
-            <button 
-              onClick={() => alert("Judging Calendar synced with Outlook & iCal!")}
-              className="w-full py-2.5 border border-[#2563EB]/40 text-[#2563EB] hover:bg-blue-50/50 font-bold rounded-xl text-xs transition-colors text-center flex items-center justify-center gap-1.5"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Sync with Outlook
-            </button>
-          </div>
-
-          {/* Download PDF Promo Card */}
-          <div className="bg-gradient-to-br from-[#0E46A3] to-[#1E3A8A] rounded-3xl p-6 text-white shadow-md space-y-4 relative overflow-hidden">
-            {/* Background glowing sphere decoration */}
-            <div className="absolute -top-12 -right-12 w-36 h-36 rounded-full bg-blue-400/20 blur-2xl pointer-events-none" />
-            
-            <div className="space-y-2 relative z-10">
-              <h3 className="text-lg font-black tracking-tight">
-                Judge's Manual v2.0
-              </h3>
-              <p className="text-xs text-blue-100 font-medium leading-relaxed">
-                Master the official criteria for generative AI ethics and feasibility evaluation.
-              </p>
+          {/* Action 3: History */}
+          <button 
+            onClick={() => onNavigateTab("Assignments")}
+            className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group cursor-pointer"
+          >
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+              <History className="h-4.5 w-4.5" />
             </div>
+            <span className="text-xs font-bold text-slate-700">History</span>
+          </button>
 
-            <button 
-              onClick={() => alert("Downloading Judge's Manual v2.0 PDF...")}
-              className="w-full py-2.5 bg-white text-[#0B4AC6] hover:bg-blue-50 font-extrabold rounded-xl text-xs shadow-sm transition-all text-center relative z-10 flex items-center justify-center gap-1.5"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download PDF
-            </button>
-          </div>
+          {/* Action 4: Support */}
+          <button 
+            onClick={() => alert("Connecting to Jury Technical Support...")}
+            className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group cursor-pointer"
+          >
+            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-colors">
+              <Headphones className="h-4.5 w-4.5" />
+            </div>
+            <span className="text-xs font-bold text-slate-700">Support</span>
+          </button>
         </div>
       </div>
     </div>

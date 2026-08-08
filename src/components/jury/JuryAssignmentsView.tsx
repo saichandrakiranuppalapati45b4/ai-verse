@@ -10,11 +10,9 @@ import {
   Download,
   Eye,
   EyeOff,
-  Lock,
   Flame,
   Maximize2,
-  Minimize2,
-  Pencil
+  Minimize2
 } from "lucide-react";
 import { db } from "../../config/firebase";
 import { collection, onSnapshot, doc, setDoc } from "firebase/firestore";
@@ -115,18 +113,9 @@ const JuryAssignmentsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"All" | "Pending" | "Evaluated">("All");
   const [filterTrack, setFilterTrack] = useState<string>("All");
-  const [selectedProject, setSelectedProject] = useState<HackathonProject | null>(null);
-
-  // Unmask scores toggle for reveal mode
+  // Reveal saved scores toggle state
   const [revealScores, setRevealScores] = useState(false);
-
-  // Scoring form modal state (5 criteria out of 20 points each)
-  const [communication, setCommunication] = useState(18);
-  const [innovationUniqueness, setInnovationUniqueness] = useState(18);
-  const [feasibilityViability, setFeasibilityViability] = useState(18);
-  const [statistics, setStatistics] = useState(18);
-  const [revenue, setRevenue] = useState(18);
-  const [feedbackNotes, setFeedbackNotes] = useState("");
+  const [focusedCell, setFocusedCell] = useState<{ id: string; field: string } | null>(null);
 
   // Full Screen distraction-free scoring mode state
   const [isFullScreenMode, setIsFullScreenMode] = useState(false);
@@ -328,8 +317,6 @@ const JuryAssignmentsView: React.FC = () => {
     return matchesSearch && matchesStatus && matchesTrack && matchesActiveJuryEvent;
   });
 
-  const calculatedTotal = communication + innovationUniqueness + feasibilityViability + statistics + revenue;
-
   // Inline cell score change handler (Always allowed and editable)
   const handleCellChange = (
     projectId: string,
@@ -383,45 +370,6 @@ const JuryAssignmentsView: React.FC = () => {
     } catch (err) {
       console.error("Firebase Firestore Save Error:", err);
       showToast("Failed to save score to Firebase. Please try again.");
-    }
-  };
-
-  const openScoringModal = (p: HackathonProject) => {
-    setSelectedProject(p);
-    setCommunication(p.communication || 18);
-    setInnovationUniqueness(p.innovationUniqueness || 18);
-    setFeasibilityViability(p.feasibilityViability || 18);
-    setStatistics(p.statistics || 18);
-    setRevenue(p.revenue || 18);
-  };
-
-  const handleSaveEvaluation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProject) return;
-
-    const payload = {
-      teamName: selectedProject.teamName,
-      projectTitle: selectedProject.projectTitle,
-      track: selectedProject.track,
-      communication,
-      innovationUniqueness,
-      feasibilityViability,
-      statistics,
-      revenue,
-      totalScore: calculatedTotal,
-      status: "Evaluated",
-      isSaved: true,
-      membersCount: selectedProject.membersCount,
-      abstract: selectedProject.abstract
-    };
-
-    try {
-      await setDoc(doc(db, "jury_evaluations", selectedProject.id), payload, { merge: true });
-      showToast(`Evaluation for "${selectedProject.teamName}" saved (${calculatedTotal}/100)!`);
-      setSelectedProject(null);
-    } catch (err) {
-      console.error("Firebase Firestore Modal Save Error:", err);
-      showToast("Failed to save evaluation to Firebase. Please try again.");
     }
   };
 
@@ -682,12 +630,12 @@ const JuryAssignmentsView: React.FC = () => {
           <button
             type="button"
             onClick={() => setRevealScores(!revealScores)}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border shadow-xs ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border shadow-xs cursor-pointer ${
               revealScores
                 ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
                 : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
             }`}
-            title="Toggle reveal scores"
+            title="Toggle reveal/mask saved scores"
           >
             {revealScores ? <EyeOff className="h-4 w-4 text-amber-600" /> : <Eye className="h-4 w-4 text-slate-500" />}
             <span>{revealScores ? "Hide Saved Scores" : "Reveal Saved Scores"}</span>
@@ -731,7 +679,8 @@ const JuryAssignmentsView: React.FC = () => {
                 </tr>
               ) : (
                 filteredProjects.map((p, idx) => {
-                  const isMaskedCell = p.isSaved && !revealScores;
+                  const isRowSaved = p.isSaved || p.status === "Evaluated";
+                  const isMasked = isRowSaved && !revealScores;
 
                   return (
                     <tr 
@@ -753,16 +702,17 @@ const JuryAssignmentsView: React.FC = () => {
                       <td className="py-2.5 px-2 border-r border-slate-200/70 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <input
-                            type={isMaskedCell ? "password" : "number"}
+                            type={isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "communication") ? "password" : "number"}
                             min="0"
                             max="20"
-                            disabled={p.isSaved}
                             placeholder="—"
                             value={p.communication > 0 ? p.communication : ""}
+                            onFocus={() => setFocusedCell({ id: p.id, field: "communication" })}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => handleCellChange(p.id, "communication", e.target.value)}
                             className={`w-14 py-1.5 px-2 text-center font-mono font-bold text-xs rounded-lg transition-all ${
-                              p.isSaved
-                                ? "bg-slate-100/90 text-slate-500 border border-slate-200 cursor-not-allowed shadow-none"
+                              isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "communication")
+                                ? "bg-amber-50/80 text-amber-900 border border-amber-200 shadow-inner"
                                 : "bg-slate-50 border border-slate-300/80 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner"
                             }`}
                           />
@@ -774,16 +724,17 @@ const JuryAssignmentsView: React.FC = () => {
                       <td className="py-2.5 px-2 border-r border-slate-200/70 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <input
-                            type={isMaskedCell ? "password" : "number"}
+                            type={isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "innovationUniqueness") ? "password" : "number"}
                             min="0"
                             max="20"
-                            disabled={p.isSaved}
                             placeholder="—"
                             value={p.innovationUniqueness > 0 ? p.innovationUniqueness : ""}
+                            onFocus={() => setFocusedCell({ id: p.id, field: "innovationUniqueness" })}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => handleCellChange(p.id, "innovationUniqueness", e.target.value)}
                             className={`w-14 py-1.5 px-2 text-center font-mono font-bold text-xs rounded-lg transition-all ${
-                              p.isSaved
-                                ? "bg-slate-100/90 text-slate-500 border border-slate-200 cursor-not-allowed shadow-none"
+                              isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "innovationUniqueness")
+                                ? "bg-amber-50/80 text-amber-900 border border-amber-200 shadow-inner"
                                 : "bg-slate-50 border border-slate-300/80 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner"
                             }`}
                           />
@@ -795,16 +746,17 @@ const JuryAssignmentsView: React.FC = () => {
                       <td className="py-2.5 px-2 border-r border-slate-200/70 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <input
-                            type={isMaskedCell ? "password" : "number"}
+                            type={isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "feasibilityViability") ? "password" : "number"}
                             min="0"
                             max="20"
-                            disabled={p.isSaved}
                             placeholder="—"
                             value={p.feasibilityViability > 0 ? p.feasibilityViability : ""}
+                            onFocus={() => setFocusedCell({ id: p.id, field: "feasibilityViability" })}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => handleCellChange(p.id, "feasibilityViability", e.target.value)}
                             className={`w-14 py-1.5 px-2 text-center font-mono font-bold text-xs rounded-lg transition-all ${
-                              p.isSaved
-                                ? "bg-slate-100/90 text-slate-500 border border-slate-200 cursor-not-allowed shadow-none"
+                              isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "feasibilityViability")
+                                ? "bg-amber-50/80 text-amber-900 border border-amber-200 shadow-inner"
                                 : "bg-slate-50 border border-slate-300/80 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner"
                             }`}
                           />
@@ -816,16 +768,17 @@ const JuryAssignmentsView: React.FC = () => {
                       <td className="py-2.5 px-2 border-r border-slate-200/70 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <input
-                            type={isMaskedCell ? "password" : "number"}
+                            type={isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "statistics") ? "password" : "number"}
                             min="0"
                             max="20"
-                            disabled={p.isSaved}
                             placeholder="—"
                             value={p.statistics > 0 ? p.statistics : ""}
+                            onFocus={() => setFocusedCell({ id: p.id, field: "statistics" })}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => handleCellChange(p.id, "statistics", e.target.value)}
                             className={`w-14 py-1.5 px-2 text-center font-mono font-bold text-xs rounded-lg transition-all ${
-                              p.isSaved
-                                ? "bg-slate-100/90 text-slate-500 border border-slate-200 cursor-not-allowed shadow-none"
+                              isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "statistics")
+                                ? "bg-amber-50/80 text-amber-900 border border-amber-200 shadow-inner"
                                 : "bg-slate-50 border border-slate-300/80 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner"
                             }`}
                           />
@@ -837,16 +790,17 @@ const JuryAssignmentsView: React.FC = () => {
                       <td className="py-2.5 px-2 border-r border-slate-200/70 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <input
-                            type={isMaskedCell ? "password" : "number"}
+                            type={isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "revenue") ? "password" : "number"}
                             min="0"
                             max="20"
-                            disabled={p.isSaved}
                             placeholder="—"
                             value={p.revenue > 0 ? p.revenue : ""}
+                            onFocus={() => setFocusedCell({ id: p.id, field: "revenue" })}
+                            onBlur={() => setFocusedCell(null)}
                             onChange={(e) => handleCellChange(p.id, "revenue", e.target.value)}
                             className={`w-14 py-1.5 px-2 text-center font-mono font-bold text-xs rounded-lg transition-all ${
-                              p.isSaved
-                                ? "bg-slate-100/90 text-slate-500 border border-slate-200 cursor-not-allowed shadow-none"
+                              isMasked && !(focusedCell?.id === p.id && focusedCell?.field === "revenue")
+                                ? "bg-amber-50/80 text-amber-900 border border-amber-200 shadow-inner"
                                 : "bg-slate-50 border border-slate-300/80 focus:border-blue-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 shadow-inner"
                             }`}
                           />
@@ -857,7 +811,7 @@ const JuryAssignmentsView: React.FC = () => {
                       {/* Total Score */}
                       <td className="py-3.5 px-3 border-r border-slate-200/70 text-center font-mono font-extrabold">
                         {p.totalScore !== undefined && (p.status === "Evaluated" || p.totalScore > 0) ? (
-                          isMaskedCell ? (
+                          isMasked ? (
                             <span className="text-amber-600 font-extrabold text-sm tracking-widest select-none">••••</span>
                           ) : (
                             <span className="text-blue-600 text-sm font-black">{p.totalScore}/100</span>
@@ -884,34 +838,18 @@ const JuryAssignmentsView: React.FC = () => {
 
                       {/* Sticky Actions Column */}
                       <td className="py-3.5 px-3 text-center sticky right-0 bg-white group-hover:bg-blue-50/80 border-l border-slate-200/80 shadow-xs z-10">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {p.isSaved ? (
-                            <span className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200 inline-flex items-center gap-1">
-                              <Lock className="h-3 w-3 text-amber-600" />
-                              Locked
-                            </span>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => openScoringModal(p)}
-                                className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 shadow-xs transition-all inline-flex items-center gap-1"
-                                title="Open score slider modal on screen"
-                              >
-                                <Pencil className="h-3 w-3" />
-                                Score
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleSaveRowScores(p)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] hover:bg-blue-700 text-white shadow-sm transition-all inline-flex items-center gap-1"
-                                title="Save scores and lock row"
-                              >
-                                <Send className="h-3 w-3" />
-                                Save
-                              </button>
-                            </>
-                          )}
+                        <div className="flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveRowScores(p)}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold text-white shadow-sm transition-all inline-flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+                              p.isSaved ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20" : "bg-[#2563EB] hover:bg-blue-700 shadow-blue-600/20"
+                            }`}
+                            title="Save / Update scores in database"
+                          >
+                            {p.isSaved ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+                            {p.isSaved ? "Saved" : "Save"}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -936,150 +874,6 @@ const JuryAssignmentsView: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* ================= SCORING MODAL / DRAWER ================= */}
-      {selectedProject && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200 text-left">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-              <div>
-                <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider block">
-                  Score Entry — {selectedProject.teamName}
-                </span>
-                <h3 className="text-base font-bold text-slate-900">
-                  {selectedProject.projectTitle}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedProject(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEvaluation} className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-              <div className="space-y-4">
-                {/* 1. Communication */}
-                <div>
-                  <div className="flex justify-between items-center text-xs font-bold text-slate-700 mb-1">
-                    <span>1. Communication</span>
-                    <span className="text-blue-600 font-extrabold">{communication}/20</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    value={communication}
-                    onChange={(e) => setCommunication(Number(e.target.value))}
-                    className="w-full accent-blue-600 cursor-pointer"
-                  />
-                </div>
-
-                {/* 2. Innovation and Uniqueness */}
-                <div>
-                  <div className="flex justify-between items-center text-xs font-bold text-slate-700 mb-1">
-                    <span>2. Innovation & Uniqueness</span>
-                    <span className="text-blue-600 font-extrabold">{innovationUniqueness}/20</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    value={innovationUniqueness}
-                    onChange={(e) => setInnovationUniqueness(Number(e.target.value))}
-                    className="w-full accent-blue-600 cursor-pointer"
-                  />
-                </div>
-
-                {/* 3. Feasibility and Viability */}
-                <div>
-                  <div className="flex justify-between items-center text-xs font-bold text-slate-700 mb-1">
-                    <span>3. Feasibility & Viability</span>
-                    <span className="text-blue-600 font-extrabold">{feasibilityViability}/20</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    value={feasibilityViability}
-                    onChange={(e) => setFeasibilityViability(Number(e.target.value))}
-                    className="w-full accent-blue-600 cursor-pointer"
-                  />
-                </div>
-
-                {/* 4. Statistics */}
-                <div>
-                  <div className="flex justify-between items-center text-xs font-bold text-slate-700 mb-1">
-                    <span>4. Statistics & Data Performance</span>
-                    <span className="text-blue-600 font-extrabold">{statistics}/20</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    value={statistics}
-                    onChange={(e) => setStatistics(Number(e.target.value))}
-                    className="w-full accent-blue-600 cursor-pointer"
-                  />
-                </div>
-
-                {/* 5. Revenue */}
-                <div>
-                  <div className="flex justify-between items-center text-xs font-bold text-slate-700 mb-1">
-                    <span>5. Revenue & Business Model</span>
-                    <span className="text-blue-600 font-extrabold">{revenue}/20</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    value={revenue}
-                    onChange={(e) => setRevenue(Number(e.target.value))}
-                    className="w-full accent-blue-600 cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* Total Score Summary Box */}
-              <div className="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">Calculated Total Score:</span>
-                <span className="text-2xl font-black text-blue-600">{calculatedTotal}/100</span>
-              </div>
-
-              {/* Feedback text area */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Juror Feedback & Remarks</label>
-                <textarea
-                  rows={3}
-                  placeholder="Provide constructive feedback for the team..."
-                  value={feedbackNotes}
-                  onChange={(e) => setFeedbackNotes(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl text-xs font-medium focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedProject(null)}
-                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-[#2563EB] hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/15 transition-all flex items-center gap-1.5"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  Save Evaluation
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
         </>
       )}
     </div>
