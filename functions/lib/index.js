@@ -33,10 +33,48 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteUserAccount = void 0;
+exports.deleteUserAccount = exports.sendTeamAccessEmail = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
+const RESEND_API_KEY = "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+// ─── Send Team Access Email via Resend (server-side, no CORS issues) ───
+exports.sendTeamAccessEmail = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "You must be logged in to send emails.");
+    }
+    const { to, subject, html, from } = data;
+    if (!to || !subject || !html) {
+        throw new functions.https.HttpsError("invalid-argument", "Missing required fields: to, subject, html.");
+    }
+    const recipients = Array.isArray(to) ? to : [to];
+    const senderEmail = from || "AI Verse <onboarding@resend.dev>";
+    try {
+        const response = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${RESEND_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                from: senderEmail,
+                to: recipients,
+                subject,
+                html,
+            }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            console.error("Resend API Error:", result);
+            throw new functions.https.HttpsError("internal", result.message || "Failed to send email via Resend.");
+        }
+        return { success: true, data: result };
+    }
+    catch (err) {
+        console.error("Error sending email via Resend:", err);
+        throw new functions.https.HttpsError("internal", err.message || "Network error sending email.");
+    }
+});
 exports.deleteUserAccount = functions.https.onCall(async (data, context) => {
     var _a;
     // 1. Verify caller is authenticated

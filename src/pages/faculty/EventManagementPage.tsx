@@ -1,8 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import SEO from "../../components/layout/SEO";
 import Papa from "papaparse";
-import { db } from "../../config/firebase";
+import { db, firebaseConfig } from "../../config/firebase";
 import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment } from "firebase/firestore";
+import { initializeApp, deleteApp } from "firebase/app";
+import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import {
   Calendar,
   Users,
@@ -31,10 +34,19 @@ import {
   Check,
   Sparkles,
   ShieldCheck,
-  FileText
+  FileText,
+  X,
+  Loader2,
+  Key,
+  Lock,
+  UserCheck,
+  EyeOff,
+  AlertTriangle,
+  Mail
 } from "lucide-react";
 import DatePicker from "../../components/ui/DatePicker";
 import TimePicker from "../../components/ui/TimePicker";
+import { sendResendEmail } from "../../utils/resendEmailService";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -164,6 +176,399 @@ const EventManagementPage: React.FC = () => {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [copiedWhatsLink, setCopiedWhatsLink] = useState(false);
   const [activeImageLightbox, setActiveImageLightbox] = useState<string | null>(null);
+
+  // Event Access Modal State & Handlers
+  const [isEventAccessModalOpen, setIsEventAccessModalOpen] = useState(false);
+  const [eventAccessEvent, setEventAccessEvent] = useState<any | null>(null);
+  const [eventAccessRegistrations, setEventAccessRegistrations] = useState<any[]>([]);
+  const [loadingEventAccessRegs, setLoadingEventAccessRegs] = useState(false);
+  const [eventAccessSearchQuery, setEventAccessSearchQuery] = useState("");
+  const [loginAccessSuccessMsg, setLoginAccessSuccessMsg] = useState<string | null>(null);
+  const [isProvisioningLoginAccess, setIsProvisioningLoginAccess] = useState(false);
+  const [provisionedTeamIds, setProvisionedTeamIds] = useState<string[]>([]);
+
+  // Password Prompt Modal States
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [commonPassword, setCommonPassword] = useState("");
+  const [confirmCommonPassword, setConfirmCommonPassword] = useState("");
+  const [showCommonPassword, setShowCommonPassword] = useState(false);
+  const [passwordErrorMsg, setPasswordErrorMsg] = useState<string | null>(null);
+
+  const generateTeamEmail = (reg: any): string => {
+    const rawName = reg.groupName && reg.groupName !== "Individual RSVP" 
+      ? reg.groupName 
+      : (reg.teamLeadName || reg.name || "team");
+    
+    const cleanName = rawName.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+    return `${cleanName || "team"}@aiverse.in`;
+  };
+
+  const handleOpenPasswordModal = () => {
+    if (!eventAccessRegistrations || eventAccessRegistrations.length === 0) {
+      alert("No registered teams available to provide login access.");
+      return;
+    }
+    setCommonPassword("");
+    setConfirmCommonPassword("");
+    setPasswordErrorMsg(null);
+    setShowCommonPassword(false);
+    setIsPasswordModalOpen(true);
+  };
+
+  const handleConfirmProvisioning = async () => {
+    if (!commonPassword || commonPassword.trim().length < 4) {
+      setPasswordErrorMsg("Please enter a valid common password (at least 4 characters).");
+      return;
+    }
+    if (commonPassword !== confirmCommonPassword) {
+      setPasswordErrorMsg("Passwords do not match. Please verify both fields.");
+      return;
+    }
+
+    setPasswordErrorMsg(null);
+    setIsProvisioningLoginAccess(true);
+
+    try {
+      const allIds: string[] = [];
+
+      for (const reg of eventAccessRegistrations) {
+        const teamEmail = generateTeamEmail(reg);
+        const targetEmail = reg.teamLeadEmail || reg.email;
+        allIds.push(reg.id);
+
+        // Update Firestore document with credentials
+        try {
+          await updateDoc(doc(db, "registrations", reg.id), {
+            teamEmail,
+            teamPassword: commonPassword,
+            accessGranted: true,
+            loginAccessGranted: true,
+            accessProvisionedAt: Date.now(),
+          });
+        } catch (dbErr) {
+          console.warn("Firestore update error for registration:", reg.id, dbErr);
+        }
+
+        // Create / update team account in team_credentials collection
+        try {
+          await setDoc(doc(db, "team_credentials", reg.id), {
+            registrationId: reg.id,
+            teamName: reg.groupName || reg.teamLeadName || reg.name,
+            teamEmail,
+            teamPassword: commonPassword,
+            teamLeadEmail: targetEmail || "",
+            eventId: eventAccessEvent?.id || "",
+            eventTitle: eventAccessEvent?.title || "",
+            updatedAt: Date.now(),
+          }, { merge: true });
+        } catch (credErr) {
+          console.warn("Firestore team_credentials error:", credErr);
+        }
+
+        // Create Firebase Auth user using secondary app (avoids logging out current admin)
+        try {
+          const secondaryApp = initializeApp(firebaseConfig, `TeamAuth_${reg.id}`);
+          const secondaryAuth = getAuth(secondaryApp);
+          await createUserWithEmailAndPassword(secondaryAuth, teamEmail, commonPassword);
+          await signOut(secondaryAuth);
+          await deleteApp(secondaryApp);
+        } catch (authErr: any) {
+          // If email already in use, that's fine — user already exists in Auth
+          if (authErr.code !== "auth/email-already-in-use") {
+            console.warn("Firebase Auth creation error for:", teamEmail, authErr);
+          }
+        }
+
+        // Create / update user account in 'users' Firestore collection
+        try {
+          const userDocId = teamEmail.replace(/[^a-zA-Z0-9]/g, "_");
+          await setDoc(doc(db, "users", userDocId), {
+            email: teamEmail,
+            password: commonPassword,
+            role: "participant",
+            teamName: reg.groupName || reg.teamLeadName || reg.name || "Team",
+            teamLeadName: reg.teamLeadName || reg.name || "",
+            teamLeadEmail: targetEmail || "",
+            registrationId: reg.id,
+            eventId: eventAccessEvent?.id || "",
+            eventTitle: eventAccessEvent?.title || "",
+            accessGranted: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }, { merge: true });
+        } catch (userErr) {
+          console.warn("Firestore users collection error:", userErr);
+        }
+
+        // Send Email via Resend to Team Lead
+        if (targetEmail) {
+          await sendResendEmail({
+            to: targetEmail,
+            subject: `Official Team Login Access Credentials - ${eventAccessEvent?.title || "AI Verse Event"}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+                <div style="background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%); padding: 18px 24px; border-radius: 12px; color: #ffffff; text-align: center;">
+                  <h2 style="margin: 0; font-size: 18px; font-weight: bold; letter-spacing: 0.5px;">AI VERSE TEAM PORTAL</h2>
+                  <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;">Official Team Access Credentials</p>
+                </div>
+                
+                <div style="padding: 20px 0;">
+                  <p style="color: #0f172a; font-size: 14px;">Hello <strong>${reg.teamLeadName || reg.name || "Participant"}</strong>,</p>
+                  <p style="color: #334155; font-size: 14px;">Your team <strong>"${reg.groupName || reg.teamLeadName || "Registered Team"}"</strong> has been provisioned official login credentials for <strong>${eventAccessEvent?.title || "Event"}</strong>.</p>
+                  
+                  <div style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1; padding: 18px; border-radius: 12px; margin: 20px 0; font-family: monospace;">
+                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 10px;">🔑 YOUR TEAM LOGIN CREDENTIALS</div>
+                    <div style="margin-bottom: 8px; font-size: 13px;">
+                      <span style="color: #64748b;">Team Email:</span> 
+                      <strong style="color: #2563EB; font-size: 15px;">${teamEmail}</strong>
+                    </div>
+                    <div style="font-size: 13px;">
+                      <span style="color: #64748b;">Password:</span> 
+                      <strong style="color: #0f172a; font-size: 15px; background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${commonPassword}</strong>
+                    </div>
+                  </div>
+
+                  <p style="color: #334155; font-size: 14px;">Please use these credentials to log in to the team portal for event submission, schedules, and judging updates.</p>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                <p style="color: #94a3b8; font-size: 12px; text-align: center;">Dispatched automatically via AI Verse System & Resend API.</p>
+              </div>
+            `,
+          });
+        }
+      }
+
+      setProvisionedTeamIds((prev) => Array.from(new Set([...prev, ...allIds])));
+      setIsPasswordModalOpen(false);
+      setLoginAccessSuccessMsg(`Successfully generated team accounts (${allIds.length}) & dispatched login credentials via Resend to all team leads!`);
+      setTimeout(() => {
+        setLoginAccessSuccessMsg(null);
+      }, 7000);
+    } catch (err) {
+      console.error("Error provisioning login access:", err);
+      alert("Failed to provision login access.");
+    } finally {
+      setIsProvisioningLoginAccess(false);
+    }
+  };
+
+  const handleRevokeAllTeamsLoginAccess = async () => {
+    if (!eventAccessRegistrations || eventAccessRegistrations.length === 0) {
+      alert("No registered teams available.");
+      return;
+    }
+    const confirmRevoke = window.confirm("Are you sure you want to revoke team portal login access for all teams? They will no longer be able to log in using their credentials.");
+    if (!confirmRevoke) return;
+
+    setIsProvisioningLoginAccess(true);
+    try {
+      for (const reg of eventAccessRegistrations) {
+        try {
+          await updateDoc(doc(db, "registrations", reg.id), {
+            accessGranted: false,
+            loginAccessGranted: false,
+            accessRevokedAt: Date.now(),
+          });
+        } catch (dbErr) {
+          console.warn("Firestore revoke update error for:", reg.id, dbErr);
+        }
+
+        try {
+          await setDoc(doc(db, "team_credentials", reg.id), {
+            accessGranted: false,
+            updatedAt: Date.now(),
+          }, { merge: true });
+        } catch (credErr) {
+          console.warn("Firestore revoke team_credentials error:", credErr);
+        }
+
+        // Also revoke in users collection
+        try {
+          const teamEmail = generateTeamEmail(reg);
+          const userDocId = teamEmail.replace(/[^a-zA-Z0-9]/g, "_");
+          await setDoc(doc(db, "users", userDocId), {
+            accessGranted: false,
+            updatedAt: Date.now(),
+          }, { merge: true });
+        } catch (userErr) {
+          console.warn("Firestore revoke users error:", userErr);
+        }
+      }
+
+      setProvisionedTeamIds([]);
+      setEventAccessRegistrations((prev) =>
+        prev.map((r) => ({ ...r, accessGranted: false, loginAccessGranted: false }))
+      );
+      setLoginAccessSuccessMsg("Successfully revoked portal login access for all registered teams!");
+      setTimeout(() => {
+        setLoginAccessSuccessMsg(null);
+      }, 5500);
+    } catch (err) {
+      console.error("Error revoking login access:", err);
+      alert("Failed to revoke login access.");
+    } finally {
+      setIsProvisioningLoginAccess(false);
+    }
+  };
+
+  const handleRevokeSingleTeamAccess = async (regId: string, teamNameStr: string) => {
+    const confirmRevoke = window.confirm(`Are you sure you want to revoke login access for "${teamNameStr}"?`);
+    if (!confirmRevoke) return;
+
+    try {
+      await updateDoc(doc(db, "registrations", regId), {
+        accessGranted: false,
+        loginAccessGranted: false,
+        accessRevokedAt: Date.now(),
+      });
+      await setDoc(doc(db, "team_credentials", regId), {
+        accessGranted: false,
+        updatedAt: Date.now(),
+      }, { merge: true });
+
+      // Also revoke in users collection
+      try {
+        const reg = eventAccessRegistrations.find((r) => r.id === regId);
+        if (reg) {
+          const teamEmail = generateTeamEmail(reg);
+          const userDocId = teamEmail.replace(/[^a-zA-Z0-9]/g, "_");
+          await setDoc(doc(db, "users", userDocId), {
+            accessGranted: false,
+            updatedAt: Date.now(),
+          }, { merge: true });
+        }
+      } catch (userErr) {
+        console.warn("Firestore revoke user error:", userErr);
+      }
+
+      setProvisionedTeamIds((prev) => prev.filter((id) => id !== regId));
+      setEventAccessRegistrations((prev) =>
+        prev.map((r) => (r.id === regId ? { ...r, accessGranted: false, loginAccessGranted: false } : r))
+      );
+      setLoginAccessSuccessMsg(`Revoked login access for ${teamNameStr}.`);
+      setTimeout(() => {
+        setLoginAccessSuccessMsg(null);
+      }, 4000);
+    } catch (err) {
+      console.error("Error revoking single team access:", err);
+      alert("Failed to revoke access for team.");
+    }
+  };
+
+  const handleOpenEventAccess = async (eventObj: any) => {
+    setEventAccessEvent(eventObj);
+    setIsEventAccessModalOpen(true);
+    setLoadingEventAccessRegs(true);
+    setEventAccessSearchQuery("");
+    try {
+      const querySnapshot = await getDocs(collection(db, "registrations"));
+      const list: any[] = [];
+      const grantedIds: string[] = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const regId = docSnap.id;
+        if (
+          (data.eventId && eventObj?.id && data.eventId === eventObj.id) ||
+          (data.eventTitle && eventObj?.title && data.eventTitle.toLowerCase().trim() === eventObj.title.toLowerCase().trim())
+        ) {
+          list.push({ id: regId, ...data });
+          if (data.accessGranted || data.loginAccessGranted) {
+            grantedIds.push(regId);
+          }
+        }
+      });
+      setEventAccessRegistrations(list);
+      setProvisionedTeamIds(grantedIds);
+    } catch (err) {
+      console.error("Error fetching event registrations for Event Access:", err);
+    } finally {
+      setLoadingEventAccessRegs(false);
+    }
+  };
+
+  const filteredEventAccessRegistrations = useMemo(() => {
+    if (!eventAccessSearchQuery.trim()) return eventAccessRegistrations;
+    const q = eventAccessSearchQuery.toLowerCase().trim();
+    return eventAccessRegistrations.filter((r) => {
+      const name = (r.teamLeadName || r.name || "").toLowerCase();
+      const email = (r.teamLeadEmail || r.email || "").toLowerCase();
+      const studentId = (r.teamLeadStudentId || r.studentId || "").toLowerCase();
+      const groupName = (r.groupName || "").toLowerCase();
+      return name.includes(q) || email.includes(q) || studentId.includes(q) || groupName.includes(q);
+    });
+  }, [eventAccessRegistrations, eventAccessSearchQuery]);
+
+  const handleExportEventAccessCsv = () => {
+    if (!eventAccessRegistrations || eventAccessRegistrations.length === 0) {
+      alert("No registered participants found to export.");
+      return;
+    }
+    const headers = [
+      "Participant / Lead Name",
+      "Student ID / Roll No",
+      "Email Address",
+      "Phone Number",
+      "Branch",
+      "Section",
+      "Year",
+      "Registration Type",
+      "Team Size",
+      "Status",
+      "Registered Date"
+    ];
+
+    const rows: string[] = [];
+    eventAccessRegistrations.forEach((reg) => {
+      const regType = reg.groupName && reg.groupName !== "Individual RSVP" ? "Group" : "Individual";
+      const regDate = reg.createdAt ? new Date(reg.createdAt).toLocaleDateString("en-US") : "N/A";
+      const status = reg.status || "Confirmed";
+
+      if (reg.members && reg.members.length > 0) {
+        reg.members.forEach((m: any) => {
+          const row = [
+            `"${(m.name || reg.teamLeadName || "").replace(/"/g, '""')}"`,
+            `"${(m.studentId || reg.teamLeadStudentId || "").replace(/"/g, '""')}"`,
+            `"${(m.email || reg.teamLeadEmail || "").replace(/"/g, '""')}"`,
+            `"${(reg.phoneNumber || "").replace(/"/g, '""')}"`,
+            `"${(reg.branch || "").replace(/"/g, '""')}"`,
+            `"${(reg.section || "").replace(/"/g, '""')}"`,
+            `"${(reg.year || "").replace(/"/g, '""')}"`,
+            `"${regType}"`,
+            `"${reg.teamSize || 1}"`,
+            `"${status}"`,
+            `"${regDate}"`
+          ];
+          rows.push(row.join(","));
+        });
+      } else {
+        const row = [
+          `"${(reg.teamLeadName || reg.name || "").replace(/"/g, '""')}"`,
+          `"${(reg.teamLeadStudentId || reg.studentId || "").replace(/"/g, '""')}"`,
+          `"${(reg.teamLeadEmail || reg.email || "").replace(/"/g, '""')}"`,
+          `"${(reg.phoneNumber || "").replace(/"/g, '""')}"`,
+          `"${(reg.branch || "").replace(/"/g, '""')}"`,
+          `"${(reg.section || "").replace(/"/g, '""')}"`,
+          `"${(reg.year || "").replace(/"/g, '""')}"`,
+          `"${regType}"`,
+          `"${reg.teamSize || 1}"`,
+          `"${status}"`,
+          `"${regDate}"`
+        ];
+        rows.push(row.join(","));
+      }
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const eventNameSlug = (eventAccessEvent?.title || "event").toLowerCase().replace(/[^a-z0-9]/g, "_");
+    link.setAttribute("download", `${eventNameSlug}_participants_access.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const handleOpenEventDetails = async (eventId: string) => {
     setIsDetailsModalOpen(true);
@@ -989,12 +1394,12 @@ const EventManagementPage: React.FC = () => {
                                     value={event.status}
                                     onChange={(e) => handleStatusChange(event.id, e.target.value as any)}
                                     className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase border appearance-none pr-7 transition-all shadow-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer ${event.status === "Opened"
-                                        ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100/80"
-                                        : event.status === "Active"
-                                          ? "text-[#2563EB] bg-blue-50 border-blue-200 hover:bg-blue-100/80"
-                                          : event.status === "Completed"
-                                            ? "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100/80"
-                                            : "text-slate-600 bg-slate-100 border-slate-200 hover:bg-slate-200/60"
+                                      ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100/80"
+                                      : event.status === "Active"
+                                        ? "text-[#2563EB] bg-blue-50 border-blue-200 hover:bg-blue-100/80"
+                                        : event.status === "Completed"
+                                          ? "text-purple-700 bg-purple-50 border-purple-200 hover:bg-purple-100/80"
+                                          : "text-slate-600 bg-slate-100 border-slate-200 hover:bg-slate-200/60"
                                       }`}
                                   >
                                     <option value="Draft" className="bg-white text-slate-700 font-bold uppercase text-[10px]">DRAFT</option>
@@ -2196,10 +2601,10 @@ const EventManagementPage: React.FC = () => {
                       </span>
                       {selectedEventDetails?.status && (
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border backdrop-blur-md flex items-center gap-1.5 ${selectedEventDetails.status === "Opened"
-                            ? "bg-emerald-400/25 text-emerald-100 border-emerald-300/40"
-                            : selectedEventDetails.status === "Active"
-                              ? "bg-sky-400/25 text-sky-100 border-sky-300/40"
-                              : "bg-slate-400/25 text-slate-100 border-slate-300/40"
+                          ? "bg-emerald-400/25 text-emerald-100 border-emerald-300/40"
+                          : selectedEventDetails.status === "Active"
+                            ? "bg-sky-400/25 text-sky-100 border-sky-300/40"
+                            : "bg-slate-400/25 text-slate-100 border-slate-300/40"
                           }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${selectedEventDetails.status === "Opened" ? "bg-emerald-300 animate-ping" : "bg-sky-300"}`}></span>
                           {selectedEventDetails.status}
@@ -2632,10 +3037,41 @@ const EventManagementPage: React.FC = () => {
                             handleStartEditEvent(selectedEventDetails.id);
                           }
                         }}
-                        className="w-full py-3 bg-white text-slate-950 font-black rounded-2xl text-xs hover:bg-blue-50 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                        className="w-full py-3 bg-white text-slate-950 font-black rounded-2xl text-xs hover:bg-blue-50 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <Pencil className="h-4 w-4 text-[#2563EB]" />
                         Open Edit Event Page
+                      </button>
+                    </div>
+
+                    {/* Event Access Card */}
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-md space-y-4">
+                      <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+                        <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold shadow-inner">
+                          <Settings2 className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                            Event Access
+                          </h3>
+                          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Full Control Panel</p>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                        Access live administrative tools, edit registration limits, manage coordinators, and configure event parameters.
+                      </p>
+
+                      <button
+                        onClick={() => {
+                          if (selectedEventDetails) {
+                            handleOpenEventAccess(selectedEventDetails);
+                          }
+                        }}
+                        className="w-full py-3 bg-[#2563EB] hover:bg-blue-700 text-white font-black rounded-2xl text-xs transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <SlidersHorizontal className="h-4 w-4" />
+                        Event Access
                       </button>
                     </div>
 
@@ -2705,6 +3141,465 @@ const EventManagementPage: React.FC = () => {
             className="max-h-[90vh] max-w-full object-contain rounded-2xl shadow-2xl border border-white/20 bg-slate-900 cursor-default select-none"
           />
         </div>
+      )}
+
+      {/* ================= EVENT ACCESS PARTICIPANTS FULL PAGE ================= */}
+      {isEventAccessModalOpen && createPortal(
+        <div className="fixed inset-0 z-[999999] bg-slate-50 w-full h-full flex flex-col overflow-hidden text-left font-sans animate-in fade-in duration-200">
+
+          {/* Full Page Top Header */}
+          <div className="w-full bg-[#1E3A8A] text-white py-4 px-6 sm:px-10 border-b border-blue-900/40 shadow-lg flex items-center justify-between gap-6 shrink-0">
+            {/* Left Group: Back Button + Vertical Separator + Title Metadata */}
+            <div className="flex items-center gap-5 min-w-0">
+              <button
+                onClick={() => setIsEventAccessModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center gap-2 text-xs font-black transition-all border border-white/20 backdrop-blur-md cursor-pointer shadow-xs shrink-0"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Back to Events
+              </button>
+
+              <div className="h-8 w-px bg-white/20 hidden sm:block shrink-0"></div>
+
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/30 text-blue-100 border border-blue-400/30 backdrop-blur-sm">
+                    EVENT ACCESS
+                  </span>
+                  <span className="text-xs text-blue-200/90 font-bold hidden sm:inline">• Live Registered Roster</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white truncate leading-tight">
+                  {eventAccessEvent?.title || "Event Access"}
+                </h2>
+              </div>
+            </div>
+
+            {/* Right Group: Action Buttons */}
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={handleExportEventAccessCsv}
+                className="px-4.5 py-2.5 bg-white/15 hover:bg-white/25 active:scale-95 text-white font-black rounded-xl text-xs transition-all border border-white/25 backdrop-blur-md flex items-center gap-2 shadow-xs cursor-pointer"
+                title="Export Participants CSV"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Export CSV</span>
+              </button>
+
+              <button
+                onClick={() => setIsEventAccessModalOpen(false)}
+                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/25 active:scale-95 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer shadow-xs"
+                title="Close Full Screen"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Full Page Main Body */}
+          <div className="w-full max-w-[1500px] mx-auto p-4 sm:p-8 flex-1 overflow-y-auto space-y-6">
+
+            {/* Feedback notification toast if login access is provisioned */}
+            {loginAccessSuccessMsg && (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-sm animate-in slide-in-from-top-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <span>{loginAccessSuccessMsg}</span>
+                </div>
+                <button
+                  onClick={() => setLoginAccessSuccessMsg(null)}
+                  className="text-emerald-700 hover:text-emerald-900 font-extrabold text-xs cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
+            {/* Sub-Header Toolbar (Search & Quick Stats) */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+              {/* Quick Search Input */}
+              <div className="relative w-full sm:w-96">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search participants by name, student ID, email..."
+                  value={eventAccessSearchQuery}
+                  onChange={(e) => setEventAccessSearchQuery(e.target.value)}
+                  className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                />
+              </div>
+
+              {/* Stat Pills */}
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                <div className="px-4 py-2 bg-blue-50 border border-blue-100 rounded-2xl flex items-center gap-2.5">
+                  <Users className="h-4 w-4 text-[#2563EB]" />
+                  <div className="text-left">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block leading-none">REGISTERED PARTICIPANTS</span>
+                    <span className="text-xs font-black text-blue-700">
+                      {eventAccessRegistrations.length} Seats
+                    </span>
+                  </div>
+                </div>
+
+                <div className="px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-2.5">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  <div className="text-left">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase block leading-none">ACCESS STATUS</span>
+                    <span className="text-xs font-black text-emerald-700">Live Access</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* TWO COLUMN GRID CONTENT */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+              {/* LEFT COLUMN: Participants Table Roster (Span 8) */}
+              <div className="lg:col-span-8 space-y-6">
+                {loadingEventAccessRegs ? (
+                  <div className="py-24 text-center flex flex-col items-center justify-center gap-3 bg-white rounded-3xl border border-slate-200/80 shadow-xs">
+                    <Loader2 className="h-8 w-8 text-[#2563EB] animate-spin" />
+                    <p className="text-xs font-bold text-slate-500">Fetching registered participants from database...</p>
+                  </div>
+                ) : filteredEventAccessRegistrations.length > 0 ? (
+                  <div className="border border-slate-200/80 rounded-3xl overflow-hidden shadow-xs bg-white">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50/90 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                            <th className="py-4 px-5">Team Name / Lead</th>
+                            <th className="py-4 px-5">Roll Number / Student ID</th>
+                            <th className="py-4 px-5">Contact Details</th>
+                            <th className="py-4 px-5">Branch & Sec</th>
+                            <th className="py-4 px-5">Type / Members</th>
+                            <th className="py-4 px-5 text-right">Login Access</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredEventAccessRegistrations.map((reg, idx) => {
+                            const isGroup = reg.groupName && reg.groupName !== "Individual RSVP";
+                            const isProvisioned = provisionedTeamIds.includes(reg.id);
+                            const displayTeamName = isGroup ? reg.groupName : (reg.teamLeadName || reg.name || "Individual Participant");
+
+                            return (
+                              <tr key={reg.id || idx} className="hover:bg-blue-50/30 transition-colors">
+                                {/* Team Name / Lead */}
+                                <td className="py-4 px-5">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-full bg-blue-100 text-[#2563EB] font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                      {displayTeamName.charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <span className="font-extrabold text-slate-900 block truncate max-w-[180px]">
+                                        {displayTeamName}
+                                      </span>
+                                      <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
+                                        {isGroup ? `Lead: ${reg.teamLeadName || reg.name}` : "Individual Entry"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                {/* Student Roll ID */}
+                                <td className="py-4 px-5 font-mono font-bold text-slate-800">
+                                  {reg.teamLeadStudentId || reg.studentId || "N/A"}
+                                </td>
+
+                                {/* Contact Email & Phone */}
+                                <td className="py-4 px-5 space-y-0.5">
+                                  <span className="font-semibold text-slate-800 block truncate max-w-[180px]">
+                                    {reg.teamLeadEmail || reg.email || "N/A"}
+                                  </span>
+                                  {reg.phoneNumber && (
+                                    <span className="text-[10px] text-slate-400 font-semibold block">
+                                      {reg.phoneNumber}
+                                    </span>
+                                  )}
+                                </td>
+
+                                {/* Branch & Sec */}
+                                <td className="py-4 px-5 font-bold text-slate-700">
+                                  {reg.branch || "CSE"} {reg.section ? `• ${reg.section}` : ""}
+                                </td>
+
+                                {/* Registration Type / Members */}
+                                <td className="py-4 px-5">
+                                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase whitespace-nowrap inline-flex items-center gap-1 ${isGroup ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-sky-100 text-sky-800 border border-sky-200"}`}>
+                                    {isGroup ? `GROUP (${reg.teamSize || (reg.members?.length || 1)})` : "INDIVIDUAL"}
+                                  </span>
+                                </td>
+
+                                {/* Login Access Status */}
+                                <td className="py-4 px-5 text-right">
+                                  {isProvisioned ? (
+                                    <div className="inline-flex items-center gap-1.5 justify-end">
+                                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                                        <Check className="h-3 w-3 text-emerald-600" />
+                                        GRANTED
+                                      </span>
+                                      <button
+                                        onClick={() => handleRevokeSingleTeamAccess(reg.id, displayTeamName)}
+                                        disabled={isProvisioningLoginAccess}
+                                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                                        title="Revoke portal access for this team"
+                                      >
+                                        Revoke
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
+                                      <Lock className="h-3 w-3 text-amber-600" />
+                                      PENDING
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-24 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8 space-y-3 shadow-xs">
+                    <div className="w-12 h-12 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center mx-auto shadow-inner">
+                      <Users className="h-6 w-6" />
+                    </div>
+                    <h4 className="text-sm font-extrabold text-slate-800">No Participants Registered Yet</h4>
+                    <p className="text-xs text-slate-400 font-medium max-w-sm mx-auto">
+                      {eventAccessSearchQuery
+                        ? `No registered participants match your search "${eventAccessSearchQuery}".`
+                        : `No participant records found in the database for "${eventAccessEvent?.title || "this event"}".`}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* RIGHT COLUMN: LOGIN ACCESS SIDEBAR CARD (Span 4) */}
+              <div className="lg:col-span-4 space-y-6">
+
+                {/* 🔑 LOGIN ACCESS CARD */}
+                <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/80 shadow-md space-y-5 text-left">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold shadow-inner">
+                        <Key className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                          Login Access
+                        </h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Authentication Control</p>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-black text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                      TEAM AUTH
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                    Grant team portal authentication credentials, generate passkeys, and send instant login access links to all registered team leads and members.
+                  </p>
+
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2.5 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Target Event</span>
+                      <span className="font-extrabold text-slate-800 truncate max-w-[150px]">{eventAccessEvent?.title || "Active Event"}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Total Teams / Seats</span>
+                      <span className="font-extrabold text-blue-600">{eventAccessRegistrations.length} Teams</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Access Granted</span>
+                      <span className="font-extrabold text-emerald-600">{provisionedTeamIds.length} / {eventAccessRegistrations.length}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <button
+                      onClick={handleOpenPasswordModal}
+                      disabled={isProvisioningLoginAccess || eventAccessRegistrations.length === 0}
+                      className="w-full py-3.5 bg-[#2563EB] hover:bg-blue-700 disabled:bg-slate-300 text-white font-black rounded-2xl text-xs sm:text-sm transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center leading-snug"
+                    >
+                      {isProvisioningLoginAccess ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Provisioning Access...
+                        </>
+                      ) : (
+                        <>
+                          <UserCheck className="h-4.5 w-4.5" />
+                          {provisionedTeamIds.length > 0 ? "Update / Re-grant Login Access" : "Provide the login access to their team"}
+                        </>
+                      )}
+                    </button>
+
+                    {provisionedTeamIds.length > 0 && (
+                      <button
+                        onClick={handleRevokeAllTeamsLoginAccess}
+                        disabled={isProvisioningLoginAccess}
+                        className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/80 font-bold rounded-2xl text-xs transition-all shadow-xs active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center"
+                      >
+                        <Lock className="h-4 w-4 text-red-500" />
+                        Revoke All Teams Login Access
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Additional Info Card */}
+                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-blue-950 p-6 rounded-3xl text-white space-y-3 shadow-md text-left">
+                  <div className="flex items-center gap-2 text-blue-300">
+                    <Lock className="h-4 w-4" />
+                    <h4 className="text-xs font-black uppercase tracking-wider">Secure Team SSO Access</h4>
+                  </div>
+                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                    All generated team credentials are encrypted. Team leads will receive automated access emails with one-click magic links.
+                  </p>
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Footer Summary Bar */}
+            <div className="p-4 sm:px-6 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between shadow-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Showing {filteredEventAccessRegistrations.length} of {eventAccessRegistrations.length} registered seats
+              </span>
+              <button
+                onClick={() => setIsEventAccessModalOpen(false)}
+                className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold rounded-xl text-xs transition-colors shadow-xs active:scale-95 cursor-pointer"
+              >
+                Close Full Page
+              </button>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 🔐 PASSWORD PROMPT MODAL */}
+      {isPasswordModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div 
+            className="bg-white max-w-md w-full rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95 duration-200 text-left relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold shadow-inner shrink-0">
+                  <Key className="h-5.5 w-5.5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 tracking-tight">Set Common Team Password</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Generate portal authentication for all {eventAccessRegistrations.length} team(s)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPasswordModalOpen(false)}
+                disabled={isProvisioningLoginAccess}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Error banner */}
+            {passwordErrorMsg && (
+              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+                <span>{passwordErrorMsg}</span>
+              </div>
+            )}
+
+            {/* Form Fields */}
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Common Password <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showCommonPassword ? "text" : "password"}
+                    placeholder="Enter common password for all teams..."
+                    value={commonPassword}
+                    onChange={(e) => setCommonPassword(e.target.value)}
+                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:border-blue-600 font-mono text-sm text-slate-800 bg-slate-50/50 focus:bg-white transition-all pr-11"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCommonPassword(!showCommonPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                  >
+                    {showCommonPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">
+                  Confirm Common Password <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type={showCommonPassword ? "text" : "password"}
+                  placeholder="Confirm common password..."
+                  value={confirmCommonPassword}
+                  onChange={(e) => setConfirmCommonPassword(e.target.value)}
+                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:border-blue-600 font-mono text-sm text-slate-800 bg-slate-50/50 focus:bg-white transition-all"
+                />
+              </div>
+
+              {/* Preview Box */}
+              <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-100 text-xs space-y-2">
+                <div className="flex items-center gap-2 text-blue-800 font-extrabold uppercase text-[10px] tracking-wider">
+                  <Mail className="h-3.5 w-3.5 text-blue-600" />
+                  Email & Credentials Format Preview
+                </div>
+                <div className="text-slate-700 font-medium leading-relaxed space-y-1">
+                  <p>• <strong>Team Email:</strong> <code className="bg-blue-100/70 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[11px]">(teamname)@aiverse.in</code></p>
+                  <p>• <strong>Password:</strong> <span className="font-mono text-blue-900 font-bold">{commonPassword ? commonPassword : "••••••••"}</span></p>
+                  <p className="text-[11px] text-slate-500 mt-1">An email will be sent to each team lead containing their team email and common password.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsPasswordModalOpen(false)}
+                disabled={isProvisioningLoginAccess}
+                className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmProvisioning}
+                disabled={isProvisioningLoginAccess}
+                className="w-2/3 py-3 bg-[#2563EB] hover:bg-blue-700 active:scale-95 disabled:bg-slate-300 text-white font-black rounded-2xl text-xs transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isProvisioningLoginAccess ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Sending Emails...
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="h-4 w-4" />
+                    Confirm & Send Access
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -3,6 +3,64 @@ import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
+const RESEND_API_KEY = "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+
+// ─── Send Team Access Email via Resend (server-side, no CORS issues) ───
+export const sendTeamAccessEmail = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "You must be logged in to send emails."
+    );
+  }
+
+  const { to, subject, html, from } = data;
+
+  if (!to || !subject || !html) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Missing required fields: to, subject, html."
+    );
+  }
+
+  const recipients = Array.isArray(to) ? to : [to];
+  const senderEmail = from || "AI Verse <onboarding@resend.dev>";
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: senderEmail,
+        to: recipients,
+        subject,
+        html,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error("Resend API Error:", result);
+      throw new functions.https.HttpsError(
+        "internal",
+        result.message || "Failed to send email via Resend."
+      );
+    }
+
+    return { success: true, data: result };
+  } catch (err: any) {
+    console.error("Error sending email via Resend:", err);
+    throw new functions.https.HttpsError(
+      "internal",
+      err.message || "Network error sending email."
+    );
+  }
+});
+
 export const deleteUserAccount = functions.https.onCall(async (data, context) => {
   // 1. Verify caller is authenticated
   if (!context.auth) {

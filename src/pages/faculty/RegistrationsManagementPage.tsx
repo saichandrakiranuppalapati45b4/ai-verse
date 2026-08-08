@@ -588,7 +588,7 @@ const RegistrationsManagementPage: React.FC = () => {
                       />
                     </th>
                   )}
-                  <th scope="col" className="px-6 py-4">Participant / ID</th>
+                  <th scope="col" className="px-6 py-4">Team Name / Lead</th>
                   <th scope="col" className="px-6 py-4">Event Name</th>
                   <th scope="col" className="px-6 py-4">Type</th>
                   <th scope="col" className="px-6 py-4">Date</th>
@@ -613,7 +613,8 @@ const RegistrationsManagementPage: React.FC = () => {
                 ) : (
                   filteredRegistrations.map((reg) => {
                     const isGroup = reg.groupName && reg.groupName !== "Individual RSVP";
-                    const initial = reg.teamLeadName ? reg.teamLeadName.substring(0, 2).toUpperCase() : "US";
+                    const displayTeamName = isGroup ? reg.groupName : (reg.teamLeadName || "Participant");
+                    const initial = displayTeamName ? displayTeamName.substring(0, 2).toUpperCase() : "US";
                     const isSelected = selectedRegIds.includes(reg.id);
                     
                     return (
@@ -642,12 +643,16 @@ const RegistrationsManagementPage: React.FC = () => {
                         )}
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                            <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-[10px] shrink-0 shadow-xs">
                               {initial}
                             </div>
                             <div className="text-left leading-normal">
-                              <span className="font-bold text-slate-800 text-xs block">{reg.teamLeadName}</span>
-                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">{reg.teamLeadStudentId || "REG-2026-000"}</span>
+                              <span className="font-extrabold text-slate-900 text-xs block truncate max-w-[180px]">
+                                {displayTeamName}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
+                                {isGroup ? `Lead: ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})` : (reg.teamLeadStudentId || "REG-2026-000")}
+                              </span>
                             </div>
                           </div>
                         </td>
