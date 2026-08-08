@@ -25,15 +25,15 @@ const JurySidebar: React.FC<JurySidebarProps> = ({
   ];
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-100 flex flex-col justify-between p-4 shrink-0 min-h-[calc(100vh-57px)]">
+    <aside className="w-16 md:w-20 lg:w-64 bg-white border-r border-slate-200/80 flex flex-col justify-between p-3 lg:p-4 shrink-0 min-h-[calc(100vh-57px)] transition-all duration-300">
       <div className="space-y-6">
         {/* Top Portal Title Header */}
-        <div className="flex items-center gap-3 px-2 py-1">
-          <div className="w-9 h-9 rounded-xl bg-[#2563EB] text-white flex items-center justify-center shadow-md shadow-blue-600/20">
+        <div className="flex items-center gap-3 px-1 lg:px-2 py-1 justify-center lg:justify-start">
+          <div className="w-9 h-9 rounded-xl bg-[#2563EB] text-white flex items-center justify-center shadow-md shadow-blue-600/20 shrink-0">
             <Award className="h-5 w-5" />
           </div>
-          <div>
-            <h2 className="text-xs font-bold text-slate-800 tracking-tight leading-tight">
+          <div className="hidden lg:block leading-tight">
+            <h2 className="text-xs font-bold text-slate-800 tracking-tight">
               Jury Portal
             </h2>
             <p className="text-[10px] font-medium text-slate-400">
@@ -52,14 +52,15 @@ const JurySidebar: React.FC<JurySidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                title={item.label}
+                className={`w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all ${
                   isActive
                     ? "bg-[#2563EB] text-white shadow-sm shadow-blue-600/20"
                     : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 font-semibold"
                 }`}
               >
-                <Icon className={`h-4 w-4 ${isActive ? "text-white" : "text-slate-400"}`} />
-                {item.label}
+                <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-white" : "text-slate-400"}`} />
+                <span className="hidden lg:inline">{item.label}</span>
               </button>
             );
           })}
@@ -69,9 +70,11 @@ const JurySidebar: React.FC<JurySidebarProps> = ({
         <div className="pt-2">
           <button
             onClick={onOpenSubmitModal}
-            className="w-full py-2.5 px-4 bg-[#0B4AC6] hover:bg-[#093EB0] text-white font-bold rounded-xl text-xs shadow-md shadow-blue-600/15 hover:shadow-lg transition-all text-center"
+            title="Submit Final Scores"
+            className="w-full py-2.5 px-2 lg:px-4 bg-[#0B4AC6] hover:bg-[#093EB0] text-white font-bold rounded-xl text-xs shadow-md shadow-blue-600/15 hover:shadow-lg transition-all text-center flex items-center justify-center gap-2"
           >
-            Submit Final Scores
+            <Award className="h-4 w-4 lg:hidden shrink-0" />
+            <span className="hidden lg:inline">Submit Final Scores</span>
           </button>
         </div>
       </div>
@@ -80,10 +83,11 @@ const JurySidebar: React.FC<JurySidebarProps> = ({
       <div className="pt-4 border-t border-slate-100">
         <button
           onClick={() => alert("Connecting to Jury Support Team...")}
-          className="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors text-left"
+          title="Support"
+          className="w-full flex items-center justify-center lg:justify-start gap-3 px-3 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors"
         >
-          <HelpCircle className="h-4 w-4 text-slate-400" />
-          Support
+          <HelpCircle className="h-4 w-4 text-slate-400 shrink-0" />
+          <span className="hidden lg:inline">Support</span>
         </button>
       </div>
     </aside>

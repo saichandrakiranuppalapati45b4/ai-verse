@@ -13,7 +13,8 @@ import {
   Lock,
   Flame,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Pencil
 } from "lucide-react";
 import { db } from "../../config/firebase";
 import { collection, onSnapshot, doc, setDoc } from "firebase/firestore";
@@ -377,6 +378,15 @@ const JuryAssignmentsView: React.FC = () => {
     }
   };
 
+  const openScoringModal = (p: HackathonProject) => {
+    setSelectedProject(p);
+    setCommunication(p.communication || 18);
+    setInnovationUniqueness(p.innovationUniqueness || 18);
+    setFeasibilityViability(p.feasibilityViability || 18);
+    setStatistics(p.statistics || 18);
+    setRevenue(p.revenue || 18);
+  };
+
   const handleSaveEvaluation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProject) return;
@@ -475,13 +485,13 @@ const JuryAssignmentsView: React.FC = () => {
       )}
 
       {/* Header with Excel Export & Fullscreen Buttons */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm w-full">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200/60">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200/60 shrink-0">
               <FileSpreadsheet className="h-4.5 w-4.5" />
             </div>
-            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
               Assigned Projects & Submissions (Grid Scoring)
             </h1>
           </div>
@@ -490,7 +500,7 @@ const JuryAssignmentsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap w-full sm:w-auto">
           <button
             onClick={toggleFullScreen}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center gap-2 shrink-0 active:scale-95 cursor-pointer"
@@ -521,7 +531,7 @@ const JuryAssignmentsView: React.FC = () => {
 
       {!isFullScreenMode ? (
         /* STANDBY / LAUNCHER CARD WHEN NOT IN FULLSCREEN MODE */
-        <div className="bg-white rounded-3xl p-8 sm:p-12 border border-slate-200/80 shadow-md text-center space-y-6 max-w-2xl mx-auto my-6 animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 md:p-10 border border-slate-200/80 shadow-md text-center space-y-6 max-w-2xl mx-auto my-4 w-full animate-in fade-in duration-200">
           <div className="w-16 h-16 rounded-3xl bg-blue-50 text-[#2563EB] mx-auto flex items-center justify-center border border-blue-100 shadow-inner">
             <Maximize2 className="h-8 w-8" />
           </div>
@@ -690,7 +700,7 @@ const JuryAssignmentsView: React.FC = () => {
                 <th className="py-3 px-3 border-r border-slate-200 w-36 text-center">Revenue</th>
                 <th className="py-3 px-3 border-r border-slate-200 w-28 text-center font-mono">Total Score</th>
                 <th className="py-3 px-3 border-r border-slate-200 w-28 text-center">Status</th>
-                <th className="py-3 px-4 text-center w-36">Action</th>
+                <th className="py-3 px-4 text-center min-w-[140px] sticky right-0 bg-slate-100 border-l border-slate-200 shadow-xs z-10">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/80 text-xs">
@@ -853,28 +863,35 @@ const JuryAssignmentsView: React.FC = () => {
                         )}
                       </td>
 
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 text-center">
+                      {/* Sticky Actions Column */}
+                      <td className="py-3.5 px-3 text-center sticky right-0 bg-white group-hover:bg-blue-50/80 border-l border-slate-200/80 shadow-xs z-10">
                         <div className="flex items-center justify-center gap-1.5">
                           {p.isSaved ? (
-                            <button
-                              disabled
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed inline-flex items-center gap-1.5 shadow-none"
-                              title="Score saved and locked. Cannot be edited or re-saved."
-                            >
-                              <Lock className="h-3.5 w-3.5 text-slate-400" />
-                              Saved & Locked
-                            </button>
+                            <span className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200 inline-flex items-center gap-1">
+                              <Lock className="h-3 w-3 text-amber-600" />
+                              Locked
+                            </span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSaveRowScores(p)}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] hover:bg-blue-700 text-white shadow-sm transition-all inline-flex items-center gap-1.5"
-                              title="Save scores and lock row"
-                            >
-                              <Send className="h-3 w-3" />
-                              Save Score
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openScoringModal(p)}
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 shadow-xs transition-all inline-flex items-center gap-1"
+                                title="Open score slider modal on screen"
+                              >
+                                <Pencil className="h-3 w-3" />
+                                Score
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveRowScores(p)}
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#2563EB] hover:bg-blue-700 text-white shadow-sm transition-all inline-flex items-center gap-1"
+                                title="Save scores and lock row"
+                              >
+                                <Send className="h-3 w-3" />
+                                Save
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

@@ -112,7 +112,7 @@ const JuryPortal: React.FC<JuryPortalProps> = ({
         />
 
         {/* Main Content Pane */}
-        <main className="flex-1 p-6 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full min-w-0">
           {activeTab === "Dashboard" && (
             <JuryDashboardView
               onNavigateTab={setActiveTab}
