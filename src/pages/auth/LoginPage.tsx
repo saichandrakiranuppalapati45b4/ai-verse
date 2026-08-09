@@ -125,23 +125,7 @@ const LoginPage: React.FC = () => {
                 required
               />
             </div>
-            {/* Quick-select authorized accounts */}
-            <div className="pt-1.5 flex flex-wrap gap-1.5">
-              {ALLOWED_ACCOUNTS.map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => setEmail(acc.email)}
-                  className={`text-[10px] px-2.5 py-1 rounded-lg border font-medium transition-all ${
-                    email.toLowerCase().trim() === acc.email
-                      ? "bg-blue-50 border-blue-300 text-blue-700 font-bold"
-                      : "bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-100"
-                  }`}
-                >
-                  {acc.label}
-                </button>
-              ))}
-            </div>
+
           </div>
 
           {/* Password field */}
