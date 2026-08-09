@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff, User, Box, Cpu, Network } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Box, Cpu, Network } from "lucide-react";
 import Button from "../../components/ui/Button";
 
 
@@ -24,6 +24,7 @@ const LoginPage: React.FC = () => {
     { email: "facultycoordinator@aiverse.in", label: "Faculty Coordinator", role: "faculty", target: "/faculty/dashboard" },
     { email: "studentorganizer@aiverse.in", label: "Student Organizer", role: "organizer", target: "/organizer/dashboard" },
     { email: "jury@aiverse.in", label: "Jury Evaluator", role: "jury", target: "/jury" },
+    { email: "participant@aiverse.in", label: "Participant Portal", role: "participant", target: "/participant/set-password" },
   ];
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -36,25 +37,38 @@ const LoginPage: React.FC = () => {
     const cleanEmail = email.toLowerCase().trim();
     const matchedAccount = ALLOWED_ACCOUNTS.find(acc => acc.email === cleanEmail);
 
-    if (!matchedAccount) {
-      setError("Access restricted: Only authorized accounts (admin@aiverse.in, facultycoordinator@aiverse.in, studentorganizer@aiverse.in, jury@aiverse.in) are permitted to sign in.");
-      return;
-    }
-
     setIsLoading(true);
     setError("");
 
     try {
       if (password) {
-        // Real Firebase Authentication login
         await login(cleanEmail, password);
-      } else {
-        // Quick login for testing / passwordless login
+      } else if (matchedAccount) {
         await login(cleanEmail, matchedAccount.role);
+      } else {
+        // Default quick-login attempt as participant if no password provided
+        await login(cleanEmail, "participant");
       }
       
-      // Redirect to designated dashboard
-      navigate(matchedAccount.target);
+      // Check user session for destination
+      const savedUserStr = localStorage.getItem("aether_mock_user");
+      let activeRole = matchedAccount?.role || "participant";
+      if (savedUserStr) {
+        try {
+          const parsed = JSON.parse(savedUserStr);
+          if (parsed && parsed.role) activeRole = parsed.role;
+        } catch (e) {}
+      }
+
+      if (activeRole === "participant") {
+        navigate("/participant/set-password");
+      } else if (activeRole === "organizer") {
+        navigate("/organizer/dashboard");
+      } else if (activeRole === "jury") {
+        navigate("/jury");
+      } else {
+        navigate("/faculty/dashboard");
+      }
     } catch (err: any) {
       setError(err?.message || "Failed to sign in. Please check your credentials.");
     } finally {
@@ -78,10 +92,10 @@ const LoginPage: React.FC = () => {
       {/* Main Login Card */}
       <div className="bg-white rounded-[32px] border border-slate-100/60 max-w-[460px] w-full p-8 md:p-10 shadow-[0_24px_50px_rgba(0,0,0,0.03)] relative z-10">
         
-        {/* User Icon Box */}
+        {/* User Icon / Logo Box */}
         <div className="text-center mb-6">
-          <div className="w-14 h-14 rounded-2xl bg-blue-50/70 flex items-center justify-center text-aether-blue-600 mx-auto mb-4 border border-blue-100/20 shadow-inner">
-            <User className="h-6 w-6" />
+          <div className="w-16 h-16 rounded-2xl bg-blue-50/70 flex items-center justify-center p-2 mx-auto mb-4 border border-blue-100/30 shadow-sm">
+            <img src="/ai_verse.png" alt="AI Verse Logo" className="w-full h-full object-contain" />
           </div>
           <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Welcome Back</h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1.5 font-medium">Enter your credentials to access the AI Verse Portal</p>

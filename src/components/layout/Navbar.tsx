@@ -39,6 +39,20 @@ export const Navbar: React.FC = () => {
 
 
 
+  const getPortalPath = () => {
+    if (!user) return "/login";
+    const r = user.role;
+    if (r === "faculty" || user.displayRole === "Super Admin" || String(r).toLowerCase().includes("admin") || String(r).toLowerCase().includes("faculty")) {
+      return "/faculty/dashboard";
+    }
+    if (r === "organizer" || String(r).toLowerCase().includes("organizer")) {
+      return "/organizer/dashboard";
+    }
+    if (r === "jury") return "/jury";
+    if (r === "participant") return "/participant/dashboard";
+    return "/admin-setup";
+  };
+
   return (
     <header
       className={`fixed left-1/2 -translate-x-1/2 z-40 transition-all duration-300 flex items-center justify-between
@@ -49,7 +63,8 @@ export const Navbar: React.FC = () => {
         }`}
     >
       {/* Brand Logo */}
-      <Link to="/" className="flex items-center gap-1.5 group font-extrabold text-aether-dark text-lg tracking-tight select-none">
+      <Link to="/" className="flex items-center gap-2.5 group font-extrabold text-aether-dark text-lg tracking-tight select-none">
+        <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-lg object-contain group-hover:scale-105 transition-transform" />
         <span className="text-aether-blue-600 font-sans text-xl font-black">AI</span>
         <span className="text-slate-900 font-sans text-xl font-black">Verse</span>
       </Link>
@@ -85,7 +100,7 @@ export const Navbar: React.FC = () => {
       <div className="hidden md:flex items-center gap-4">
         {user ? (
           <Link
-            to={user.role === "faculty" ? "/faculty/dashboard" : user.role === "organizer" ? "/organizer/dashboard" : user.role === "jury" ? "/jury" : "/admin-setup"}
+            to={getPortalPath()}
             className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-aether-blue-600 transition-colors py-1.5 px-3 hover:bg-slate-50 rounded-xl"
           >
             <Shield className="h-4 w-4" />
@@ -132,7 +147,7 @@ export const Navbar: React.FC = () => {
           <div className="border-t border-slate-100 pt-4 flex flex-col gap-3">
             {user ? (
               <Link
-                to={user.role === "faculty" ? "/faculty/dashboard" : user.role === "organizer" ? "/organizer/dashboard" : user.role === "jury" ? "/jury" : "/admin-setup"}
+                to={getPortalPath()}
                 className="w-full text-center py-2 bg-slate-50 font-bold rounded-xl text-slate-700 hover:bg-slate-100 transition-all text-xs flex items-center justify-center gap-1.5"
               >
                 <Shield className="h-4 w-4" />

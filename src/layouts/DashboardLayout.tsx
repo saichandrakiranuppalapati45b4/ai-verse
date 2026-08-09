@@ -33,7 +33,10 @@ const DashboardLayout: React.FC = () => {
     navigate("/login");
   };
 
-  let menuItems = user.role === "organizer" ? [
+  let menuItems = user.role === "participant" ? [
+    { path: "/participant/dashboard", label: "Participant Portal", icon: LayoutDashboard },
+    { path: "/participant/set-password", label: "Change Password", icon: Settings },
+  ] : user.role === "organizer" ? [
     { path: "/organizer/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/organizer/events", label: "My Events", icon: Calendar },
     { path: "/organizer/attendance", label: "Attendance", icon: ClipboardCheck },
@@ -76,15 +79,16 @@ const DashboardLayout: React.FC = () => {
       >
         {/* Sidebar Header with AI Club Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100 bg-white">
-          <Link to="/" className="flex items-center gap-2 font-black text-[#2563EB] text-xl">
+          <Link to="/" className="flex items-center gap-2.5 font-black text-[#2563EB] text-xl">
+            <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-lg object-contain shrink-0" />
             {isSidebarOpen && (
               user.role === "organizer" ? (
                 <div className="leading-tight text-left">
-                  <span className="tracking-tight font-sans font-black block text-sm">AI Verse Club</span>
+                  <span className="tracking-tight font-sans font-black block text-sm text-slate-900">AI Verse Club</span>
                   <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Operational Hub</span>
                 </div>
               ) : (
-                <span className="tracking-tight font-sans">AI Verse</span>
+                <span className="tracking-tight font-sans text-slate-900">AI Verse</span>
               )
             )}
           </Link>

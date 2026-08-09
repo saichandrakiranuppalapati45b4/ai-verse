@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 
 interface ProtectedRouteProps {
   children: React.ReactElement;
-  allowedRoles?: Array<"faculty" | "organizer" | "member" | "jury">;
+  allowedRoles?: Array<"faculty" | "organizer" | "member" | "jury" | "participant">;
   disallowEmails?: string[];
   redirectTo?: string;
 }
@@ -37,7 +37,25 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to={redirectTo} replace />;
   }
 
-  if (allowedRoles && (!user.role || !allowedRoles.includes(user.role))) {
+  // Normalize user.role for allowedRoles check
+  const rawRole = user.role;
+  let normalizedRole = rawRole;
+  if (rawRole) {
+    const lower = String(rawRole).toLowerCase().trim();
+    if (lower === "faculty" || lower.includes("super admin") || lower.includes("faculty advisor") || lower.includes("faculty coordinator") || lower.includes("admin")) {
+      normalizedRole = "faculty";
+    } else if (lower === "organizer" || lower.includes("organizer") || lower.includes("lead organizer") || lower.includes("student organizer")) {
+      normalizedRole = "organizer";
+    } else if (lower === "jury" || lower.includes("jury")) {
+      normalizedRole = "jury";
+    } else if (lower === "participant" || lower.includes("participant")) {
+      normalizedRole = "participant";
+    } else if (lower === "member" || lower.includes("member")) {
+      normalizedRole = "member";
+    }
+  }
+
+  if (allowedRoles && (!normalizedRole || !allowedRoles.includes(normalizedRole as any))) {
     return <Navigate to="/404" replace />;
   }
 

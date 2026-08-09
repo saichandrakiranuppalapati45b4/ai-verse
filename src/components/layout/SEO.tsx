@@ -54,7 +54,11 @@ const SEO: React.FC<SEOProps> = ({ title, description, keywords, url }) => {
     updateMetaTag("og:title", fullTitle, true);
     updateMetaTag("twitter:title", fullTitle);
 
-    // 5. Update URL tags
+    // 5. Update Favicon Link
+    updateLinkTag("icon", "/ai_verse.png");
+    updateLinkTag("apple-touch-icon", "/ai_verse.png");
+
+    // 6. Update URL tags
     if (url) {
       updateMetaTag("og:url", url, true);
       updateMetaTag("twitter:url", url);

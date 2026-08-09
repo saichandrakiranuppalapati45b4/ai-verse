@@ -40,19 +40,24 @@ const AdminSetupPage: React.FC = () => {
   }
 
   const handleUpdateRole = async () => {
-    if (!selectedRole || !user.uid.startsWith("mock-") === false && !user.uid) return;
+    if (!selectedRole || (!user.uid.startsWith("mock-") && !user.uid)) return;
     
     setIsUpdating(true);
     setError("");
     try {
+      const option = ROLE_OPTIONS.find(r => r.value === selectedRole);
+      const normalizedRole = option?.normalized || "faculty";
+
       const userDocRef = doc(db, "users", user.uid);
-      await updateDoc(userDocRef, { role: selectedRole });
+      await updateDoc(userDocRef, { 
+        role: normalizedRole,
+        displayRole: selectedRole 
+      });
       setSuccess(true);
       
       // Redirect to the appropriate dashboard after 1.5 seconds
-      const option = ROLE_OPTIONS.find(r => r.value === selectedRole);
       setTimeout(() => {
-        if (option?.normalized === "faculty") {
+        if (normalizedRole === "faculty") {
           navigate("/faculty/dashboard");
         } else {
           navigate("/organizer/dashboard");
@@ -80,7 +85,7 @@ const AdminSetupPage: React.FC = () => {
             Logged in as <span className="font-bold text-slate-600">{user.email}</span>
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            Current role: <span className="font-bold text-red-500">{user.role || "none"}</span>
+            Current role: <span className="font-bold text-blue-600">{user.displayRole || user.role || "none"}</span>
           </p>
         </div>
 

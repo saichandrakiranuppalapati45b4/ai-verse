@@ -32,6 +32,9 @@ import RegistrationsManagementPage from "../pages/faculty/RegistrationsManagemen
 import AttendanceManagementPage from "../pages/faculty/AttendanceManagementPage";
 import ProfilePage from "../pages/faculty/ProfilePage";
 import FacResultsPage from "../pages/faculty/FacResultsPage";
+import ParticipantSetPasswordPage from "../pages/auth/ParticipantSetPasswordPage";
+import ParticipantDashboardPage from "../pages/participant/ParticipantDashboardPage";
+import TeamReviewPage from "../pages/participant/TeamReviewPage";
 
 const AppRoutes: React.FC = () => {
   return (
@@ -97,34 +100,55 @@ const AppRoutes: React.FC = () => {
         <Route path="jury" element={<Navigate to="/faculty/dashboard" replace />} />
         <Route path="results" element={<FacResultsPage />} />
         <Route path="team" element={<Navigate to="/faculty/dashboard" replace />} />
-        <Route 
-          path="users" 
+        <Route
+          path="users"
           element={
             <ProtectedRoute disallowEmails={["facultycoordinator@aiverse.in"]}>
               <UserManagementPage />
             </ProtectedRoute>
-          } 
+          }
         />
         <Route path="attendance" element={<AttendanceManagementPage />} />
         <Route path="analytics" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Analytics</h2><p className="text-sm text-slate-500">Detailed overview of attendance trends.</p></div>} />
-        <Route 
-          path="settings" 
+        <Route
+          path="settings"
           element={
             <ProtectedRoute disallowEmails={["facultycoordinator@aiverse.in"]}>
               <SettingsPage />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="gallery" 
+        <Route
+          path="gallery"
           element={
             <ProtectedRoute disallowEmails={["facultycoordinator@aiverse.in"]}>
               <GalleryManagementPage />
             </ProtectedRoute>
-          } 
+          }
         />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
+
+      {/* Participant Routes */}
+      <Route path="/participant/set-password" element={<ParticipantSetPasswordPage />} />
+      <Route path="/set-password" element={<ParticipantSetPasswordPage />} />
+      <Route
+        path="/participant/review-team"
+        element={
+          <ProtectedRoute allowedRoles={["participant", "faculty", "organizer"]}>
+            <TeamReviewPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/participant/dashboard"
+        element={
+          <ProtectedRoute allowedRoles={["participant", "faculty", "organizer"]}>
+            <ParticipantDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/participant" element={<Navigate to="/participant/review-team" replace />} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/404" replace />} />

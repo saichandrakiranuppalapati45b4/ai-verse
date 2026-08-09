@@ -35,6 +35,7 @@ import {
   Sparkles,
   ShieldCheck,
   FileText,
+  FileCode,
   X,
   Loader2,
   Key,
@@ -187,6 +188,136 @@ const EventManagementPage: React.FC = () => {
   const [isProvisioningLoginAccess, setIsProvisioningLoginAccess] = useState(false);
   const [provisionedTeamIds, setProvisionedTeamIds] = useState<string[]>([]);
 
+  // Team Submissions Monitor State
+  const [isSubmissionsModalOpen, setIsSubmissionsModalOpen] = useState(false);
+  const [selectedTeamSubmission, setSelectedTeamSubmission] = useState<any | null>(null);
+  const [submissionsFilter, setSubmissionsFilter] = useState<"All" | "Submitted" | "Draft" | "Pending">("All");
+  const [submissionsSearchQuery, setSubmissionsSearchQuery] = useState("");
+
+  // Multi-Problem Statements State
+  const [isMultiProblemModalOpen, setIsMultiProblemModalOpen] = useState(false);
+  const [problemList, setProblemList] = useState<any[]>([]);
+  const [editingPsId, setEditingPsId] = useState<string | null>(null);
+  const [psCodeInput, setPsCodeInput] = useState("");
+  const [psTitleInput, setPsTitleInput] = useState("");
+  const [psTrackInput, setPsTrackInput] = useState("");
+  const [psDescInput, setPsDescInput] = useState("");
+  const [psDeliverablesInput, setPsDeliverablesInput] = useState("");
+  const [savingMultiProblems, setSavingMultiProblems] = useState(false);
+  const [problemSuccessMsg, setProblemSuccessMsg] = useState<string | null>(null);
+
+  const handleOpenMultiProblemModal = () => {
+    const existing = eventAccessEvent?.problemStatements || [];
+    if (existing.length > 0) {
+      setProblemList(existing);
+    } else if (eventAccessEvent?.problemStatementTitle) {
+      setProblemList([{
+        id: "ps_1",
+        code: "PS-01",
+        title: eventAccessEvent.problemStatementTitle,
+        track: eventAccessEvent.problemStatementTrack || "General Track",
+        description: eventAccessEvent.problemStatement || "",
+        deliverables: ""
+      }]);
+    } else {
+      setProblemList([]);
+    }
+    setEditingPsId(null);
+    setPsCodeInput(`PS-0${(existing.length || 0) + 1}`);
+    setPsTitleInput("");
+    setPsTrackInput("");
+    setPsDescInput("");
+    setPsDeliverablesInput("");
+    setIsMultiProblemModalOpen(true);
+  };
+
+  const handleAddOrUpdateProblemItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!psTitleInput.trim()) return;
+
+    if (editingPsId) {
+      setProblemList(prev => prev.map(item => item.id === editingPsId ? {
+        ...item,
+        code: psCodeInput || item.code,
+        title: psTitleInput,
+        track: psTrackInput,
+        description: psDescInput,
+        deliverables: psDeliverablesInput
+      } : item));
+      setEditingPsId(null);
+    } else {
+      const newItem = {
+        id: `ps_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        code: psCodeInput || `PS-0${problemList.length + 1}`,
+        title: psTitleInput,
+        track: psTrackInput || "General",
+        description: psDescInput,
+        deliverables: psDeliverablesInput
+      };
+      setProblemList(prev => [...prev, newItem]);
+    }
+
+    setPsCodeInput(`PS-0${problemList.length + 2}`);
+    setPsTitleInput("");
+    setPsTrackInput("");
+    setPsDescInput("");
+    setPsDeliverablesInput("");
+  };
+
+  const handleEditProblemItem = (item: any) => {
+    setEditingPsId(item.id);
+    setPsCodeInput(item.code);
+    setPsTitleInput(item.title);
+    setPsTrackInput(item.track);
+    setPsDescInput(item.description);
+    setPsDeliverablesInput(item.deliverables || "");
+  };
+
+  const handleDeleteProblemItem = (id: string) => {
+    setProblemList(prev => prev.filter(item => item.id !== id));
+    if (editingPsId === id) {
+      setEditingPsId(null);
+      setPsTitleInput("");
+      setPsTrackInput("");
+      setPsDescInput("");
+      setPsDeliverablesInput("");
+    }
+  };
+
+  const handlePublishAllProblemStatements = async () => {
+    if (!eventAccessEvent?.id) return;
+    setSavingMultiProblems(true);
+    try {
+      const evRef = doc(db, "events", eventAccessEvent.id);
+      const primaryPs = problemList[0] || null;
+
+      await updateDoc(evRef, {
+        problemStatements: problemList,
+        problemStatementTitle: primaryPs?.title || "",
+        problemStatementTrack: primaryPs?.track || "",
+        problemStatement: primaryPs?.description || "",
+        updatedAt: Date.now()
+      });
+
+      setEventAccessEvent((prev: any) => ({
+        ...prev,
+        problemStatements: problemList,
+        problemStatementTitle: primaryPs?.title || "",
+        problemStatementTrack: primaryPs?.track || "",
+        problemStatement: primaryPs?.description || ""
+      }));
+
+      setProblemSuccessMsg(`Successfully published ${problemList.length} problem statement(s) to all participant portals!`);
+      setIsMultiProblemModalOpen(false);
+      setTimeout(() => setProblemSuccessMsg(null), 4000);
+    } catch (err) {
+      console.error("Error publishing problem statements:", err);
+      alert("Failed to save and publish problem statements.");
+    } finally {
+      setSavingMultiProblems(false);
+    }
+  };
+
   // Password Prompt Modal States
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [commonPassword, setCommonPassword] = useState("");
@@ -195,10 +326,10 @@ const EventManagementPage: React.FC = () => {
   const [passwordErrorMsg, setPasswordErrorMsg] = useState<string | null>(null);
 
   const generateTeamEmail = (reg: any): string => {
-    const rawName = reg.groupName && reg.groupName !== "Individual RSVP" 
-      ? reg.groupName 
+    const rawName = reg.groupName && reg.groupName !== "Individual RSVP"
+      ? reg.groupName
       : (reg.teamLeadName || reg.name || "team");
-    
+
     const cleanName = rawName.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
     return `${cleanName || "team"}@aiverse.in`;
   };
@@ -3148,49 +3279,51 @@ const EventManagementPage: React.FC = () => {
         <div className="fixed inset-0 z-[999999] bg-slate-50 w-full h-full flex flex-col overflow-hidden text-left font-sans animate-in fade-in duration-200">
 
           {/* Full Page Top Header */}
-          <div className="w-full bg-[#1E3A8A] text-white py-4 px-6 sm:px-10 border-b border-blue-900/40 shadow-lg flex items-center justify-between gap-6 shrink-0">
-            {/* Left Group: Back Button + Vertical Separator + Title Metadata */}
-            <div className="flex items-center gap-5 min-w-0">
+          <div className="w-full bg-[#1E3A8A] text-white py-3 px-6 sm:px-8 border-b border-blue-900/50 shadow-md flex items-center justify-between gap-4 shrink-0">
+            {/* Left: Back Button */}
+            <div className="flex items-center gap-3 shrink-0">
               <button
                 onClick={() => setIsEventAccessModalOpen(false)}
-                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center gap-2 text-xs font-black transition-all border border-white/20 backdrop-blur-md cursor-pointer shadow-xs shrink-0"
+                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center gap-2 text-xs font-bold transition-all border border-white/20 backdrop-blur-md cursor-pointer shadow-xs"
               >
                 <ChevronLeft className="h-4 w-4" />
-                Back to Events
+                <span>Back to Events</span>
               </button>
+            </div>
 
-              <div className="h-8 w-px bg-white/20 hidden sm:block shrink-0"></div>
-
-              <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/30 text-blue-100 border border-blue-400/30 backdrop-blur-sm">
-                    EVENT ACCESS
-                  </span>
-                  <span className="text-xs text-blue-200/90 font-bold hidden sm:inline">• Live Registered Roster</span>
-                </div>
-                <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white truncate leading-tight">
+            {/* Center: Brand & Event Metadata */}
+            <div className="flex items-center gap-3 min-w-0">
+              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-lg object-contain shrink-0" />
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/30 text-blue-100 border border-blue-400/30 shrink-0">
+                  EVENT ACCESS
+                </span>
+                <span className="text-blue-200/50 font-bold text-xs hidden sm:inline">•</span>
+                <span className="text-xs text-blue-200/90 font-bold truncate hidden md:inline">Live Registered Roster</span>
+                <span className="text-blue-200/50 font-bold text-xs hidden md:inline">•</span>
+                <h2 className="text-base sm:text-lg font-black tracking-tight text-white truncate max-w-[250px] sm:max-w-md">
                   {eventAccessEvent?.title || "Event Access"}
                 </h2>
               </div>
             </div>
 
-            {/* Right Group: Action Buttons */}
-            <div className="flex items-center gap-3 shrink-0">
+            {/* Right: Action Buttons */}
+            <div className="flex items-center gap-2.5 shrink-0">
               <button
                 onClick={handleExportEventAccessCsv}
-                className="px-4.5 py-2.5 bg-white/15 hover:bg-white/25 active:scale-95 text-white font-black rounded-xl text-xs transition-all border border-white/25 backdrop-blur-md flex items-center gap-2 shadow-xs cursor-pointer"
+                className="px-3.5 py-2 bg-white/15 hover:bg-white/25 active:scale-95 text-white font-bold rounded-xl text-xs transition-all border border-white/20 backdrop-blur-md flex items-center gap-2 shadow-xs cursor-pointer"
                 title="Export Participants CSV"
               >
-                <Download className="h-4 w-4" />
+                <Download className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Export CSV</span>
               </button>
 
               <button
                 onClick={() => setIsEventAccessModalOpen(false)}
-                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/25 active:scale-95 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer shadow-xs"
+                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/25 active:scale-95 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer shadow-xs"
                 title="Close Full Screen"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4.5 w-4.5" />
               </button>
             </div>
           </div>
@@ -3201,7 +3334,7 @@ const EventManagementPage: React.FC = () => {
             {/* Feedback notification toast if login access is provisioned */}
             {loginAccessSuccessMsg && (
               <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-sm animate-in slide-in-from-top-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
                   <span>{loginAccessSuccessMsg}</span>
                 </div>
@@ -3214,37 +3347,167 @@ const EventManagementPage: React.FC = () => {
               </div>
             )}
 
+            {/* Feedback notification toast if problem statement is published */}
+            {problemSuccessMsg && (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-sm animate-in slide-in-from-top-2">
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <span>{problemSuccessMsg}</span>
+                </div>
+                <button
+                  onClick={() => setProblemSuccessMsg(null)}
+                  className="text-emerald-700 hover:text-emerald-900 font-extrabold text-xs cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
+            {/* TOP DUAL CARDS SECTION (Give Problem Statements & Submissions side-by-side) */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+              {/* CARD 1: Give Problem Statements */}
+              <div
+                onClick={handleOpenMultiProblemModal}
+                className="bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden border border-blue-500/30 cursor-pointer hover:border-blue-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-blue-500/10"
+              >
+                <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
+
+                <div className="relative z-10 space-y-4 text-left">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/25 text-blue-200 border border-blue-400/40 backdrop-blur-md">
+                      HACKATHON TRACK & PROBLEM STATEMENTS
+                    </span>
+                    {(eventAccessEvent?.problemStatements?.length > 0 || eventAccessEvent?.problemStatementTitle) && (
+                      <span className="px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        {eventAccessEvent?.problemStatements?.length || 1} PUBLISHED
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
+                      <Sparkles className="w-7 h-7 text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
+                      <span>Give Problem Statements</span>
+                    </h3>
+                    <p className="text-xs sm:text-sm text-blue-100/90 font-medium leading-relaxed line-clamp-2">
+                      {eventAccessEvent?.problemStatements?.length > 0
+                        ? `Active Problems: ${eventAccessEvent.problemStatements.map((p: any) => p.code || p.title).join(", ")} — Click to manage or add more problem statements.`
+                        : eventAccessEvent?.problemStatementTitle
+                          ? `Active Problem: ${eventAccessEvent.problemStatementTitle} — Click to manage multiple statements.`
+                          : "Click here to create, manage, and broadcast multiple hackathon problem statements and tracks to all registered team participant portals."
+                      }
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative z-10 pt-6 flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenMultiProblemModal();
+                    }}
+                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-blue-500/30 flex items-center gap-2.5 cursor-pointer border border-blue-400/30"
+                  >
+                    <FileCode className="w-4 h-4" />
+                    <span>{eventAccessEvent?.problemStatementTitle || eventAccessEvent?.problemStatements?.length ? "Edit / Manage Problem Statements" : "+ Give Problem Statements"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD 2: Submissions (Beside Give Problem Statements) */}
+              <div
+                onClick={() => setIsSubmissionsModalOpen(true)}
+                className="bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden border border-indigo-500/30 cursor-pointer hover:border-indigo-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-indigo-500/10"
+              >
+                <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
+
+                <div className="relative z-10 space-y-4 text-left">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 backdrop-blur-md">
+                      LIVE SUBMISSIONS MONITOR
+                    </span>
+                    <span className="px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length} / {eventAccessRegistrations.length} SUBMITTED
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
+                      <FileText className="w-7 h-7 text-indigo-400 group-hover:scale-110 transition-transform shrink-0" />
+                      <span>Submissions</span>
+                    </h3>
+                    <p className="text-xs sm:text-sm text-indigo-100/90 font-medium leading-relaxed line-clamp-2">
+                      Monitor team progress, selected problem statements, uploaded SRS specifications, PPT pitch decks, code repositories, and demo video links.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative z-10 pt-6 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                  {/* Quick Stat Pills */}
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-black">
+                      Submitted: {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length}
+                    </span>
+                    <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 text-xs font-black">
+                      Drafts: {eventAccessRegistrations.filter(r => r.submissionStatus === "Draft" || (r.problemStatement && r.submissionStatus !== "Submitted")).length}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSubmissionsModalOpen(true);
+                    }}
+                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-indigo-500/30 flex items-center gap-2.5 cursor-pointer border border-indigo-400/30 shrink-0"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>Monitor Submissions</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
             {/* Sub-Header Toolbar (Search & Quick Stats) */}
-            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
               {/* Quick Search Input */}
               <div className="relative w-full sm:w-96">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search participants by name, student ID, email..."
                   value={eventAccessSearchQuery}
                   onChange={(e) => setEventAccessSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-[#2563EB] transition-all"
                 />
               </div>
 
               {/* Stat Pills */}
-              <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                <div className="px-4 py-2 bg-blue-50 border border-blue-100 rounded-2xl flex items-center gap-2.5">
-                  <Users className="h-4 w-4 text-[#2563EB]" />
+              <div className="flex items-center gap-3.5 w-full sm:w-auto justify-between sm:justify-end">
+                <div className="px-4 py-2.5 bg-blue-50/80 border border-blue-100/80 rounded-2xl flex items-center gap-3 shadow-2xs">
+                  <div className="w-8 h-8 rounded-xl bg-blue-100 text-[#2563EB] flex items-center justify-center font-bold">
+                    <Users className="h-4.5 w-4.5" />
+                  </div>
                   <div className="text-left">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase block leading-none">REGISTERED PARTICIPANTS</span>
-                    <span className="text-xs font-black text-blue-700">
+                    <span className="text-[9px] font-extrabold text-slate-400 uppercase block leading-none tracking-wider">REGISTERED PARTICIPANTS</span>
+                    <span className="text-xs font-black text-blue-700 mt-0.5 block">
                       {eventAccessRegistrations.length} Seats
                     </span>
                   </div>
                 </div>
 
-                <div className="px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-2.5">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                <div className="px-4 py-2.5 bg-emerald-50/80 border border-emerald-100/80 rounded-2xl flex items-center gap-3 shadow-2xs">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                    <ShieldCheck className="h-4.5 w-4.5" />
+                  </div>
                   <div className="text-left">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase block leading-none">ACCESS STATUS</span>
-                    <span className="text-xs font-black text-emerald-700">Live Access</span>
+                    <span className="text-[9px] font-extrabold text-slate-400 uppercase block leading-none tracking-wider">ACCESS STATUS</span>
+                    <span className="text-xs font-black text-emerald-700 mt-0.5 block">Live Access</span>
                   </div>
                 </div>
               </div>
@@ -3256,22 +3519,22 @@ const EventManagementPage: React.FC = () => {
               {/* LEFT COLUMN: Participants Table Roster (Span 8) */}
               <div className="lg:col-span-8 space-y-6">
                 {loadingEventAccessRegs ? (
-                  <div className="py-24 text-center flex flex-col items-center justify-center gap-3 bg-white rounded-3xl border border-slate-200/80 shadow-xs">
+                  <div className="py-24 text-center flex flex-col items-center justify-center gap-3 bg-white rounded-3xl border border-slate-200/90 shadow-sm">
                     <Loader2 className="h-8 w-8 text-[#2563EB] animate-spin" />
                     <p className="text-xs font-bold text-slate-500">Fetching registered participants from database...</p>
                   </div>
                 ) : filteredEventAccessRegistrations.length > 0 ? (
-                  <div className="border border-slate-200/80 rounded-3xl overflow-hidden shadow-xs bg-white">
+                  <div className="border border-slate-200/90 rounded-3xl overflow-hidden shadow-sm bg-white">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
+                      <table className="w-full text-left text-xs border-collapse min-w-[700px]">
                         <thead>
-                          <tr className="bg-slate-50/90 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                            <th className="py-4 px-5">Team Name / Lead</th>
-                            <th className="py-4 px-5">Roll Number / Student ID</th>
-                            <th className="py-4 px-5">Contact Details</th>
-                            <th className="py-4 px-5">Branch & Sec</th>
-                            <th className="py-4 px-5">Type / Members</th>
-                            <th className="py-4 px-5 text-right">Login Access</th>
+                          <tr className="bg-slate-50/90 border-b border-slate-200/80 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                            <th className="py-3.5 px-4 w-[28%]">Team / Lead</th>
+                            <th className="py-3.5 px-3 w-[16%]">Roll No.</th>
+                            <th className="py-3.5 px-3 w-[22%]">Contact Details</th>
+                            <th className="py-3.5 px-3 w-[12%]">Branch</th>
+                            <th className="py-3.5 px-3 w-[10%]">Type</th>
+                            <th className="py-3.5 px-4 w-[12%] text-right">Login Access</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -3283,30 +3546,32 @@ const EventManagementPage: React.FC = () => {
                             return (
                               <tr key={reg.id || idx} className="hover:bg-blue-50/30 transition-colors">
                                 {/* Team Name / Lead */}
-                                <td className="py-4 px-5">
+                                <td className="py-3.5 px-4">
                                   <div className="flex items-center gap-3">
-                                    <div className="w-9 h-9 rounded-full bg-blue-100 text-[#2563EB] font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                    <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
                                       {displayTeamName.charAt(0).toUpperCase()}
                                     </div>
-                                    <div>
-                                      <span className="font-extrabold text-slate-900 block truncate max-w-[180px]">
+                                    <div className="min-w-0">
+                                      <span className="font-extrabold text-slate-900 text-xs block truncate max-w-[150px]">
                                         {displayTeamName}
                                       </span>
-                                      <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
-                                        {isGroup ? `Lead: ${reg.teamLeadName || reg.name}` : "Individual Entry"}
+                                      <span className="text-[10px] font-semibold text-slate-400 block mt-0.5 truncate max-w-[150px]">
+                                        {isGroup ? `Lead: ${reg.teamLeadName || reg.name}` : "Individual"}
                                       </span>
                                     </div>
                                   </div>
                                 </td>
 
                                 {/* Student Roll ID */}
-                                <td className="py-4 px-5 font-mono font-bold text-slate-800">
-                                  {reg.teamLeadStudentId || reg.studentId || "N/A"}
+                                <td className="py-3.5 px-3">
+                                  <span className="font-mono font-extrabold text-slate-800 bg-slate-100/90 px-2.5 py-0.5 rounded-lg text-[11px] border border-slate-200/80 inline-block shadow-2xs">
+                                    {reg.teamLeadStudentId || reg.studentId || "N/A"}
+                                  </span>
                                 </td>
 
                                 {/* Contact Email & Phone */}
-                                <td className="py-4 px-5 space-y-0.5">
-                                  <span className="font-semibold text-slate-800 block truncate max-w-[180px]">
+                                <td className="py-3.5 px-3 space-y-0.5">
+                                  <span className="font-bold text-slate-800 text-xs block truncate max-w-[160px]" title={reg.teamLeadEmail || reg.email}>
                                     {reg.teamLeadEmail || reg.email || "N/A"}
                                   </span>
                                   {reg.phoneNumber && (
@@ -3317,36 +3582,38 @@ const EventManagementPage: React.FC = () => {
                                 </td>
 
                                 {/* Branch & Sec */}
-                                <td className="py-4 px-5 font-bold text-slate-700">
-                                  {reg.branch || "CSE"} {reg.section ? `• ${reg.section}` : ""}
+                                <td className="py-3.5 px-3 font-bold text-slate-700">
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[11px] font-extrabold border border-slate-200/60 inline-block">
+                                    {reg.branch || "CSE"} {reg.section ? `• ${reg.section}` : ""}
+                                  </span>
                                 </td>
 
                                 {/* Registration Type / Members */}
-                                <td className="py-4 px-5">
-                                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase whitespace-nowrap inline-flex items-center gap-1 ${isGroup ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-sky-100 text-sky-800 border border-sky-200"}`}>
+                                <td className="py-3.5 px-3">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase whitespace-nowrap inline-flex items-center gap-1 shadow-2xs ${isGroup ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-sky-100 text-sky-800 border border-sky-200"}`}>
                                     {isGroup ? `GROUP (${reg.teamSize || (reg.members?.length || 1)})` : "INDIVIDUAL"}
                                   </span>
                                 </td>
 
                                 {/* Login Access Status */}
-                                <td className="py-4 px-5 text-right">
+                                <td className="py-3.5 px-4 text-right">
                                   {isProvisioned ? (
                                     <div className="inline-flex items-center gap-1.5 justify-end">
-                                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                                      <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
                                         <Check className="h-3 w-3 text-emerald-600" />
                                         GRANTED
                                       </span>
                                       <button
                                         onClick={() => handleRevokeSingleTeamAccess(reg.id, displayTeamName)}
                                         disabled={isProvisioningLoginAccess}
-                                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                                        className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-all cursor-pointer active:scale-95 shadow-2xs"
                                         title="Revoke portal access for this team"
                                       >
                                         Revoke
                                       </button>
                                     </div>
                                   ) : (
-                                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
+                                    <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1 shadow-2xs">
                                       <Lock className="h-3 w-3 text-amber-600" />
                                       PENDING
                                     </span>
@@ -3361,10 +3628,10 @@ const EventManagementPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="py-24 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8 space-y-3 shadow-xs">
-                    <div className="w-12 h-12 rounded-full bg-blue-50 text-[#2563EB] flex items-center justify-center mx-auto shadow-inner">
-                      <Users className="h-6 w-6" />
+                    <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center mx-auto shadow-inner">
+                      <Users className="h-7 w-7" />
                     </div>
-                    <h4 className="text-sm font-extrabold text-slate-800">No Participants Registered Yet</h4>
+                    <h4 className="text-base font-extrabold text-slate-800">No Participants Registered Yet</h4>
                     <p className="text-xs text-slate-400 font-medium max-w-sm mx-auto">
                       {eventAccessSearchQuery
                         ? `No registered participants match your search "${eventAccessSearchQuery}".`
@@ -3378,20 +3645,20 @@ const EventManagementPage: React.FC = () => {
               <div className="lg:col-span-4 space-y-6">
 
                 {/* 🔑 LOGIN ACCESS CARD */}
-                <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/80 shadow-md space-y-5 text-left">
+                <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-sm space-y-5 text-left">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold shadow-inner">
-                        <Key className="h-5 w-5" />
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 text-[#2563EB] border border-blue-100/80 flex items-center justify-center font-bold shadow-2xs">
+                        <Key className="h-5.5 w-5.5 text-[#2563EB]" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                        <h3 className="text-base font-black text-slate-900 tracking-tight">
                           Login Access
                         </h3>
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Authentication Control</p>
                       </div>
                     </div>
-                    <span className="text-[9px] font-black text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                    <span className="text-[9px] font-black text-blue-700 bg-blue-50 border border-blue-100 px-3 py-1 rounded-full uppercase tracking-wider">
                       TEAM AUTH
                     </span>
                   </div>
@@ -3419,16 +3686,16 @@ const EventManagementPage: React.FC = () => {
                     <button
                       onClick={handleOpenPasswordModal}
                       disabled={isProvisioningLoginAccess || eventAccessRegistrations.length === 0}
-                      className="w-full py-3.5 bg-[#2563EB] hover:bg-blue-700 disabled:bg-slate-300 text-white font-black rounded-2xl text-xs sm:text-sm transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center leading-snug"
+                      className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-300 disabled:to-slate-300 text-white font-black rounded-2xl text-xs sm:text-sm transition-all shadow-md shadow-blue-500/25 active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center leading-snug border border-blue-400/30"
                     >
                       {isProvisioningLoginAccess ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Loader2 className="h-4.5 w-4.5 animate-spin" />
                           Provisioning Access...
                         </>
                       ) : (
                         <>
-                          <UserCheck className="h-4.5 w-4.5" />
+                          <UserCheck className="h-5 w-5" />
                           {provisionedTeamIds.length > 0 ? "Update / Re-grant Login Access" : "Provide the login access to their team"}
                         </>
                       )}
@@ -3448,9 +3715,9 @@ const EventManagementPage: React.FC = () => {
                 </div>
 
                 {/* Additional Info Card */}
-                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-blue-950 p-6 rounded-3xl text-white space-y-3 shadow-md text-left">
+                <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-6 rounded-3xl text-white space-y-3 shadow-md border border-indigo-900/50 text-left">
                   <div className="flex items-center gap-2 text-blue-300">
-                    <Lock className="h-4 w-4" />
+                    <Lock className="h-4 w-4 text-blue-400" />
                     <h4 className="text-xs font-black uppercase tracking-wider">Secure Team SSO Access</h4>
                   </div>
                   <p className="text-xs text-slate-300 font-medium leading-relaxed">
@@ -3483,7 +3750,7 @@ const EventManagementPage: React.FC = () => {
       {/* 🔐 PASSWORD PROMPT MODAL */}
       {isPasswordModalOpen && createPortal(
         <div className="fixed inset-0 z-[9999999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div 
+          <div
             className="bg-white max-w-md w-full rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95 duration-200 text-left relative"
             onClick={(e) => e.stopPropagation()}
           >
@@ -3595,6 +3862,738 @@ const EventManagementPage: React.FC = () => {
                     Confirm & Send Access
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 🚀 MULTI PROBLEM STATEMENTS MANAGEMENT FULL PAGE */}
+      {isMultiProblemModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999999] bg-slate-50 flex flex-col w-screen h-screen overflow-hidden animate-in fade-in duration-200">
+          <div
+            className="bg-white w-full h-full flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Top Header */}
+            <div className="bg-[#1E3A8A] text-white px-6 sm:px-8 py-3.5 flex items-center justify-between gap-4 shrink-0 shadow-md border-b border-blue-900/50">
+              {/* Left: Brand Logo & Title Metadata */}
+              <div className="flex items-center gap-3.5 min-w-0">
+                <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-lg object-contain shrink-0" />
+                <div className="h-6 w-px bg-white/20 hidden sm:block shrink-0"></div>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/30 text-blue-100 border border-blue-400/30 shrink-0">
+                    PROBLEM STATEMENT SUITE
+                  </span>
+                  <span className="text-blue-200/50 font-bold text-xs hidden sm:inline">•</span>
+                  <span className="text-xs text-blue-200/90 font-bold shrink-0 hidden sm:inline">{problemList.length} Statements Listed</span>
+                  <span className="text-blue-200/50 font-bold text-xs hidden sm:inline">•</span>
+                  <h3 className="text-base sm:text-lg font-black text-white tracking-tight truncate max-w-[250px] sm:max-w-md">
+                    Manage Problem Statements — {eventAccessEvent?.title || "Hackathon"}
+                  </h3>
+                </div>
+              </div>
+
+              {/* Right: Close Button */}
+              <button
+                onClick={() => setIsMultiProblemModalOpen(false)}
+                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center gap-2 transition-all cursor-pointer font-bold text-xs border border-white/20 shadow-xs shrink-0"
+              >
+                <X className="h-4 w-4" />
+                <span>Close Full View</span>
+              </button>
+            </div>
+
+            {/* Modal Body: Split 2 Columns */}
+            <div className="p-6 sm:p-8 lg:p-10 overflow-y-auto flex-1 bg-slate-50/60 pb-24">
+              <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+                {/* Left Column: Form to Add/Edit Item (Span 5) */}
+                <div className="lg:col-span-5 bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-4 text-left">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold shadow-2xs">
+                        <Plus className="w-4.5 h-4.5" />
+                      </div>
+                      <h4 className="text-base font-black text-slate-900 tracking-tight">
+                        {editingPsId ? "Edit Problem Statement" : "Add Problem Statement"}
+                      </h4>
+                    </div>
+                    {editingPsId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingPsId(null);
+                          setPsCodeInput(`PS-0${problemList.length + 1}`);
+                          setPsTitleInput("");
+                          setPsTrackInput("");
+                          setPsDescInput("");
+                          setPsDeliverablesInput("");
+                        }}
+                        className="text-xs font-extrabold text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1 rounded-xl transition-all"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleAddOrUpdateProblemItem} className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="col-span-1 space-y-1">
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">PS Code</label>
+                        <input
+                          type="text"
+                          value={psCodeInput}
+                          onChange={(e) => setPsCodeInput(e.target.value)}
+                          placeholder="PS-01"
+                          className="w-full px-3 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs font-black text-slate-900 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-[#2563EB] transition-all"
+                          required
+                        />
+                      </div>
+                      <div className="col-span-2 space-y-1">
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Track / Category</label>
+                        <input
+                          type="text"
+                          value={psTrackInput}
+                          onChange={(e) => setPsTrackInput(e.target.value)}
+                          placeholder="e.g. AI & ML / FinTech"
+                          className="w-full px-3 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-[#2563EB] transition-all"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Problem Title</label>
+                      <input
+                        type="text"
+                        value={psTitleInput}
+                        onChange={(e) => setPsTitleInput(e.target.value)}
+                        placeholder="e.g. Smart Campus Resource Optimizer"
+                        className="w-full px-3 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-[#2563EB] transition-all"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Detailed Description & Requirements</label>
+                      <textarea
+                        rows={4}
+                        value={psDescInput}
+                        onChange={(e) => setPsDescInput(e.target.value)}
+                        placeholder="Paste or type detailed description, problem statement background, constraints, requirements, and target users..."
+                        className="w-full px-3 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-[#2563EB] transition-all leading-relaxed whitespace-pre-wrap min-h-[95px] resize-y"
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Expected Deliverables (Optional)</label>
+                      <input
+                        type="text"
+                        value={psDeliverablesInput}
+                        onChange={(e) => setPsDeliverablesInput(e.target.value)}
+                        placeholder="e.g. Working Prototype + SRS Document + Demo Video"
+                        className="w-full px-3 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-[#2563EB] transition-all"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-3 bg-gradient-to-r from-[#2563EB] to-indigo-600 hover:from-blue-600 hover:to-indigo-700 active:scale-[0.99] text-white font-black text-xs rounded-xl shadow-md shadow-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 mt-1 border border-blue-400/30"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>{editingPsId ? "Update Problem Item" : "Add Problem Statement to List"}</span>
+                    </button>
+                  </form>
+                </div>
+
+                {/* Right Column: List of Problem Statements (Span 7) */}
+                <div className="lg:col-span-7 space-y-4 text-left">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <h4 className="text-base font-black text-slate-900 tracking-tight">
+                        Listed Problem Statements ({problemList.length})
+                      </h4>
+                      <span className="px-3 py-0.5 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px] border border-blue-100/80 shadow-2xs">
+                        Live Roster
+                      </span>
+                    </div>
+                    <span className="text-xs text-slate-500 font-medium">
+                      Teams will select from these options
+                    </span>
+                  </div>
+
+                  {problemList.length === 0 ? (
+                    <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center flex flex-col items-center justify-center space-y-3 shadow-xs">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center shadow-inner">
+                        <Sparkles className="w-7 h-7" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-base font-black text-slate-900">No Problem Statements Added Yet</p>
+                        <p className="text-xs text-slate-500 max-w-sm font-medium">Use the form on the left to create and add problem statements for participating teams.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {problemList.map((item, idx) => (
+                        <div
+                          key={item.id || idx}
+                          className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md hover:border-blue-400/80 transition-all space-y-4 relative group overflow-hidden border-l-4 border-l-[#2563EB]"
+                        >
+                          {/* Top Meta Bar */}
+                          <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <span className="px-3.5 py-1 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-xs shadow-xs tracking-wider">
+                                {item.code || `PS-0${idx + 1}`}
+                              </span>
+                              <span className="px-3.5 py-1 rounded-xl bg-slate-100 text-slate-700 font-extrabold text-xs border border-slate-200/80">
+                                {item.track || "General Track"}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleEditProblemItem(item)}
+                                className="p-2 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-100 transition-all cursor-pointer"
+                                title="Edit Problem Statement"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteProblemItem(item.id)}
+                                className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100 transition-all cursor-pointer"
+                                title="Delete Problem Statement"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Title & Description */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <h5 className="text-lg font-black text-slate-900 tracking-tight">{item.title}</h5>
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DETAILED DESCRIPTION</span>
+                            </div>
+                            <div className="text-xs text-slate-700 font-medium leading-relaxed bg-slate-50/80 p-4 sm:p-5 rounded-2xl border border-slate-200/80 whitespace-pre-wrap break-words select-text shadow-2xs">
+                              {item.description}
+                            </div>
+                          </div>
+
+                          {/* Deliverables Section */}
+                          {item.deliverables && (
+                            <div className="px-4.5 py-3 rounded-2xl bg-blue-50/80 border border-blue-100/80 text-xs font-extrabold text-blue-950 flex items-center gap-2.5 shadow-2xs">
+                              <span className="text-[#2563EB]">🎯 Deliverables:</span>
+                              <span className="text-slate-800 font-semibold">{item.deliverables}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Bottom Footer */}
+            <div className="px-6 sm:px-10 py-4 bg-white border-t border-slate-200 flex items-center justify-between gap-4 shrink-0 shadow-lg">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-xs text-slate-700 font-bold">
+                  {problemList.length} statement(s) ready to broadcast to participant dashboards.
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsMultiProblemModalOpen(false)}
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-xs transition-all cursor-pointer active:scale-95"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePublishAllProblemStatements}
+                  disabled={savingMultiProblems || problemList.length === 0}
+                  className="px-7 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-black text-xs rounded-2xl shadow-md shadow-emerald-500/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 border border-emerald-400/30"
+                >
+                  {savingMultiProblems ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <ShieldCheck className="w-4 h-4 text-white" />}
+                  <span>Save & Publish All ({problemList.length}) Statements</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 📄 TEAM SUBMISSIONS MONITOR FULL PAGE MODAL */}
+      {isSubmissionsModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999999] bg-slate-100 text-slate-900 overflow-y-auto flex flex-col w-screen h-screen animate-in fade-in duration-200">
+
+          {/* Sticky Full-Width Dark Blue Top Header Bar */}
+          <div className="w-full bg-[#1E3A8A] text-white px-6 sm:px-10 py-5 flex items-center justify-between shadow-xl sticky top-0 z-50 shrink-0">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setIsSubmissionsModalOpen(false)}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer border border-white/15 active:scale-95"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span>Back to Event Access</span>
+              </button>
+
+              <div className="flex items-center gap-3">
+                <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/30 text-blue-200 border border-blue-400/30">
+                  SUBMISSIONS MATRIX MONITOR
+                </span>
+                <span className="text-white/40 text-sm hidden sm:inline">•</span>
+                <span className="text-sm font-black text-blue-100 truncate max-w-xs sm:max-w-md">
+                  {eventAccessEvent?.title || "Active Hackathon Event"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="hidden md:flex items-center gap-3 bg-white/10 px-4 py-2 rounded-2xl border border-white/15 text-xs font-black">
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" />
+                  {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length} Final Submitted
+                </span>
+                <span className="text-white/30">|</span>
+                <span className="text-amber-300 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {eventAccessRegistrations.filter(r => r.submissionStatus === "Draft" || (r.problemStatement && r.submissionStatus !== "Submitted")).length} Drafts
+                </span>
+                <span className="text-white/30">|</span>
+                <span className="text-slate-200">Total: {eventAccessRegistrations.length} Teams</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsSubmissionsModalOpen(false)}
+                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/25 active:scale-95 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer shadow-xs"
+                title="Close Full Page"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Full Page Main Body Wrapper */}
+          <div className="w-full max-w-[1600px] mx-auto p-4 sm:p-8 flex-1 space-y-6 flex flex-col">
+
+            {/* Filter Tabs & Search Header Toolbar */}
+            <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0">
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto w-full lg:w-auto">
+                {(["All", "Submitted", "Draft", "Pending"] as const).map((filter) => {
+                  const count = filter === "All"
+                    ? eventAccessRegistrations.length
+                    : filter === "Submitted"
+                      ? eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length
+                      : filter === "Draft"
+                        ? eventAccessRegistrations.filter(r => r.submissionStatus === "Draft" || (r.problemStatement && r.submissionStatus !== "Submitted")).length
+                        : eventAccessRegistrations.filter(r => !r.problemStatement && !r.submittedAt).length;
+
+                  return (
+                    <button
+                      key={filter}
+                      type="button"
+                      onClick={() => setSubmissionsFilter(filter)}
+                      className={`px-4 py-2.5 rounded-2xl text-xs font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${submissionsFilter === filter
+                          ? "bg-[#2563EB] text-white shadow-md shadow-blue-500/20"
+                          : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
+                        }`}
+                    >
+                      <span>{filter} Teams</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] ${submissionsFilter === filter ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700 font-black"
+                        }`}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Legend & Search */}
+              <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto justify-between lg:justify-end">
+                <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-3 text-xs font-bold text-slate-700">
+                  <span className="text-[10px] font-black uppercase text-slate-400">Legend:</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[9px] font-black">✓</span>
+                    <span className="text-emerald-700 font-extrabold text-xs">Green = Submitted</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-3.5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[9px] font-black">•</span>
+                    <span className="text-blue-700 font-extrabold text-xs">Blue = In-Progress</span>
+                  </div>
+                </div>
+
+                <div className="relative w-full sm:w-80">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search team, student ID, problem statement..."
+                    value={submissionsSearchQuery}
+                    onChange={(e) => setSubmissionsSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Submissions Roster Matrix Table Container */}
+            <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden flex-1 flex flex-col">
+              {(() => {
+                const filteredList = eventAccessRegistrations.filter((reg) => {
+                  const matchSearch = !submissionsSearchQuery ||
+                    (reg.groupName || "").toLowerCase().includes(submissionsSearchQuery.toLowerCase()) ||
+                    (reg.teamLeadName || reg.name || "").toLowerCase().includes(submissionsSearchQuery.toLowerCase()) ||
+                    (reg.problemStatement || "").toLowerCase().includes(submissionsSearchQuery.toLowerCase()) ||
+                    (reg.teamLeadStudentId || reg.studentId || "").toLowerCase().includes(submissionsSearchQuery.toLowerCase());
+
+                  const isSubmitted = reg.submissionStatus === "Submitted" || !!reg.submittedAt;
+                  const isDraft = reg.submissionStatus === "Draft" || (!!reg.problemStatement && !isSubmitted);
+                  const isPending = !reg.problemStatement && !isSubmitted;
+
+                  if (submissionsFilter === "Submitted") return matchSearch && isSubmitted;
+                  if (submissionsFilter === "Draft") return matchSearch && isDraft;
+                  if (submissionsFilter === "Pending") return matchSearch && isPending;
+                  return matchSearch;
+                });
+
+                if (filteredList.length === 0) {
+                  return (
+                    <div className="py-24 text-center bg-slate-50/50 rounded-3xl border border-dashed border-slate-200 p-8 space-y-3 m-8">
+                      <FileText className="h-10 w-10 text-slate-300 mx-auto" />
+                      <h4 className="text-sm font-extrabold text-slate-800">No Submissions Found</h4>
+                      <p className="text-xs text-slate-400 font-medium">No team submissions match your filter or search query.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="overflow-x-auto w-full flex-1">
+                    <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+                      <thead>
+                        {/* Upper Squares Column Headers */}
+                        <tr className="bg-slate-900 text-white text-left">
+                          <th className="py-5 px-6 font-black uppercase text-[11px] tracking-wider w-[260px] border-b border-slate-800 bg-slate-950">
+                            <div className="flex items-center gap-2">
+                              <Users className="w-4 h-4 text-blue-400" />
+                              <span>Team Name</span>
+                            </div>
+                          </th>
+
+                          {/* Column 1 Square */}
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[20%]">
+                            <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700/80 space-y-1 shadow-inner inline-block w-full text-center">
+                              <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider block">STEP 1 BLOCK</span>
+                              <span className="text-xs font-black text-white block truncate">Problem Statement</span>
+                            </div>
+                          </th>
+
+                          {/* Column 2 Square */}
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[20%]">
+                            <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700/80 space-y-1 shadow-inner inline-block w-full text-center">
+                              <span className="text-[10px] font-black uppercase text-purple-400 tracking-wider block">STEP 2 BLOCK</span>
+                              <span className="text-xs font-black text-white block truncate">SRS & PPT Submission</span>
+                            </div>
+                          </th>
+
+                          {/* Column 3 Square */}
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[20%]">
+                            <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700/80 space-y-1 shadow-inner inline-block w-full text-center">
+                              <span className="text-[10px] font-black uppercase text-indigo-400 tracking-wider block">STEP 3 BLOCK</span>
+                              <span className="text-xs font-black text-white block truncate">Repo & Feature</span>
+                            </div>
+                          </th>
+
+                          {/* Column 4 Square */}
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[20%]">
+                            <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700/80 space-y-1 shadow-inner inline-block w-full text-center">
+                              <span className="text-[10px] font-black uppercase text-pink-400 tracking-wider block">STEP 4 BLOCK</span>
+                              <span className="text-xs font-black text-white block truncate">Prototype & Video Link</span>
+                            </div>
+                          </th>
+
+                          {/* Action Column */}
+                          <th className="py-4 px-6 border-b border-slate-800 text-right w-[120px]">
+                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Inspect</span>
+                          </th>
+                        </tr>
+                      </thead>
+
+                      <tbody className="divide-y divide-slate-100 font-sans">
+                        {filteredList.map((reg, idx) => {
+                          const isGroup = reg.groupName && reg.groupName !== "Individual RSVP";
+                          const displayTeamName = isGroup ? reg.groupName : (reg.teamLeadName || reg.name || "Individual Participant");
+
+                          // Step Completion Conditions
+                          const step1Completed = reg.isPsSaved || reg.isPsLocked || !!reg.problemStatement || !!reg.selectedProblemStatementId;
+                          const step2Completed = (!!reg.srsFileName || !!reg.srsFileUrl) && (!!reg.presentationFileName || !!reg.presentationUrl);
+                          const step3Completed = !!reg.githubUrl && !!reg.keyFeatures;
+                          const step4Completed = (!!reg.prototypeUrl && !!reg.demoVideoUrl) || reg.submissionStatus === "Submitted" || !!reg.submittedAt;
+
+                          return (
+                            <tr key={reg.id || idx} className="hover:bg-blue-50/40 transition-colors group">
+                              {/* Left Side Rectangle: Team Name */}
+                              <td className="py-5 px-6">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 font-black text-sm flex items-center justify-center shrink-0 shadow-xs border border-indigo-200">
+                                    {displayTeamName.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="text-left">
+                                    <span className="font-extrabold text-slate-900 text-sm block truncate max-w-[190px]" title={displayTeamName}>
+                                      {displayTeamName}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
+                                      {isGroup ? `Lead: ${reg.teamLeadName || reg.name}` : "Individual"} • {reg.teamLeadStudentId || reg.studentId || "N/A"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Step 1 Node (Line extends right into Step 2) */}
+                              <td className="py-5 px-3 text-center relative overflow-visible">
+                                <div className="flex items-center justify-center relative w-full">
+                                  {/* Seamless Connecting Line right */}
+                                  <div className={`absolute left-1/2 right-[-50%] top-1/2 -translate-y-1/2 h-1.5 z-0 ${step1Completed && step2Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300'}`} />
+
+                                  {/* Node Circle 1 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedTeamSubmission(reg)}
+                                    title={step1Completed ? `Step 1 Completed: ${reg.selectedProblemStatementId || "PS Saved"}` : "Step 1 In Progress / Pending"}
+                                    className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step1Completed
+                                        ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
+                                        : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
+                                      }`}
+                                  >
+                                    {step1Completed ? <Check className="w-6 h-6 stroke-[3]" /> : "1"}
+                                  </button>
+                                </div>
+                                <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
+                                  {step1Completed ? (reg.selectedProblemStatementId || "PS Saved") : "Pending"}
+                                </span>
+                              </td>
+
+                              {/* Step 2 Node (Line spans left to right across Step 1 and Step 3) */}
+                              <td className="py-5 px-3 text-center relative overflow-visible">
+                                <div className="flex items-center justify-center relative w-full">
+                                  {/* Seamless Connecting Line across left & right */}
+                                  <div className={`absolute left-[-50%] right-[-50%] top-1/2 -translate-y-1/2 h-1.5 z-0 ${step2Completed && step3Completed ? 'bg-emerald-500 shadow-xs' : (step1Completed && step2Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300')}`} />
+
+                                  {/* Node Circle 2 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedTeamSubmission(reg)}
+                                    title={step2Completed ? "Step 2 Completed: SRS & PPT Uploaded" : "Step 2 In Progress / Pending"}
+                                    className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step2Completed
+                                        ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
+                                        : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
+                                      }`}
+                                  >
+                                    {step2Completed ? <Check className="w-6 h-6 stroke-[3]" /> : "2"}
+                                  </button>
+                                </div>
+                                <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
+                                  {step2Completed ? "SRS & PPT Done" : "SRS/PPT Pending"}
+                                </span>
+                              </td>
+
+                              {/* Step 3 Node (Line spans left to right across Step 2 and Step 4) */}
+                              <td className="py-5 px-3 text-center relative overflow-visible">
+                                <div className="flex items-center justify-center relative w-full">
+                                  {/* Seamless Connecting Line across left & right */}
+                                  <div className={`absolute left-[-50%] right-[-50%] top-1/2 -translate-y-1/2 h-1.5 z-0 ${step3Completed && step4Completed ? 'bg-emerald-500 shadow-xs' : (step2Completed && step3Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300')}`} />
+
+                                  {/* Node Circle 3 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedTeamSubmission(reg)}
+                                    title={step3Completed ? "Step 3 Completed: GitHub Repo & Features Saved" : "Step 3 In Progress / Pending"}
+                                    className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step3Completed
+                                        ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
+                                        : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
+                                      }`}
+                                  >
+                                    {step3Completed ? <Check className="w-6 h-6 stroke-[3]" /> : "3"}
+                                  </button>
+                                </div>
+                                <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
+                                  {step3Completed ? "Repo & Feature" : "Repo Pending"}
+                                </span>
+                              </td>
+
+                              {/* Step 4 Node (Line extends left from Step 3 to center) */}
+                              <td className="py-5 px-3 text-center relative overflow-visible">
+                                <div className="flex items-center justify-center relative w-full">
+                                  {/* Seamless Connecting Line left */}
+                                  <div className={`absolute left-[-50%] right-1/2 top-1/2 -translate-y-1/2 h-1.5 z-0 ${step4Completed ? 'bg-emerald-500 shadow-xs' : (step3Completed && step4Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300')}`} />
+
+                                  {/* Node Circle 4 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedTeamSubmission(reg)}
+                                    title={step4Completed ? "Step 4 Completed: Prototype & Demo Video Submitted" : "Step 4 In Progress / Pending"}
+                                    className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step4Completed
+                                        ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
+                                        : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
+                                      }`}
+                                  >
+                                    {step4Completed ? <Check className="w-6 h-6 stroke-[3]" /> : "4"}
+                                  </button>
+                                </div>
+                                <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
+                                  {step4Completed ? "Final Submitted" : "Prototype/Video"}
+                                </span>
+                              </td>
+
+                              {/* Action Column */}
+                              <td className="py-5 px-6 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedTeamSubmission(reg)}
+                                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs border border-indigo-200/60"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Inspect</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Bottom Footer Bar */}
+            <div className="p-4 sm:px-6 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between shadow-xs shrink-0">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">
+                Showing matrix status for {eventAccessRegistrations.length} registered hackathon team(s)
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsSubmissionsModalOpen(false)}
+                className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold rounded-xl text-xs transition-colors cursor-pointer shadow-xs active:scale-95"
+              >
+                Close Full Page
+              </button>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 🔍 INDIVIDUAL TEAM SUBMISSION DETAIL DRAWER */}
+      {selectedTeamSubmission && createPortal(
+        <div className="fixed inset-0 z-[99999999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div
+            className="bg-white max-w-2xl w-full rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-6 animate-in zoom-in-95 duration-200 text-left relative max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 font-black text-lg flex items-center justify-center shrink-0 shadow-sm">
+                  {(selectedTeamSubmission.groupName || selectedTeamSubmission.teamLeadName || selectedTeamSubmission.name || "T").charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                    {selectedTeamSubmission.groupName || selectedTeamSubmission.teamLeadName || selectedTeamSubmission.name || "Team Submission"}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Lead: {selectedTeamSubmission.teamLeadName || selectedTeamSubmission.name} • Contact: {selectedTeamSubmission.teamLeadEmail || selectedTeamSubmission.email}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedTeamSubmission(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Problem Statement Card */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Problem Statement & Requirements</span>
+              <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs text-slate-800 font-medium whitespace-pre-wrap leading-relaxed">
+                {selectedTeamSubmission.problemStatement || "No problem statement submitted yet."}
+              </div>
+            </div>
+
+            {/* Key Features */}
+            {selectedTeamSubmission.keyFeatures && (
+              <div className="space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Key Features & Functionalities</span>
+                <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 text-xs text-indigo-950 font-medium whitespace-pre-wrap leading-relaxed">
+                  {selectedTeamSubmission.keyFeatures}
+                </div>
+              </div>
+            )}
+
+            {/* Documents & Links Section */}
+            <div className="space-y-3">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Submission Artifacts & Links</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-semibold">
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[9px] font-black text-slate-400 uppercase block">1. SRS Document</span>
+                  <span className="font-bold text-slate-900 truncate block">{selectedTeamSubmission.srsFileName || "Not Uploaded"}</span>
+                </div>
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[9px] font-black text-slate-400 uppercase block">2. Presentation Deck</span>
+                  <span className="font-bold text-slate-900 truncate block">{selectedTeamSubmission.presentationFileName || "Not Uploaded"}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-bold pt-1">
+                {selectedTeamSubmission.githubUrl ? (
+                  <a href={selectedTeamSubmission.githubUrl} target="_blank" rel="noreferrer" className="p-3 bg-slate-900 text-white rounded-xl flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
+                    <ExternalLink className="w-4 h-4" /> Code Repo
+                  </a>
+                ) : (
+                  <div className="p-3 bg-slate-100 text-slate-400 rounded-xl text-center">No Repo Link</div>
+                )}
+
+                {selectedTeamSubmission.prototypeUrl ? (
+                  <a href={selectedTeamSubmission.prototypeUrl} target="_blank" rel="noreferrer" className="p-3 bg-blue-600 text-white rounded-xl flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors">
+                    <ExternalLink className="w-4 h-4" /> Prototype Link
+                  </a>
+                ) : (
+                  <div className="p-3 bg-slate-100 text-slate-400 rounded-xl text-center">No Prototype</div>
+                )}
+
+                {selectedTeamSubmission.demoVideoUrl ? (
+                  <a href={selectedTeamSubmission.demoVideoUrl} target="_blank" rel="noreferrer" className="p-3 bg-red-600 text-white rounded-xl flex items-center justify-center gap-2 hover:bg-red-700 transition-colors">
+                    <ExternalLink className="w-4 h-4" /> Demo Video
+                  </a>
+                ) : (
+                  <div className="p-3 bg-slate-100 text-slate-400 rounded-xl text-center">No Video Link</div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedTeamSubmission(null)}
+                className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Done
               </button>
             </div>
           </div>
