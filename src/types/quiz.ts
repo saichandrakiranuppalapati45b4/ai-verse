@@ -1,0 +1,100 @@
+export interface QuizOption {
+  id: string; // e.g. "opt_a", "opt_b"
+  text: string;
+}
+
+export interface QuizQuestion {
+  id: string; // deterministic or uuid
+  questionNumber: number;
+  text: string;
+  codeSnippet?: string;
+  codeLanguage?: string;
+  imageUrl?: string;
+  options: QuizOption[];
+  correctOptionId?: string; // Hidden from client payload in strict mode or evaluated post-exam
+  points?: number;
+  explanation?: string;
+  category?: string;
+}
+
+export interface Quiz {
+  id: string;
+  title: string;
+  description: string;
+  eventId?: string;
+  eventTitle?: string;
+  track?: string;
+  durationMinutes: number;
+  totalMarks: number;
+  passingMarks?: number;
+  instructions: string[];
+  status: "draft" | "scheduled" | "active" | "completed" | "archived";
+  scheduledStartTime?: number; // timestamp in ms
+  scheduledEndTime?: number; // timestamp in ms
+  questionsCount: number;
+  shuffleQuestions?: boolean;
+  shuffleOptions?: boolean;
+  questions?: QuizQuestion[]; // embedded question set for immutable batch loading
+  createdAt: number;
+  updatedAt: number;
+  createdBy?: string;
+}
+
+export interface QuizSession {
+  id: string; // deterministic format: `${quizId}_${userId}`
+  quizId: string;
+  quizTitle: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  teamId?: string;
+  teamName?: string;
+  startTime: number; // authoritative server start timestamp
+  endTime: number; // authoritative server deadline timestamp
+  durationMinutes: number;
+  status: "in_progress" | "submitted" | "expired";
+  lastAutosavedAt: number;
+  submittedAt?: number;
+  ipAddress?: string;
+  userAgent?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface QuizDraftAnswers {
+  sessionId: string;
+  quizId: string;
+  userId: string;
+  answers: Record<string, string>; // questionId -> selectedOptionId
+  flaggedQuestions: string[]; // array of flagged question IDs
+  currentQuestionIndex: number;
+  lastAutosavedAt: number;
+  clientTimestamp: number;
+}
+
+export interface QuizSubmission {
+  id: string; // typically matches sessionId
+  sessionId: string;
+  quizId: string;
+  quizTitle: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  teamId?: string;
+  teamName?: string;
+  answers: Record<string, string>; // questionId -> selectedOptionId
+  answeredCount: number;
+  unansweredCount: number;
+  totalQuestions: number;
+  timeSpentSeconds: number;
+  startTime: number;
+  submittedAt: number;
+  isAutoSubmitted: boolean;
+  isFinal: boolean;
+  score?: number;
+  maxScore?: number;
+  percentage?: number;
+  evaluatedAt?: number;
+}
+
+export type AutosaveStatus = "saved" | "saving" | "retrying" | "offline" | "error";

@@ -11,6 +11,7 @@ import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { userService } from "../../services/userService";
 
 // Import local assets
 import aetherHero from "../../assets/images/aether_hero.png";
@@ -52,6 +53,22 @@ const AboutPage: React.FC = () => {
   useEffect(() => {
     const loadTeam = async () => {
       try {
+        // 1. Try Supabase first
+        const supaTeam = await userService.getAboutTeamMembers();
+        if (supaTeam && supaTeam.length > 0) {
+          const mapped = supaTeam.map(m => ({
+            id: m.id,
+            name: m.name || m.display_name || "Unnamed Member",
+            role: m.position || m.role || "Faculty Coordinator",
+            image: m.image || riyaImg,
+            bio: m.bio || ""
+          }));
+          setLeaders(mapped);
+          setLoadingTeam(false);
+          return;
+        }
+
+        // 2. Fallback to Firestore
         const usersSnap = await getDocs(collection(db, "users"));
         const organizersSnap = await getDocs(collection(db, "organizers"));
         

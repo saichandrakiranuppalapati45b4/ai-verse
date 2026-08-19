@@ -8,12 +8,15 @@ import {
 } from "firebase/auth";
 import { doc, setDoc, getDoc, getDocs, collection, query, where, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
+import { supabase } from "../config/supabase";
+import { userService } from "../services/userService";
 
 export const ALLOWED_EMAILS = [
   "admin@aiverse.in",
   "facultycoordinator@aiverse.in",
   "studentorganizer@aiverse.in",
   "jury@aiverse.in",
+  "jurry@aiverse.in",
   "participant@aiverse.in"
 ];
 
@@ -42,6 +45,31 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Helper function to normalize system role across the auth system
+export const normalizeRole = (
+  rawRole: any, 
+  defaultRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty"
+): "faculty" | "organizer" | "member" | "jury" | "participant" => {
+  if (!rawRole) return defaultRole;
+  const lower = String(rawRole).toLowerCase().trim();
+  if (lower === "faculty" || lower.includes("super admin") || lower.includes("faculty advisor") || lower.includes("faculty coordinator") || lower.includes("admin")) {
+    return "faculty";
+  }
+  if (lower === "organizer" || lower.includes("organizer") || lower.includes("lead organizer") || lower.includes("student organizer")) {
+    return "organizer";
+  }
+  if (lower === "jury" || lower.includes("jury")) {
+    return "jury";
+  }
+  if (lower === "participant" || lower.includes("participant")) {
+    return "participant";
+  }
+  if (lower === "member" || lower.includes("member") || lower.includes("volunteer")) {
+    return "member";
+  }
+  return defaultRole;
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -115,7 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           forcedRole = "organizer";
           forcedDisplayRole = "Student Organizer";
           defaultName = "Student Organizer";
-        } else if (userEmail === "jury@aiverse.in") {
+        } else if (userEmail === "jury@aiverse.in" || userEmail === "jurry@aiverse.in") {
           forcedRole = "jury";
           forcedDisplayRole = "Jury Evaluator";
           defaultName = "Jury Panelist";
@@ -129,28 +157,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           forcedDisplayRole = "Participant";
           defaultName = userEmail.split("@")[0];
         }
-
-        // Helper function to normalize system role
-        const normalizeRole = (rawRole: any, defaultRole: "faculty" | "organizer" | "member" | "jury" | "participant"): "faculty" | "organizer" | "member" | "jury" | "participant" => {
-          if (!rawRole) return defaultRole;
-          const lower = String(rawRole).toLowerCase().trim();
-          if (lower === "faculty" || lower.includes("super admin") || lower.includes("faculty advisor") || lower.includes("faculty coordinator") || lower.includes("admin")) {
-            return "faculty";
-          }
-          if (lower === "organizer" || lower.includes("organizer") || lower.includes("lead organizer") || lower.includes("student organizer")) {
-            return "organizer";
-          }
-          if (lower === "jury" || lower.includes("jury")) {
-            return "jury";
-          }
-          if (lower === "participant" || lower.includes("participant")) {
-            return "participant";
-          }
-          if (lower === "member" || lower.includes("member")) {
-            return "member";
-          }
-          return defaultRole;
-        };
 
         const fallbackProfile: UserProfile = {
           uid: firebaseUser.uid,
@@ -248,7 +254,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role = "organizer";
           displayRole = "Student Organizer";
           name = "Student Organizer";
-        } else if (cleanEmail === "jury@aiverse.in") {
+        } else if (cleanEmail === "jury@aiverse.in" || cleanEmail === "jurry@aiverse.in") {
           role = "jury";
           displayRole = "Jury Evaluator";
           name = "Jury Panelist";
@@ -272,7 +278,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // 1. Try real Firebase Auth sign in
+      // 1. Try Supabase Auth sign in
+      try {
+        const { data: supaAuthData, error: supaAuthError } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: roleOrPassword
+        });
+        if (!supaAuthError && supaAuthData.user) {
+          const supaUserRecord = await userService.getUserByEmail(cleanEmail);
+          const rawRole = supaUserRecord?.role || "faculty";
+          const role = normalizeRole(rawRole, "faculty");
+          const customUser: UserProfile = {
+            uid: supaAuthData.user.id,
+            email: cleanEmail,
+            name: supaUserRecord?.name || supaUserRecord?.display_name || cleanEmail.split("@")[0],
+            role,
+            displayRole: supaUserRecord?.position || (role === "faculty" ? "Super Admin" : role),
+            requiresPasswordChange: false,
+            teamName: supaUserRecord?.team_name || undefined,
+            eventTitle: supaUserRecord?.event_title || undefined,
+            registrationId: supaUserRecord?.registration_id || undefined
+          };
+          setUser(customUser);
+          localStorage.setItem("aether_mock_user", JSON.stringify(customUser));
+          setLoading(false);
+          return;
+        }
+      } catch (supaErr) {
+        console.log("[AuthContext] Supabase Auth sign-in notice:", supaErr);
+      }
+
+      // 2. Try Supabase users table lookup
+      try {
+        const supaUserRecord = await userService.getUserByEmail(cleanEmail);
+        if (supaUserRecord) {
+          const rawRole = supaUserRecord.role || "faculty";
+          const role = normalizeRole(rawRole, "faculty");
+          const customUser: UserProfile = {
+            uid: supaUserRecord.id,
+            email: cleanEmail,
+            name: supaUserRecord.name || supaUserRecord.display_name || cleanEmail.split("@")[0],
+            role,
+            displayRole: supaUserRecord.position || (role === "faculty" ? "Super Admin" : role),
+            requiresPasswordChange: false,
+            teamName: supaUserRecord.team_name || undefined,
+            eventTitle: supaUserRecord.event_title || undefined,
+            registrationId: supaUserRecord.registration_id || undefined
+          };
+          setUser(customUser);
+          localStorage.setItem("aether_mock_user", JSON.stringify(customUser));
+          setLoading(false);
+          return;
+        }
+      } catch (supaProfileErr) {
+        console.log("[AuthContext] Supabase profile lookup notice:", supaProfileErr);
+      }
+
+      // 3. Try Firebase Auth sign in
       try {
         await signInWithEmailAndPassword(auth, email, roleOrPassword);
         localStorage.removeItem("aether_mock_user");
@@ -282,7 +344,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log("[AuthContext] Firebase Auth sign-in unverified, querying Firestore users collection...");
       }
 
-      // 2. Query Firestore `users` collection for participant credentials (e.g. alphaa_aiverse_in)
+      // 4. Query Firestore `users` collection for participant credentials (e.g. alphaa_aiverse_in)
       const docId = cleanEmail.replace(/[^a-z0-9]/g, '_');
       const userDocRef = doc(db, "users", docId);
       const userSnap = await getDoc(userDocRef);
@@ -350,6 +412,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
+      // 1. Supabase Auth
+      try {
+        await supabase.auth.signUp({
+          email: cleanEmail,
+          password: passwordOrRole,
+          options: {
+            data: { name, role }
+          }
+        });
+        await userService.addUser({
+          name,
+          email: cleanEmail,
+          role,
+          status: "Active"
+        });
+      } catch (e) {
+        console.warn("Supabase register notice:", e);
+      }
+
+      // 2. Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(auth, email, passwordOrRole);
       const userDocRef = doc(db, "users", userCredential.user.uid);
       const profile = {
@@ -370,7 +452,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     setLoading(true);
     try {
-      await signOut(auth);
+      await supabase.auth.signOut().catch(() => {});
+      await signOut(auth).catch(() => {});
       setUser(null);
       localStorage.removeItem("aether_mock_user");
     } catch (error) {

@@ -382,7 +382,7 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
 
       {/* Page Title & Description */}
       <div>
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+        <h1 className="text-3xl font-extrabold text-[#0F172A] tracking-tight">
           Review Your Team
         </h1>
         <p className="text-sm text-slate-500 font-medium mt-1.5">
@@ -391,18 +391,20 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
       </div>
 
       {/* Team Overview Card */}
-      <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-extrabold text-slate-900">{teamData.teamName || "Unnamed Team"}</h2>
-            <span className="bg-blue-50 text-blue-600 border border-blue-200/60 font-bold text-xs px-3 py-1 rounded-full">
+            <h2 className="text-2xl font-extrabold text-[#0F172A]">{teamData.teamName || "Unnamed Team"}</h2>
+            <span className="bg-blue-50 text-blue-700 border border-blue-200/80 font-bold text-xs px-3.5 py-1 rounded-full">
               {teamData.status}
             </span>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-            <ShieldCheck className="w-4 h-4 text-slate-400" />
-            <span>ID: {teamData.teamId || "N/A"}</span>
+            <ShieldCheck className="w-4 h-4 text-blue-600" />
+            <span className="bg-[#0F172A] text-blue-300 font-mono text-[11px] px-2 py-0.5 rounded font-bold border border-slate-800">
+              ID: {teamData.teamId || "N/A"}
+            </span>
             <span className="text-slate-300">•</span>
             <Building2 className="w-4 h-4 text-slate-400" />
             <span>{teamData.institution || "Not Specified"}</span>
@@ -414,11 +416,11 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
               PROJECT TRACK
             </span>
-            <span className="text-sm font-bold text-slate-900 mt-0.5 block">
+            <span className="text-sm font-bold text-[#0F172A] mt-0.5 block">
               {teamData.projectTrack || "General Track"}
             </span>
           </div>
-          <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+          <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0 border border-blue-100">
             <Cpu className="w-6 h-6 text-blue-600" />
           </div>
         </div>
@@ -430,14 +432,14 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
           
           {/* Left Header */}
           <div className="md:col-span-1">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <span className="text-xs font-bold text-[#0F172A] uppercase tracking-wider">
               TEAM LEADER
             </span>
           </div>
 
           {/* Right Header */}
           <div className="md:col-span-2">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <span className="text-xs font-bold text-[#0F172A] uppercase tracking-wider">
               TEAM MEMBERS ({teamData.members.length})
             </span>
           </div>
@@ -447,19 +449,19 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           
           {/* Leader Card */}
-          <div className="bg-white border-2 border-blue-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between items-center text-center relative h-[360px]">
+          <div className="bg-white border-2 border-blue-500/30 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between items-center text-center relative h-[360px]">
             
-            <span className="bg-blue-600 text-white font-bold text-[10px] px-3 py-1 rounded-full flex items-center gap-1 absolute top-4 right-4 shadow-sm">
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-[10px] px-3.5 py-1 rounded-full flex items-center gap-1 absolute top-4 right-4 shadow-sm shadow-blue-500/25">
               <Star className="w-3 h-3 fill-current text-amber-300" /> Leader
             </span>
 
             <div className="mt-2 flex flex-col items-center">
               {/* Styled Initials Avatar */}
-              <div className="w-24 h-24 rounded-full border-4 border-blue-100 bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-black text-2xl shadow-sm mx-auto">
+              <div className="w-24 h-24 rounded-full border-4 border-blue-100 bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center font-black text-2xl shadow-sm mx-auto ring-2 ring-blue-500/20">
                 <span>{getInitials(teamData.leader.name)}</span>
               </div>
               
-              <h3 className="text-lg font-extrabold text-slate-900 mt-3 leading-snug">
+              <h3 className="text-lg font-extrabold text-[#0F172A] mt-3 leading-snug">
                 {teamData.leader.name || "Leader"}
               </h3>
               <p className="text-xs font-bold text-blue-600 mt-0.5">
@@ -467,14 +469,14 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
               </p>
             </div>
 
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3 w-full text-left space-y-1.5 text-xs text-slate-600">
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 w-full text-left space-y-1.5 text-xs text-slate-600">
               <div className="flex items-center gap-2 truncate">
                 <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="truncate">{teamData.leader.email || "No Email"}</span>
+                <span className="truncate font-medium">{teamData.leader.email || "No Email"}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>{teamData.leader.phone || "No Phone"}</span>
+                <span className="font-medium">{teamData.leader.phone || "No Phone"}</span>
               </div>
             </div>
 
@@ -483,31 +485,31 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
           {/* Real Team Members Cards */}
           {teamData.members.length > 0 ? (
             teamData.members.map((member, idx) => (
-              <div key={idx} className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm flex flex-col justify-between h-[360px]">
+              <div key={idx} className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between h-[360px]">
                 <div className="flex items-start gap-4">
                   {/* Member Initials Avatar */}
-                  <div className="w-14 h-14 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-sm border border-slate-200/80 shrink-0 shadow-xs">
+                  <div className="w-14 h-14 rounded-full bg-slate-100 text-[#0F172A] font-bold flex items-center justify-center text-sm border border-slate-200 shrink-0 shadow-xs">
                     <span>{getInitials(member.name)}</span>
                   </div>
 
                   <div>
-                    <h3 className="text-base font-extrabold text-slate-900">{member.name || `Member ${idx + 1}`}</h3>
+                    <h3 className="text-base font-extrabold text-[#0F172A]">{member.name || `Member ${idx + 1}`}</h3>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">{member.role || "Developer"}</p>
                   </div>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3.5 w-full text-left space-y-2 text-xs text-slate-600">
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 w-full text-left space-y-2 text-xs text-slate-600">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Roll No</span>
-                    <span className="font-bold text-slate-800">{member.rollNo || "N/A"}</span>
+                    <span className="font-bold text-[#0F172A]">{member.rollNo || "N/A"}</span>
                   </div>
-                  <div className="flex items-center gap-2 truncate pt-1 border-t border-slate-200/50">
+                  <div className="flex items-center gap-2 truncate pt-1 border-t border-slate-200/60">
                     <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{member.email || "N/A"}</span>
+                    <span className="truncate font-medium">{member.email || "N/A"}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>{member.phone || "N/A"}</span>
+                    <span className="font-medium">{member.phone || "N/A"}</span>
                   </div>
                 </div>
               </div>
@@ -518,14 +520,14 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
                 <Users className="w-6 h-6 text-blue-600" />
               </div>
               <div>
-                <h4 className="text-sm font-extrabold text-slate-900">No Additional Teammates Added</h4>
+                <h4 className="text-sm font-extrabold text-[#0F172A]">No Additional Teammates Added</h4>
                 <p className="text-xs text-slate-500 font-medium mt-1 max-w-sm mx-auto">
                   You are registered as a solo participant or haven't listed teammates yet. Click below to add your team members.
                 </p>
               </div>
               <button
                 onClick={handleOpenEditModal}
-                className="text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 mt-2 cursor-pointer"
+                className="text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 mt-2 cursor-pointer border border-blue-200/60"
               >
                 <Plus className="w-4 h-4" /> Add Team Members
               </button>
@@ -539,7 +541,7 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
       <div className="pt-4 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         
         <div className="flex items-center gap-3 text-xs text-slate-500 font-medium max-w-xl">
-          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
             <Info className="w-4 h-4 text-blue-600" />
           </div>
           <span>
@@ -550,7 +552,7 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
         <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
           <button
             onClick={handleOpenEditModal}
-            className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs px-5 py-3 rounded-2xl transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs px-5 py-3 rounded-2xl transition-all flex items-center gap-2 cursor-pointer shadow-xs"
           >
             <Edit3 className="w-4 h-4 text-slate-500" />
             <span>Edit Team Details</span>
@@ -564,7 +566,7 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
                 navigate("/participant/dashboard");
               }
             }}
-            className="bg-[#2563EB] hover:bg-blue-700 text-white font-bold text-xs px-6 py-3 rounded-2xl shadow-sm shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer"
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs px-6 py-3 rounded-2xl shadow-md shadow-blue-500/25 transition-all flex items-center gap-2 cursor-pointer"
           >
             <span>Confirm & Continue</span>
             <ArrowRight className="w-4 h-4" />
@@ -811,21 +813,20 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
         description="Verify your real team details before project submission."
       />
 
-      {/* Standalone Left Sidebar */}
-      <aside className="w-64 border-r border-slate-200/80 bg-white flex flex-col justify-between shrink-0 p-6 z-20">
+      {/* Standalone Left Sidebar - Dark Navy Theme */}
+      <aside className="w-64 border-r border-[#1E293B] bg-gradient-to-b from-[#0A1128] via-[#0F172A] to-[#0A0F1D] flex flex-col justify-between shrink-0 p-6 z-20 shadow-2xl">
         <div className="space-y-8">
-          <Link to="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#2563EB] text-white flex items-center justify-center font-black shadow-md shadow-blue-500/20">
-              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+          <Link to="/" className="flex items-center gap-3 group">
+            <div className="relative">
+              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-9 h-9 rounded-xl object-contain shadow-md shadow-blue-500/30 ring-1 ring-blue-400/20" />
+              <div className="absolute -inset-0.5 bg-blue-500/20 rounded-xl blur-xs -z-10 group-hover:bg-blue-500/40 transition-all" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-slate-900 tracking-tight font-sans block leading-none">
+              <span className="text-lg font-extrabold text-white tracking-tight font-sans block leading-none">
                 AI Verse
               </span>
-              <span className="text-[10px] text-slate-400 font-semibold tracking-wider block mt-1">
-                Hackathon Portal
+              <span className="text-[10px] text-blue-400 font-semibold tracking-wider block mt-1">
+                Participant Portal
               </span>
             </div>
           </Link>
@@ -833,7 +834,7 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
           <nav className="space-y-1.5">
             <button
               onClick={() => navigate("/participant/dashboard")}
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all text-left"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer"
             >
               <LayoutDashboard className="w-5 h-5 text-slate-400" />
               Dashboard
@@ -841,22 +842,22 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
 
             <button
               onClick={() => navigate("/participant/set-password")}
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all text-left"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer"
             >
               <Key className="w-5 h-5 text-slate-400" />
               Set Password
             </button>
 
             <button
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-bold bg-[#EFF6FF] text-[#2563EB] shadow-sm text-left"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400/30 text-left cursor-pointer"
             >
-              <Users className="w-5 h-5 text-[#2563EB]" />
+              <Users className="w-5 h-5 text-white" />
               Review Team
             </button>
 
             <button
               onClick={() => navigate("/participant/dashboard")}
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all text-left"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer"
             >
               <Upload className="w-5 h-5 text-slate-400" />
               Project Submission
@@ -864,7 +865,7 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
 
             <button
               onClick={() => navigate("/participant/dashboard")}
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all text-left"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer"
             >
               <BarChart2 className="w-5 h-5 text-slate-400" />
               Submission Status
@@ -872,30 +873,30 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
           </nav>
         </div>
 
-        <div className="pt-6 border-t border-slate-100">
+        <div className="pt-6 border-t border-slate-800/80">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-500 hover:text-red-600 font-semibold text-sm transition-colors text-left"
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-400 hover:text-red-400 font-semibold text-sm transition-colors text-left cursor-pointer rounded-xl hover:bg-red-500/10"
           >
-            <LogOut className="w-5 h-5 text-slate-400 hover:text-red-500" />
+            <LogOut className="w-5 h-5 text-slate-400 hover:text-red-400" />
             Logout
           </button>
         </div>
       </aside>
 
-      <div className="flex-1 min-w-0 flex flex-col bg-[#F8FAFC]">
-        <header className="h-16 px-8 border-b border-slate-200/60 bg-white flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-2.5 text-slate-700 font-bold text-xs">
-            <Users className="w-4 h-4 text-slate-400" />
+      <div className="flex-1 min-w-0 flex flex-col bg-[#F4F7FC]">
+        <header className="h-16 px-8 border-b border-slate-200/60 bg-white flex items-center justify-between sticky top-0 z-10 shadow-xs">
+          <div className="flex items-center gap-2.5 text-[#0F172A] font-bold text-xs">
+            <Users className="w-4 h-4 text-blue-600" />
             <span>{loading ? "Loading Team..." : (teamData.teamName || "Unnamed Team")}</span>
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="p-2 text-slate-400 hover:text-slate-700 rounded-xl relative transition-colors">
+            <button className="p-2 text-slate-400 hover:text-slate-700 rounded-xl relative transition-colors cursor-pointer">
               <Bell className="w-5 h-5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
             </button>
-            <div className="w-9 h-9 rounded-full bg-[#2563EB] text-white font-bold flex items-center justify-center text-xs border border-slate-200 shadow-sm">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-sm ring-2 ring-white">
               <span>{getInitials(teamData.leader.name)}</span>
             </div>
           </div>

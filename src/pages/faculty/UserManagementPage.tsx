@@ -31,6 +31,7 @@ import Papa from "papaparse";
 import { db, app } from "../../config/firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { collection, addDoc, doc, getDoc, getDocs, setDoc, deleteDoc } from "firebase/firestore";
+import { userService } from "../../services/userService";
 import Button from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
 import TeamGraphModal from "../../components/dashboard/TeamGraphModal";
@@ -85,6 +86,29 @@ const UserManagementPage: React.FC = () => {
 
     const fetchUsers = async () => {
       try {
+        // Fetch from Supabase
+        const supabaseUsers = await userService.getUsers();
+        if (supabaseUsers && supabaseUsers.length > 0) {
+          const list: UserItem[] = supabaseUsers
+            .filter((u) => !SYSTEM_ACCOUNTS.includes((u.email || "").toLowerCase().trim()))
+            .map((u) => ({
+              id: u.id,
+              name: u.name || u.display_name || "Unnamed User",
+              email: u.email || "",
+              phone: u.phone || "",
+              role: (u.role || "Guest") as any,
+              status: (u.status || "Active") as any,
+              image: u.image || "",
+              showInAbout: u.show_in_about ? "Yes" : "No",
+              bio: u.bio || "",
+              linkedin: u.linkedin || "",
+              github: u.github || ""
+            }));
+          setUsers(list);
+          return;
+        }
+
+        // Fallback to Firestore if no Supabase records returned
         const querySnapshot = await getDocs(collection(db, "users"));
         const list: UserItem[] = [];
         querySnapshot.forEach((docSnap) => {
@@ -239,6 +263,26 @@ const UserManagementPage: React.FC = () => {
       }
 
       try {
+        let createdId = "";
+        try {
+          const supabaseRecord = await userService.addUser({
+            name,
+            display_name: name,
+            email,
+            phone,
+            role: cleanedRole,
+            position,
+            bio,
+            linkedin,
+            github,
+            image: "",
+            status: "Active"
+          });
+          createdId = supabaseRecord.id;
+        } catch (supaErr) {
+          console.warn("Supabase bulk insert fallback to Firestore:", supaErr);
+        }
+
         const payload = {
           name,
           displayName: name,
@@ -256,10 +300,16 @@ const UserManagementPage: React.FC = () => {
           createdAt: Date.now()
         };
 
-        const docRef = await addDoc(collection(db, "users"), payload);
+        if (!createdId) {
+          const docRef = await addDoc(collection(db, "users"), payload);
+          createdId = docRef.id;
+        } else {
+          // Keep Firestore in sync
+          setDoc(doc(db, "users", createdId), payload, { merge: true }).catch(() => {});
+        }
 
         const newUser: UserItem = {
-          id: docRef.id,
+          id: createdId,
           name: name,
           email: email,
           phone: phone,
@@ -413,21 +463,29 @@ const UserManagementPage: React.FC = () => {
   const handleToggleShowInAbout = async (userId: string, value: string) => {
     const isShow = value === "Yes";
     try {
-      const docRef = doc(db, "users", userId);
-      await setDoc(docRef, { showInAbout: isShow, showInAboutPage: isShow }, { merge: true });
+      // 1. Update in Supabase
+      try {
+        await userService.updateUser(userId, { show_in_about: isShow });
+      } catch (e) {
+        console.warn("Supabase update show_in_about error:", e);
+      }
 
-      const targetUser = users.find(u => u.id === userId);
-      if (targetUser && targetUser.email) {
-        try {
+      // 2. Update in Firestore
+      try {
+        const docRef = doc(db, "users", userId);
+        await setDoc(docRef, { showInAbout: isShow, showInAboutPage: isShow }, { merge: true });
+
+        const targetUser = users.find(u => u.id === userId);
+        if (targetUser && targetUser.email) {
           const orgSnap = await getDocs(collection(db, "organizers"));
           orgSnap.forEach(async (d) => {
             if ((d.data().email || "").toLowerCase().trim() === targetUser.email.toLowerCase().trim()) {
               await setDoc(doc(db, "organizers", d.id), { showInAbout: isShow, showInAboutPage: isShow }, { merge: true });
             }
           });
-        } catch (orgErr) {
-          console.error("Error syncing to organizers collection:", orgErr);
         }
+      } catch (fsErr) {
+        console.warn("Firestore showInAbout sync error:", fsErr);
       }
 
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, showInAbout: isShow ? "Yes" : "No" } : u));
@@ -457,9 +515,31 @@ const UserManagementPage: React.FC = () => {
       return;
     }
 
-
     setAddingToTeam(true);
     try {
+      let createdUserId = "";
+
+      // 1. Add in Supabase
+      try {
+        const supaUser = await userService.addUser({
+          name: formName,
+          display_name: formName,
+          email: formEmail,
+          role: formRoleType,
+          position: formPosition,
+          bio: formBio,
+          linkedin: formLinkedin,
+          github: formGithub,
+          image: formPhotoPreview || "",
+          show_in_about: formShowInAbout === "Yes",
+          status: "Active"
+        });
+        createdUserId = supaUser.id;
+      } catch (supaErr) {
+        console.warn("Supabase insert notice, attempting Firestore fallback:", supaErr);
+      }
+
+      // 2. Mirror to Firestore for cross-compatibility
       const payload = {
         name: formName,
         displayName: formName,
@@ -477,17 +557,25 @@ const UserManagementPage: React.FC = () => {
         createdAt: Date.now()
       };
 
-      const userDocRef = await addDoc(collection(db, "users"), payload);
+      if (!createdUserId) {
+        const userDocRef = await addDoc(collection(db, "users"), payload);
+        createdUserId = userDocRef.id;
+      } else {
+        setDoc(doc(db, "users", createdUserId), payload, { merge: true }).catch(() => {});
+      }
 
       alert("Member successfully added to team!");
       
       const newUser: UserItem = {
-        id: userDocRef.id,
+        id: createdUserId,
         name: formName,
         email: formEmail,
         role: formRoleType as any,
         image: formPhotoPreview || "",
         showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
+        bio: formBio,
+        linkedin: formLinkedin,
+        github: formGithub,
         status: "Active"
       };
       setUsers(prev => [newUser, ...prev]);
@@ -517,18 +605,38 @@ const UserManagementPage: React.FC = () => {
     e.preventDefault();
     if (!inviteName || !inviteEmail) return;
 
-    const newUserDoc = {
-      name: inviteName,
-      email: inviteEmail,
-      role: inviteRole,
-      status: "Active",
-      showInAbout: "No"
-    };
-
     try {
-      const docRef = await addDoc(collection(db, "users"), newUserDoc);
+      let createdId = "";
+      try {
+        const supaUser = await userService.addUser({
+          name: inviteName,
+          email: inviteEmail,
+          role: inviteRole,
+          status: "Active",
+          show_in_about: false
+        });
+        createdId = supaUser.id;
+      } catch (e) {
+        console.warn("Supabase add user error:", e);
+      }
+
+      const newUserDoc = {
+        name: inviteName,
+        email: inviteEmail,
+        role: inviteRole,
+        status: "Active",
+        showInAbout: "No"
+      };
+
+      if (!createdId) {
+        const docRef = await addDoc(collection(db, "users"), newUserDoc);
+        createdId = docRef.id;
+      } else {
+        setDoc(doc(db, "users", createdId), newUserDoc, { merge: true }).catch(() => {});
+      }
+
       const newUser: UserItem = {
-        id: docRef.id,
+        id: createdId,
         name: inviteName,
         email: inviteEmail,
         role: inviteRole,
@@ -550,19 +658,41 @@ const UserManagementPage: React.FC = () => {
     if (!editingUserId || !formName || !formEmail) return;
 
     try {
-      const docRef = doc(db, "users", editingUserId);
-      await setDoc(docRef, {
-        name: formName,
-        displayName: formName,
-        email: formEmail,
-        role: formRoleType,
-        image: formPhotoPreview || "",
-        showInAbout: formShowInAbout === "Yes",
-        showInAboutPage: formShowInAbout === "Yes",
-        bio: formBio,
-        linkedin: formLinkedin,
-        github: formGithub
-      }, { merge: true });
+      // 1. Update in Supabase
+      try {
+        await userService.updateUser(editingUserId, {
+          name: formName,
+          display_name: formName,
+          email: formEmail,
+          role: formRoleType,
+          image: formPhotoPreview || "",
+          show_in_about: formShowInAbout === "Yes",
+          bio: formBio,
+          linkedin: formLinkedin,
+          github: formGithub
+        });
+      } catch (supaErr) {
+        console.warn("Supabase update user error:", supaErr);
+      }
+
+      // 2. Mirror to Firestore
+      try {
+        const docRef = doc(db, "users", editingUserId);
+        await setDoc(docRef, {
+          name: formName,
+          displayName: formName,
+          email: formEmail,
+          role: formRoleType,
+          image: formPhotoPreview || "",
+          showInAbout: formShowInAbout === "Yes",
+          showInAboutPage: formShowInAbout === "Yes",
+          bio: formBio,
+          linkedin: formLinkedin,
+          github: formGithub
+        }, { merge: true });
+      } catch (fsErr) {
+        console.warn("Firestore update user notice:", fsErr);
+      }
 
       setUsers(users.map(u => u.id === editingUserId ? {
         ...u,
@@ -591,8 +721,21 @@ const UserManagementPage: React.FC = () => {
 
   const handleStatusChange = async (id: string, newStatus: UserItem["status"]) => {
     try {
-      const docRef = doc(db, "users", id);
-      await setDoc(docRef, { status: newStatus }, { merge: true });
+      // 1. Supabase
+      try {
+        await userService.updateUser(id, { status: newStatus });
+      } catch (supaErr) {
+        console.warn("Supabase update status notice:", supaErr);
+      }
+
+      // 2. Firestore
+      try {
+        const docRef = doc(db, "users", id);
+        await setDoc(docRef, { status: newStatus }, { merge: true });
+      } catch (fsErr) {
+        console.warn("Firestore update status notice:", fsErr);
+      }
+
       setUsers(users.map(u => u.id === id ? { ...u, status: newStatus } : u));
     } catch (err) {
       console.error("Error updating user status:", err);
@@ -612,8 +755,21 @@ const UserManagementPage: React.FC = () => {
     if (!id || !newRole) return;
 
     try {
-      const docRef = doc(db, "users", id);
-      await setDoc(docRef, { role: newRole }, { merge: true });
+      // 1. Supabase
+      try {
+        await userService.updateUser(id, { role: newRole });
+      } catch (supaErr) {
+        console.warn("Supabase update role notice:", supaErr);
+      }
+
+      // 2. Firestore
+      try {
+        const docRef = doc(db, "users", id);
+        await setDoc(docRef, { role: newRole }, { merge: true });
+      } catch (fsErr) {
+        console.warn("Firestore update role notice:", fsErr);
+      }
+
       setUsers(users.map(u => u.id === id ? { ...u, role: newRole as any } : u));
     } catch (err) {
       console.error("Error updating user role:", err);
@@ -626,16 +782,27 @@ const UserManagementPage: React.FC = () => {
     if (!window.confirm("Are you sure you want to permanently delete this user? This action cannot be undone.")) return;
     
     try {
-      // 1. Delete user record directly from Firestore
-      await deleteDoc(doc(db, "users", id));
+      // 1. Delete user record directly from Supabase
+      try {
+        await userService.deleteUser(id);
+      } catch (supaErr) {
+        console.warn("Supabase delete user notice:", supaErr);
+      }
 
-      // 2. Try deleting Firebase Auth account if exists
+      // 2. Delete user record from Firestore
+      try {
+        await deleteDoc(doc(db, "users", id));
+      } catch (fsErr) {
+        console.warn("Firestore delete user notice:", fsErr);
+      }
+
+      // 3. Try deleting Firebase Auth account if exists
       try {
         const functions = getFunctions(app);
         const deleteUserAccount = httpsCallable(functions, "deleteUserAccount");
         await deleteUserAccount({ uid: id });
       } catch (authErr) {
-        console.warn("Firebase Auth account deletion notice (user may not have auth record):", authErr);
+        console.warn("Auth account deletion notice (user may not have auth record):", authErr);
       }
       
       setUsers(prev => prev.filter(u => u.id !== id));

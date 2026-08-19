@@ -60,6 +60,87 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
   const [isPsSaved, setIsPsSaved] = useState<boolean>(false);
   const [savingPs, setSavingPs] = useState<boolean>(false);
   const [isPsLocked, setIsPsLocked] = useState<boolean>(false);
+  // Event Step Locks State
+  const [eventLockedSteps, setEventLockedSteps] = useState<Record<number, boolean>>({});
+  const [currentEventId, setCurrentEventId] = useState<string>("");
+
+  const isStepLocked = (stepId: number): boolean => {
+    if (stepId === 1 && (isPsLocked || eventLockedSteps[1])) return true;
+    return !!eventLockedSteps[stepId];
+  };
+
+  const saveStepDataToFirestore = async (additionalFields: Record<string, any> = {}) => {
+    if (!targetRegId) return;
+    try {
+      const regRef = doc(db, "registrations", targetRegId);
+      const selectedPsObj = availableProblemStatements.find(p => p.id === selectedPsId || p.code === selectedPsId) || null;
+      await updateDoc(regRef, {
+        problemStatement,
+        keyFeatures,
+        githubUrl,
+        prototypeUrl,
+        demoVideoUrl,
+        srsFileName,
+        presentationFileName,
+        selectedProblemStatementId: selectedPsId,
+        selectedProblemStatement: selectedPsObj,
+        updatedAt: Date.now(),
+        ...additionalFields
+      });
+    } catch (err) {
+      console.error("Error saving step data to Firestore:", err);
+    }
+  };
+
+  // Real-time listener for current team's registration
+  useEffect(() => {
+    if (!targetRegId) return;
+
+    const unsubReg = onSnapshot(doc(db, "registrations", targetRegId), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.problemStatement) setProblemStatement(data.problemStatement);
+        if (data.keyFeatures) setKeyFeatures(data.keyFeatures);
+        if (data.githubUrl || data.githubLink) setGithubUrl(data.githubUrl || data.githubLink);
+        if (data.prototypeUrl || data.figmaUrl) setPrototypeUrl(data.prototypeUrl || data.figmaUrl);
+        if (data.demoVideoUrl || data.videoLink) setDemoVideoUrl(data.demoVideoUrl || data.videoLink);
+        if (data.srsFileName) setSrsFileName(data.srsFileName);
+        if (data.presentationFileName) setPresentationFileName(data.presentationFileName);
+        if (data.selectedProblemStatementId) setSelectedPsId(data.selectedProblemStatementId);
+        if (data.isPsSaved) setIsPsSaved(true);
+        if (data.isPsLocked || data.problemStatementLocked) {
+          setIsPsLocked(true);
+          setIsPsSaved(true);
+        }
+        if (data.eventId && data.eventId !== currentEventId) {
+          setCurrentEventId(data.eventId);
+        }
+      }
+    });
+
+    return () => unsubReg();
+  }, [targetRegId]);
+
+  // Real-time listener for event locked steps
+  useEffect(() => {
+    if (!currentEventId) return;
+
+    const unsubEv = onSnapshot(doc(db, "events", currentEventId), (evSnap) => {
+      if (evSnap.exists()) {
+        const evData = evSnap.data();
+        if (evData.lockedSteps) {
+          setEventLockedSteps(evData.lockedSteps);
+        } else {
+          setEventLockedSteps({});
+        }
+        if (evData.problemStatements && evData.problemStatements.length > 0) {
+          setAvailableProblemStatements(evData.problemStatements);
+        }
+      }
+    });
+
+    return () => unsubEv();
+  }, [currentEventId]);
 
   // Real-time listener for registrations to track problem statements claimed by other teams
   useEffect(() => {
@@ -440,20 +521,38 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
   };
 
   // SRS File Drop / Choose
-  const handleSrsFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSrsFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isStepLocked(2)) {
+      setStatusNotice({ type: "error", message: "Step 2 (SRS Submission) is locked by event administrators." });
+      setTimeout(() => setStatusNotice(null), 4000);
+      return;
+    }
     if (e.target.files && e.target.files[0]) {
-      setSrsFileName(e.target.files[0].name);
+      const fileName = e.target.files[0].name;
+      setSrsFileName(fileName);
+      await saveStepDataToFirestore({ srsFileName: fileName, srsFileUrl: `uploaded://${fileName}` });
+      setStatusNotice({ type: "success", message: `SRS Document "${fileName}" saved to database!` });
+      setTimeout(() => setStatusNotice(null), 3500);
     }
   };
 
   // Presentation File Drop / Choose
-  const handlePresentationFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePresentationFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isStepLocked(3)) {
+      setStatusNotice({ type: "error", message: "Step 3 (PPT Submission) is locked by event administrators." });
+      setTimeout(() => setStatusNotice(null), 4000);
+      return;
+    }
     if (e.target.files && e.target.files[0]) {
-      setPresentationFileName(e.target.files[0].name);
+      const fileName = e.target.files[0].name;
+      setPresentationFileName(fileName);
+      await saveStepDataToFirestore({ presentationFileName: fileName, presentationUrl: `uploaded://${fileName}` });
+      setStatusNotice({ type: "success", message: `PPT Presentation "${fileName}" saved to database!` });
+      setTimeout(() => setStatusNotice(null), 3500);
     }
   };
 
-  // 4 Main Steps Definition
+  // 6 Main Steps Definition
   const STEPS = [
     { 
       id: 1, 
@@ -464,24 +563,45 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
     },
     { 
       id: 2, 
-      name: "SRS & PPT Submission", 
-      label: "2. SRS & PPT Submission", 
+      name: "SRS", 
+      label: "2. SRS Submission", 
       icon: FileUp, 
-      desc: "Upload SRS document and presentation deck" 
+      desc: "Upload SRS document" 
     },
     { 
       id: 3, 
-      name: "Repo & Feature", 
-      label: "3. Repo & Feature", 
-      icon: Code, 
-      desc: "Code repository link and key features" 
+      name: "PPT", 
+      label: "3. PPT Submission", 
+      icon: Video, 
+      desc: "Upload presentation deck" 
     },
     { 
       id: 4, 
-      name: "Prototype Link & Video", 
-      label: "4. Prototype Link & Video Submission", 
-      icon: Video, 
+      name: "Features", 
+      label: "4. Key Features", 
+      icon: Code, 
+      desc: "Describe key features" 
+    },
+    { 
+      id: 5, 
+      name: "Repo", 
+      label: "5. Code Repository", 
+      icon: Globe, 
+      desc: "Code repository link" 
+    },
+    { 
+      id: 6, 
+      name: "Prototype & Video", 
+      label: "6. Prototype Link & Video Submission", 
+      icon: PlayCircle, 
       desc: "Live prototype and video demo link" 
+    },
+    {
+      id: 7,
+      name: "Overview",
+      label: "7. Submission Overview",
+      icon: ShieldCheck,
+      desc: "Review and submit your project"
     }
   ];
 
@@ -491,11 +611,11 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <img src="/ai_verse.png" alt="AI Verse Logo" className="w-12 h-12 rounded-2xl object-contain shadow-md shadow-blue-500/20 shrink-0" />
+          <img src="/ai_verse.png" alt="AI Verse Logo" className="w-12 h-12 rounded-2xl object-contain shadow-md shadow-blue-500/25 shrink-0 ring-1 ring-blue-500/20" />
           <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Project Submission</h1>
+            <h1 className="text-3xl font-black text-[#0F172A] tracking-tight">Project Submission</h1>
             <p className="text-sm font-medium text-slate-500 mt-0.5">
-              Complete the 4 steps below to submit your hackathon project to AI Verse.
+              Complete the 7 steps below to submit your hackathon project to AI Verse.
             </p>
           </div>
         </div>
@@ -506,7 +626,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
             type="button"
             onClick={handleSaveDraft}
             disabled={saving}
-            className="bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl border border-slate-300 transition-all cursor-pointer flex items-center gap-2 shadow-xs"
+            className="bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 transition-all cursor-pointer flex items-center gap-2 shadow-xs"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin text-slate-500" /> : null}
             <span>Save Draft</span>
@@ -526,9 +646,9 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
         </div>
       )}
 
-      {/* 🚀 4-STEP PROGRESS INDICATOR */}
+      {/* 🚀 PROGRESS INDICATOR */}
       <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-xs">
-        <div className="flex items-center justify-between relative max-w-5xl mx-auto">
+        <div className="flex items-center justify-between relative max-w-5xl mx-auto overflow-x-auto pb-2 -mb-2">
           
           {STEPS.map((step, idx) => {
             const isCompleted = currentStep > step.id;
@@ -547,8 +667,8 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
                       isCompleted 
                         ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30 scale-100"
                         : isActive 
-                          ? "bg-[#2563EB] text-white shadow-lg shadow-blue-500/30 ring-4 ring-blue-100 scale-105"
-                          : "bg-slate-100 text-slate-400 group-hover:bg-slate-200 group-hover:text-slate-600"
+                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/30 ring-4 ring-blue-500/20 scale-105"
+                          : "bg-slate-100 text-slate-400 group-hover:bg-slate-200 group-hover:text-[#0F172A]"
                     }`}
                   >
                     {isCompleted ? (
@@ -562,7 +682,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
                     <span 
                       className={`block text-xs font-black transition-colors ${
                         isActive 
-                          ? "text-[#2563EB]" 
+                          ? "text-blue-600" 
                           : isCompleted 
                             ? "text-emerald-700 font-bold" 
                             : "text-slate-400 font-medium group-hover:text-slate-600"
@@ -578,7 +698,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
                   <div className="flex-1 h-1 mx-3 rounded-full overflow-hidden bg-slate-100 self-center -mt-6">
                     <div 
                       className={`h-full transition-all duration-500 ${
-                        currentStep > step.id ? "bg-emerald-500" : currentStep === step.id ? "bg-blue-400" : "bg-slate-200"
+                        currentStep > step.id ? "bg-emerald-500" : currentStep === step.id ? "bg-blue-600" : "bg-slate-200"
                       }`} 
                     />
                   </div>
@@ -603,7 +723,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-100">
-                    Step 1 of 4
+                    Step 1 of 6
                   </span>
                   <h3 className="text-xl font-black text-slate-900 tracking-tight">1. Problem Statement</h3>
                 </div>
@@ -852,7 +972,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
                   onClick={handleConfirmProblemStatementAndContinue}
                   className="px-7 py-3 bg-[#2563EB] hover:bg-blue-700 text-white font-black text-xs rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer"
                 >
-                  <span>Continue to SRS & PPT Submission</span>
+                  <span>Continue to SRS Submission</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
@@ -860,7 +980,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
           </div>
         )}
 
-        {/* STEP 2: SRS AND PPT SUBMISSION */}
+        {/* STEP 2: SRS SUBMISSION */}
         {currentStep === 2 && (
           <div className="space-y-6 animate-in fade-in duration-200">
             <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
@@ -870,24 +990,36 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
               <div>
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100">
-                    Step 2 of 4
+                    Step 2 of 6
                   </span>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">2. SRS & PPT Submission</h3>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">2. SRS Submission</h3>
                 </div>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Upload your project Software Requirements Specification (SRS) document and Presentation Deck.
+                  Upload your project Software Requirements Specification (SRS) document.
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {isStepLocked(2) && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-extrabold text-amber-800 flex items-center gap-2.5 shadow-2xs">
+                <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>🔒 Step 2 (SRS Submission) is LOCKED by event administrators. Document updates are currently disabled.</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-6 max-w-2xl">
               {/* SRS Document Upload Card */}
-              <div className="border-2 border-dashed border-slate-200 hover:border-blue-400 rounded-3xl p-8 text-center space-y-4 transition-all bg-slate-50/50 hover:bg-blue-50/20 relative group">
+              <div className={`border-2 border-dashed rounded-3xl p-8 text-center space-y-4 transition-all relative group ${
+                isStepLocked(2) 
+                  ? "border-slate-300 bg-slate-100/70 opacity-60 cursor-not-allowed" 
+                  : "border-slate-200 hover:border-blue-400 bg-slate-50/50 hover:bg-blue-50/20"
+              }`}>
                 <input 
                   type="file" 
                   accept=".pdf,.docx,.doc"
                   onChange={handleSrsFileChange}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                  disabled={isStepLocked(2)}
+                  className={`absolute inset-0 opacity-0 w-full h-full z-10 ${isStepLocked(2) ? "cursor-not-allowed" : "cursor-pointer"}`}
                 />
                 <div className="w-12 h-12 rounded-2xl bg-blue-50 group-hover:bg-blue-100 text-[#2563EB] flex items-center justify-center mx-auto transition-colors">
                   <FileUp className="w-6 h-6" />
@@ -895,7 +1027,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
                 <div>
                   <h4 className="text-base font-black text-slate-900">SRS Document Submission</h4>
                   <p className="text-xs text-slate-500 font-medium mt-1">
-                    Drag & drop file or <span className="text-blue-600 font-extrabold underline cursor-pointer">browse from device</span>
+                    {isStepLocked(2) ? "Submissions Locked" : <>Drag & drop file or <span className="text-blue-600 font-extrabold underline cursor-pointer">browse from device</span></>}
                   </p>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
                     PDF, DOCX (MAX 10MB)
@@ -903,46 +1035,13 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
                 </div>
 
                 {srsFileName ? (
-                  <div className="pt-2 text-xs font-black text-emerald-600 bg-emerald-50 py-2 px-4 rounded-xl flex items-center justify-center gap-2 border border-emerald-200">
+                  <div className="pt-2 text-xs font-black text-emerald-600 bg-emerald-50 py-2 px-4 rounded-xl flex items-center justify-center gap-2 border border-emerald-200 w-max mx-auto">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     <span className="truncate max-w-[240px]">{srsFileName}</span>
                   </div>
                 ) : (
                   <span className="inline-block text-[11px] font-extrabold text-slate-400 bg-slate-100 px-3 py-1 rounded-lg">
                     No file selected yet
-                  </span>
-                )}
-              </div>
-
-              {/* Project Presentation PPT Upload Card */}
-              <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-3xl p-8 text-center space-y-4 transition-all bg-slate-50/50 hover:bg-indigo-50/20 relative group">
-                <input 
-                  type="file" 
-                  accept=".ppt,.pptx,.pdf"
-                  onChange={handlePresentationFileChange}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                />
-                <div className="w-12 h-12 rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 text-indigo-600 flex items-center justify-center mx-auto transition-colors">
-                  <Video className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-base font-black text-slate-900">PPT Presentation Submission</h4>
-                  <p className="text-xs text-slate-500 font-medium mt-1">
-                    Drag & drop pitch deck or <span className="text-indigo-600 font-extrabold underline cursor-pointer">browse from device</span>
-                  </p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
-                    PPT, PPTX, PDF (MAX 25MB)
-                  </p>
-                </div>
-
-                {presentationFileName ? (
-                  <div className="pt-2 text-xs font-black text-emerald-600 bg-emerald-50 py-2 px-4 rounded-xl flex items-center justify-center gap-2 border border-emerald-200">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span className="truncate max-w-[240px]">{presentationFileName}</span>
-                  </div>
-                ) : (
-                  <span className="inline-block text-[11px] font-extrabold text-slate-400 bg-slate-100 px-3 py-1 rounded-lg">
-                    No presentation uploaded yet
                   </span>
                 )}
               </div>
@@ -961,67 +1060,84 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
               
               <button
                 type="button"
-                onClick={() => setCurrentStep(3)}
+                onClick={async () => {
+                  await saveStepDataToFirestore();
+                  setCurrentStep(3);
+                }}
                 className="px-7 py-3 bg-[#2563EB] hover:bg-blue-700 text-white font-black text-xs rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer"
               >
-                <span>Continue to Repo & Feature</span>
+                <span>Continue to PPT Submission</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* STEP 3: REPO AND FEATURE */}
+        {/* STEP 3: PPT SUBMISSION */}
         {currentStep === 3 && (
           <div className="space-y-6 animate-in fade-in duration-200">
             <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
-              <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                <Code className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <Video className="w-6 h-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-100">
-                    Step 3 of 4
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-100">
+                    Step 3 of 6
                   </span>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">3. Repo & Feature</h3>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">3. PPT Submission</h3>
                 </div>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
-                  Provide your code repository link and describe key features & technical functionalities.
+                  Upload your project Presentation Deck.
                 </p>
               </div>
             </div>
 
-            {/* Code Repository URL Input */}
-            <div className="space-y-2">
-              <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
-                Code Repository URL (GitHub / GitLab / Bitbucket)
-              </label>
-              <div className="relative flex items-center">
-                <Code className="w-5 h-5 text-slate-400 absolute left-4 pointer-events-none" />
-                <input 
-                  type="url" 
-                  value={githubUrl}
-                  onChange={(e) => setGithubUrl(e.target.value)}
-                  placeholder="https://github.com/your-username/your-project-repo" 
-                  className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
-                  required
-                />
+            {isStepLocked(3) && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-extrabold text-amber-800 flex items-center gap-2.5 shadow-2xs">
+                <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>🔒 Step 3 (PPT Submission) is LOCKED by event administrators. Document updates are currently disabled.</span>
               </div>
-            </div>
+            )}
 
-            {/* Key Features Textarea */}
-            <div className="space-y-2">
-              <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
-                Key Features & Technical Functionalities
-              </label>
-              <textarea
-                ref={keyFeaturesRef}
-                rows={6}
-                value={keyFeatures}
-                onChange={(e) => setKeyFeatures(e.target.value)}
-                placeholder={`1. AI-driven predictive resource management algorithm\n2. Real-time websocket notification engine\n3. Role-based authentication & analytics dashboard...`}
-                className="w-full p-4.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all leading-relaxed whitespace-pre-wrap overflow-hidden resize-none"
-              />
+            <div className="grid grid-cols-1 gap-6 max-w-2xl">
+              {/* Project Presentation PPT Upload Card */}
+              <div className={`border-2 border-dashed rounded-3xl p-8 text-center space-y-4 transition-all relative group ${
+                isStepLocked(3) 
+                  ? "border-slate-300 bg-slate-100/70 opacity-60 cursor-not-allowed" 
+                  : "border-slate-200 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/20"
+              }`}>
+                <input 
+                  type="file" 
+                  accept=".ppt,.pptx,.pdf"
+                  onChange={handlePresentationFileChange}
+                  disabled={isStepLocked(3)}
+                  className={`absolute inset-0 opacity-0 w-full h-full z-10 ${isStepLocked(3) ? "cursor-not-allowed" : "cursor-pointer"}`}
+                />
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 text-indigo-600 flex items-center justify-center mx-auto transition-colors">
+                  <Video className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-base font-black text-slate-900">PPT Presentation Submission</h4>
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    {isStepLocked(3) ? "Submissions Locked" : <>Drag & drop pitch deck or <span className="text-indigo-600 font-extrabold underline cursor-pointer">browse from device</span></>}
+                  </p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+                    PPT, PPTX, PDF (MAX 25MB)
+                  </p>
+                </div>
+
+                {presentationFileName ? (
+                  <div className="pt-2 text-xs font-black text-emerald-600 bg-emerald-50 py-2 px-4 rounded-xl flex items-center justify-center gap-2 border border-emerald-200 w-max mx-auto">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span className="truncate max-w-[240px]">{presentationFileName}</span>
+                  </div>
+                ) : (
+                  <span className="inline-block text-[11px] font-extrabold text-slate-400 bg-slate-100 px-3 py-1 rounded-lg">
+                    No presentation uploaded yet
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Navigation Buttons for Step 3 */}
@@ -1037,7 +1153,159 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
               
               <button
                 type="button"
+                onClick={async () => {
+                  await saveStepDataToFirestore();
+                  setCurrentStep(4);
+                }}
+                className="px-7 py-3 bg-[#2563EB] hover:bg-blue-700 text-white font-black text-xs rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <span>Continue to Features</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: FEATURES */}
+        {currentStep === 4 && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
+              <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                <Code className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-100">
+                    Step 4 of 6
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">4. Key Features</h3>
+                </div>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Describe key features & technical functionalities of your project.
+                </p>
+              </div>
+            </div>
+
+            {isStepLocked(4) && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-extrabold text-amber-800 flex items-center gap-2.5 shadow-2xs">
+                <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>🔒 Step 4 (Key Features) is LOCKED by event administrators. Edits are currently disabled.</span>
+              </div>
+            )}
+
+            {/* Key Features Textarea */}
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                Key Features & Technical Functionalities
+              </label>
+              <textarea
+                ref={keyFeaturesRef}
+                rows={6}
+                value={keyFeatures}
+                disabled={isStepLocked(4)}
+                onChange={(e) => setKeyFeatures(e.target.value)}
+                placeholder={`1. AI-driven predictive resource management algorithm\n2. Real-time websocket notification engine\n3. Role-based authentication & analytics dashboard...`}
+                className={`w-full p-4.5 border rounded-2xl text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none transition-all leading-relaxed whitespace-pre-wrap overflow-hidden resize-none ${
+                  isStepLocked(4) 
+                    ? "bg-slate-100/80 cursor-not-allowed border-slate-300 text-slate-600" 
+                    : "bg-slate-50 border-slate-200 focus:border-blue-500 focus:bg-white"
+                }`}
+              />
+            </div>
+
+            {/* Navigation Buttons for Step 4 */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setCurrentStep(3)}
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={async () => {
+                  await saveStepDataToFirestore();
+                  setCurrentStep(5);
+                }}
+                className="px-7 py-3 bg-[#2563EB] hover:bg-blue-700 text-white font-black text-xs rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <span>Continue to Code Repository</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5: REPO */}
+        {currentStep === 5 && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
+              <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                <Globe className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-100">
+                    Step 5 of 6
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">5. Code Repository</h3>
+                </div>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Provide your code repository link.
+                </p>
+              </div>
+            </div>
+
+            {isStepLocked(5) && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-extrabold text-amber-800 flex items-center gap-2.5 shadow-2xs">
+                <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>🔒 Step 5 (Code Repository) is LOCKED by event administrators. Edits are currently disabled.</span>
+              </div>
+            )}
+
+            {/* Code Repository URL Input */}
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                Code Repository URL (GitHub / GitLab / Bitbucket)
+              </label>
+              <div className="relative flex items-center">
+                <Code className="w-5 h-5 text-slate-400 absolute left-4 pointer-events-none" />
+                <input 
+                  type="url" 
+                  value={githubUrl}
+                  disabled={isStepLocked(5)}
+                  onChange={(e) => setGithubUrl(e.target.value)}
+                  placeholder="https://github.com/your-username/your-project-repo" 
+                  className={`w-full pl-12 pr-4 py-3.5 border rounded-2xl text-sm font-semibold transition-all ${
+                    isStepLocked(5) 
+                      ? "bg-slate-100/80 cursor-not-allowed border-slate-300 text-slate-600" 
+                      : "bg-slate-50 border-slate-200 text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white"
+                  }`}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Navigation Buttons for Step 5 */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <button
+                type="button"
                 onClick={() => setCurrentStep(4)}
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={async () => {
+                  await saveStepDataToFirestore();
+                  setCurrentStep(6);
+                }}
                 className="px-7 py-3 bg-[#2563EB] hover:bg-blue-700 text-white font-black text-xs rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer"
               >
                 <span>Continue to Prototype & Video</span>
@@ -1047,25 +1315,32 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
           </div>
         )}
 
-        {/* STEP 4: PROTOTYPE LINK AND VIDEO SUBMISSION */}
-        {currentStep === 4 && (
+        {/* STEP 6: PROTOTYPE LINK AND VIDEO SUBMISSION */}
+        {currentStep === 6 && (
           <div className="space-y-6 animate-in fade-in duration-200">
             <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
               <div className="w-11 h-11 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
-                <Video className="w-6 h-6" />
+                <PlayCircle className="w-6 h-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-teal-50 text-teal-700 border border-teal-100">
-                    Step 4 of 4
+                    Step 6 of 6
                   </span>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">4. Prototype Link & Video Submission</h3>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">6. Prototype Link & Video Submission</h3>
                 </div>
                 <p className="text-xs text-slate-500 font-medium mt-0.5">
                   Submit live prototype URL, demo video link, and complete final project submission.
                 </p>
               </div>
             </div>
+
+            {isStepLocked(6) && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-extrabold text-amber-800 flex items-center gap-2.5 shadow-2xs">
+                <ShieldCheck className="w-5 h-5 text-amber-600 shrink-0" />
+                <span>🔒 Step 6 (Prototype & Video) is LOCKED by event administrators. Edits are currently disabled.</span>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Prototype Link */}
@@ -1078,9 +1353,14 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
                   <input 
                     type="url" 
                     value={prototypeUrl}
+                    disabled={isStepLocked(6)}
                     onChange={(e) => setPrototypeUrl(e.target.value)}
                     placeholder="https://figma.com/... or https://myproject.vercel.app" 
-                    className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                    className={`w-full pl-12 pr-4 py-3.5 border rounded-2xl text-sm font-semibold transition-all ${
+                      isStepLocked(6) 
+                        ? "bg-slate-100/80 cursor-not-allowed border-slate-300 text-slate-600" 
+                        : "bg-slate-50 border-slate-200 text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white"
+                    }`}
                   />
                 </div>
               </div>
@@ -1095,38 +1375,143 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
                   <input 
                     type="url" 
                     value={demoVideoUrl}
+                    disabled={isStepLocked(6)}
                     onChange={(e) => setDemoVideoUrl(e.target.value)}
                     placeholder="https://youtube.com/watch?v=... or Drive link" 
-                    className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                    className={`w-full pl-12 pr-4 py-3.5 border rounded-2xl text-sm font-semibold transition-all ${
+                      isStepLocked(6) 
+                        ? "bg-slate-100/80 cursor-not-allowed border-slate-300 text-slate-600" 
+                        : "bg-slate-50 border-slate-200 text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white"
+                    }`}
                     required
                   />
                 </div>
               </div>
             </div>
 
-            {/* Submission Summary Card */}
-            <div className="p-6 bg-slate-50 border border-slate-200/90 rounded-3xl space-y-4">
-              <h4 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                Submission Overview Summary
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-medium text-slate-700">
-                <div className="p-3.5 bg-white rounded-2xl border border-slate-200/80">
-                  <span className="block text-[10px] font-black text-slate-400 uppercase">1. Problem Statement:</span>
-                  <span className="font-bold text-slate-900 line-clamp-1">{problemStatement || "Not specified"}</span>
+            {/* Navigation Buttons for Step 6 */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setCurrentStep(5)}
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={async () => {
+                  await saveStepDataToFirestore();
+                  setCurrentStep(7);
+                }}
+                className="px-7 py-3 bg-[#2563EB] hover:bg-blue-700 text-white font-black text-xs rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <span>Continue to Overview</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 7: SUBMISSION OVERVIEW */}
+        {currentStep === 7 && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            <div className="flex items-center gap-3.5 border-b border-slate-100 pb-5">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
+                    Step 7 of 7
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">7. Submission Overview</h3>
                 </div>
-                <div className="p-3.5 bg-white rounded-2xl border border-slate-200/80">
-                  <span className="block text-[10px] font-black text-slate-400 uppercase">2. Documents:</span>
-                  <span className="font-bold text-slate-900">{srsFileName || "SRS Pending"} • {presentationFileName || "PPT Pending"}</span>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Review your project details before final submission.
+                </p>
+              </div>
+            </div>
+
+            {/* Submission Summary Content */}
+            <div className="bg-slate-50 border border-slate-200/90 rounded-3xl p-6 md:p-8 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* 1. Problem Statement */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-2 md:col-span-2">
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <FileText className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">1. Problem Statement</span>
+                  </div>
+                  <p className="font-bold text-slate-900 text-sm whitespace-pre-wrap">
+                    {problemStatement || "Not specified"}
+                  </p>
                 </div>
-                <div className="p-3.5 bg-white rounded-2xl border border-slate-200/80">
-                  <span className="block text-[10px] font-black text-slate-400 uppercase">3. Repository & Features:</span>
-                  <span className="font-bold text-slate-900 truncate block">{githubUrl || "Repo URL Pending"}</span>
+
+                {/* 2. SRS */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-2">
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <FileUp className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">2. SRS Document</span>
+                  </div>
+                  <p className="font-bold text-slate-900 text-sm break-all">
+                    {srsFileName || "SRS Pending"}
+                  </p>
                 </div>
-                <div className="p-3.5 bg-white rounded-2xl border border-slate-200/80">
-                  <span className="block text-[10px] font-black text-slate-400 uppercase">4. Prototype & Video:</span>
-                  <span className="font-bold text-slate-900 truncate block">{prototypeUrl || "Prototype Link"} • {demoVideoUrl || "Video Link"}</span>
+
+                {/* 3. PPT */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-2">
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <Video className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">3. PPT Document</span>
+                  </div>
+                  <p className="font-bold text-slate-900 text-sm break-all">
+                    {presentationFileName || "PPT Pending"}
+                  </p>
                 </div>
+
+                {/* 4. Features */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-2">
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <Code className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">4. Key Features</span>
+                  </div>
+                  <p className="font-bold text-slate-900 text-sm">
+                    {keyFeatures ? "Features Provided" : "Pending"}
+                  </p>
+                </div>
+
+                {/* 5. Repository */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-2">
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <Globe className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">5. Code Repository</span>
+                  </div>
+                  <p className="font-bold text-slate-900 text-sm break-all">
+                    {githubUrl || "Repo URL Pending"}
+                  </p>
+                </div>
+
+                {/* 6. Prototype & Video */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-2 md:col-span-2">
+                  <div className="flex items-center gap-2 text-slate-500 mb-1">
+                    <PlayCircle className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-wider">6. Prototype & Video Links</span>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-start gap-2">
+                      <span className="text-slate-500 font-semibold text-xs min-w-[70px]">Prototype:</span>
+                      <span className="font-bold text-slate-900 text-sm break-all">{prototypeUrl || "Pending"}</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-slate-500 font-semibold text-xs min-w-[70px]">Video:</span>
+                      <span className="font-bold text-slate-900 text-sm break-all">{demoVideoUrl || "Pending"}</span>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
 
@@ -1134,7 +1519,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
             <div className="flex items-center justify-between pt-4 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setCurrentStep(3)}
+                onClick={() => setCurrentStep(6)}
                 className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-2"
               >
                 <ArrowLeft className="w-4 h-4" />

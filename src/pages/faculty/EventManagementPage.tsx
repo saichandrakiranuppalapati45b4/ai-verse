@@ -1,11 +1,14 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import SEO from "../../components/layout/SEO";
 import Papa from "papaparse";
 import { db, firebaseConfig } from "../../config/firebase";
-import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment } from "firebase/firestore";
+import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment, onSnapshot } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { createClient } from "@supabase/supabase-js";
+import { userService } from "../../services/userService";
 import {
   Calendar,
   Users,
@@ -67,6 +70,8 @@ interface EventItem {
 }
 
 const EventManagementPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState<EventItem[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const speakerFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -187,6 +192,113 @@ const EventManagementPage: React.FC = () => {
   const [loginAccessSuccessMsg, setLoginAccessSuccessMsg] = useState<string | null>(null);
   const [isProvisioningLoginAccess, setIsProvisioningLoginAccess] = useState(false);
   const [provisionedTeamIds, setProvisionedTeamIds] = useState<string[]>([]);
+
+  // Step Lock Modal State & Handlers
+  const [stepLockTarget, setStepLockTarget] = useState<{ stepId: number; name: string } | null>(null);
+  const [isLockingStep, setIsLockingStep] = useState(false);
+
+  // Real-time listener for registrations when Event Access / Matrix Monitor is open
+  useEffect(() => {
+    if (!isEventAccessModalOpen || !eventAccessEvent) return;
+
+    const unsubscribe = onSnapshot(
+      collection(db, "registrations"),
+      (querySnapshot) => {
+        const list: any[] = [];
+        const grantedIds: string[] = [];
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const regId = docSnap.id;
+          if (
+            (data.eventId && eventAccessEvent?.id && data.eventId === eventAccessEvent.id) ||
+            (data.eventTitle && eventAccessEvent?.title && data.eventTitle.toLowerCase().trim() === eventAccessEvent.title.toLowerCase().trim())
+          ) {
+            list.push({ id: regId, ...data });
+            if (data.accessGranted || data.loginAccessGranted) {
+              grantedIds.push(regId);
+            }
+          }
+        });
+        setEventAccessRegistrations(list);
+        setProvisionedTeamIds(grantedIds);
+        setLoadingEventAccessRegs(false);
+      },
+      (err) => {
+        console.error("Error listening to event registrations:", err);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [isEventAccessModalOpen, eventAccessEvent?.id]);
+
+  // Real-time listener for event document locked steps state
+  useEffect(() => {
+    if (!isEventAccessModalOpen || !eventAccessEvent?.id) return;
+
+    const unsubEv = onSnapshot(doc(db, "events", eventAccessEvent.id), (docSnap) => {
+      if (docSnap.exists()) {
+        const evData = docSnap.data();
+        if (evData.lockedSteps) {
+          setEventAccessEvent((prev: any) => prev ? { ...prev, lockedSteps: evData.lockedSteps } : prev);
+        }
+      }
+    });
+
+    return () => unsubEv();
+  }, [isEventAccessModalOpen, eventAccessEvent?.id]);
+
+  // Automatically open Event Access modal when navigated with ?accessEventId= or ?eventId=
+  useEffect(() => {
+    const accessEventId = searchParams.get("accessEventId") || searchParams.get("eventId");
+    if (accessEventId && events.length > 0) {
+      if (!isEventAccessModalOpen || eventAccessEvent?.id !== accessEventId) {
+        const targetEvent = events.find((e) => e.id === accessEventId);
+        if (targetEvent) {
+          handleOpenEventAccess(targetEvent);
+        }
+      }
+    }
+  }, [searchParams, events]);
+
+  const handleCloseEventAccess = () => {
+    setIsEventAccessModalOpen(false);
+    setEventAccessEvent(null);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete("accessEventId");
+    newParams.delete("eventId");
+    setSearchParams(newParams, { replace: true });
+  };
+
+  const handleConfirmStepLockToggle = async () => {
+    if (!eventAccessEvent || !stepLockTarget) return;
+    setIsLockingStep(true);
+    const { stepId, name } = stepLockTarget;
+    const currentLocked = eventAccessEvent.lockedSteps || {};
+    const isCurrentlyLocked = !!currentLocked[stepId];
+    const newLocked = { ...currentLocked, [stepId]: !isCurrentlyLocked };
+
+    try {
+      const evRef = doc(db, "events", eventAccessEvent.id);
+      await updateDoc(evRef, {
+        lockedSteps: newLocked,
+        updatedAt: Date.now()
+      });
+
+      setEventAccessEvent((prev: any) => ({
+        ...prev,
+        lockedSteps: newLocked
+      }));
+
+      setLoginAccessSuccessMsg(`Successfully ${newLocked[stepId] ? 'LOCKED 🔒' : 'UNLOCKED 🔓'} Step ${stepId} (${name}) for all teams!`);
+      setTimeout(() => setLoginAccessSuccessMsg(null), 4500);
+    } catch (err) {
+      console.error("Error toggling step lock in Firestore:", err);
+      alert("Failed to update step lock state.");
+    } finally {
+      setIsLockingStep(false);
+      setStepLockTarget(null);
+    }
+  };
 
   // Team Submissions Monitor State
   const [isSubmissionsModalOpen, setIsSubmissionsModalOpen] = useState(false);
@@ -410,6 +522,56 @@ const EventManagementPage: React.FC = () => {
           }
         }
 
+        // Create Supabase Auth user using secondary client (avoids logging out current admin)
+        try {
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://glwwaoqbnguvorophdle.supabase.co";
+          const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+          
+          if (supabaseUrl && supabaseAnonKey) {
+            const secondarySupabase = createClient(supabaseUrl, supabaseAnonKey, {
+              auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+            });
+            
+            const { error: signUpError } = await secondarySupabase.auth.signUp({
+              email: teamEmail,
+              password: commonPassword,
+              options: {
+                data: {
+                  name: reg.groupName || reg.teamLeadName || reg.name || "Team",
+                  role: "participant"
+                }
+              }
+            });
+            
+            if (signUpError && signUpError.message !== "User already registered") {
+              console.warn("Supabase Auth creation error for:", teamEmail, signUpError);
+            }
+
+            // Create or reactivate profile in Supabase public.users
+            try {
+              const existingSupaUser = await userService.getUserByEmail(teamEmail);
+              if (!existingSupaUser) {
+                await userService.addUser({
+                  email: teamEmail,
+                  name: reg.groupName || reg.teamLeadName || reg.name || "Team",
+                  role: "participant",
+                  status: "Active",
+                  event_title: eventAccessEvent?.title || "",
+                  registration_id: reg.id
+                });
+              } else {
+                await userService.updateUser(existingSupaUser.id, {
+                  status: "Active"
+                });
+              }
+            } catch (uErr) {
+              console.warn("Supabase public.users profile creation error:", uErr);
+            }
+          }
+        } catch (supaErr: any) {
+          console.warn("Supabase setup error:", supaErr);
+        }
+
         // Create / update user account in 'users' Firestore collection
         try {
           const userDocId = teamEmail.replace(/[^a-zA-Z0-9]/g, "_");
@@ -525,6 +687,36 @@ const EventManagementPage: React.FC = () => {
         } catch (userErr) {
           console.warn("Firestore revoke users error:", userErr);
         }
+
+        // Delete from Supabase public.users and auth.users
+        try {
+          const teamEmail = generateTeamEmail(reg);
+          
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+          if (supabaseUrl && serviceRoleKey) {
+            const adminSupabase = createClient(supabaseUrl, serviceRoleKey, {
+              auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+            });
+            
+            // Find and delete from auth.users
+            const { data: usersData } = await adminSupabase.auth.admin.listUsers();
+            if (usersData?.users) {
+              const authUser = usersData.users.find((u: any) => u.email === teamEmail);
+              if (authUser) {
+                await adminSupabase.auth.admin.deleteUser(authUser.id);
+              }
+            }
+          }
+
+          // Delete from public.users
+          const supaUser = await userService.getUserByEmail(teamEmail);
+          if (supaUser) {
+            await userService.deleteUser(supaUser.id);
+          }
+        } catch (supaErr) {
+          console.warn("Supabase revoke user error:", supaErr);
+        }
       }
 
       setProvisionedTeamIds([]);
@@ -573,6 +765,39 @@ const EventManagementPage: React.FC = () => {
         console.warn("Firestore revoke user error:", userErr);
       }
 
+      // Delete from Supabase public.users and auth.users
+      try {
+        const reg = eventAccessRegistrations.find((r) => r.id === regId);
+        if (reg) {
+          const teamEmail = generateTeamEmail(reg);
+          
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+          if (supabaseUrl && serviceRoleKey) {
+            const adminSupabase = createClient(supabaseUrl, serviceRoleKey, {
+              auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+            });
+            
+            // Find and delete from auth.users
+            const { data: usersData } = await adminSupabase.auth.admin.listUsers();
+            if (usersData?.users) {
+              const authUser = usersData.users.find((u: any) => u.email === teamEmail);
+              if (authUser) {
+                await adminSupabase.auth.admin.deleteUser(authUser.id);
+              }
+            }
+          }
+
+          // Delete from public.users
+          const supaUser = await userService.getUserByEmail(teamEmail);
+          if (supaUser) {
+            await userService.deleteUser(supaUser.id);
+          }
+        }
+      } catch (supaErr) {
+        console.warn("Supabase revoke user error:", supaErr);
+      }
+
       setProvisionedTeamIds((prev) => prev.filter((id) => id !== regId));
       setEventAccessRegistrations((prev) =>
         prev.map((r) => (r.id === regId ? { ...r, accessGranted: false, loginAccessGranted: false } : r))
@@ -592,6 +817,11 @@ const EventManagementPage: React.FC = () => {
     setIsEventAccessModalOpen(true);
     setLoadingEventAccessRegs(true);
     setEventAccessSearchQuery("");
+    if (eventObj?.id && searchParams.get("accessEventId") !== eventObj.id) {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.set("accessEventId", eventObj.id);
+      setSearchParams(newParams, { replace: true });
+    }
     try {
       const querySnapshot = await getDocs(collection(db, "registrations"));
       const list: any[] = [];
@@ -3283,7 +3513,7 @@ const EventManagementPage: React.FC = () => {
             {/* Left: Back Button */}
             <div className="flex items-center gap-3 shrink-0">
               <button
-                onClick={() => setIsEventAccessModalOpen(false)}
+                onClick={handleCloseEventAccess}
                 className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center gap-2 text-xs font-bold transition-all border border-white/20 backdrop-blur-md cursor-pointer shadow-xs"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -3319,7 +3549,7 @@ const EventManagementPage: React.FC = () => {
               </button>
 
               <button
-                onClick={() => setIsEventAccessModalOpen(false)}
+                onClick={handleCloseEventAccess}
                 className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/25 active:scale-95 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer shadow-xs"
                 title="Close Full Screen"
               >
@@ -3363,23 +3593,23 @@ const EventManagementPage: React.FC = () => {
               </div>
             )}
 
-            {/* TOP DUAL CARDS SECTION (Give Problem Statements & Submissions side-by-side) */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {/* TOP 3 ACTION CARDS SECTION (Give Problem Statements, Submissions, Quiz Management) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
 
               {/* CARD 1: Give Problem Statements */}
               <div
                 onClick={handleOpenMultiProblemModal}
-                className="bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden border border-blue-500/30 cursor-pointer hover:border-blue-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-blue-500/10"
+                className="bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 p-6 sm:p-7 rounded-3xl text-white shadow-xl relative overflow-hidden border border-blue-500/30 cursor-pointer hover:border-blue-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-blue-500/10"
               >
                 <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
 
                 <div className="relative z-10 space-y-4 text-left">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/25 text-blue-200 border border-blue-400/40 backdrop-blur-md">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/25 text-blue-200 border border-blue-400/40 backdrop-blur-md">
                       HACKATHON TRACK & PROBLEM STATEMENTS
                     </span>
                     {(eventAccessEvent?.problemStatements?.length > 0 || eventAccessEvent?.problemStatementTitle) && (
-                      <span className="px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
+                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         {eventAccessEvent?.problemStatements?.length || 1} PUBLISHED
                       </span>
@@ -3387,29 +3617,29 @@ const EventManagementPage: React.FC = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-                      <Sparkles className="w-7 h-7 text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
+                    <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
+                      <Sparkles className="w-6 h-6 text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
                       <span>Give Problem Statements</span>
                     </h3>
                     <p className="text-xs sm:text-sm text-blue-100/90 font-medium leading-relaxed line-clamp-2">
                       {eventAccessEvent?.problemStatements?.length > 0
-                        ? `Active Problems: ${eventAccessEvent.problemStatements.map((p: any) => p.code || p.title).join(", ")} — Click to manage or add more problem statements.`
+                        ? `Active: ${eventAccessEvent.problemStatements.map((p: any) => p.code || p.title).join(", ")}`
                         : eventAccessEvent?.problemStatementTitle
-                          ? `Active Problem: ${eventAccessEvent.problemStatementTitle} — Click to manage multiple statements.`
-                          : "Click here to create, manage, and broadcast multiple hackathon problem statements and tracks to all registered team participant portals."
+                          ? `Active: ${eventAccessEvent.problemStatementTitle}`
+                          : "Create, manage, and broadcast multiple hackathon problem statements to participant portals."
                       }
                     </p>
                   </div>
                 </div>
 
-                <div className="relative z-10 pt-6 flex items-center justify-end">
+                <div className="relative z-10 pt-5 flex items-center justify-end">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleOpenMultiProblemModal();
                     }}
-                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-blue-500/30 flex items-center gap-2.5 cursor-pointer border border-blue-400/30"
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30"
                   >
                     <FileCode className="w-4 h-4" />
                     <span>{eventAccessEvent?.problemStatementTitle || eventAccessEvent?.problemStatements?.length ? "Edit / Manage Problem Statements" : "+ Give Problem Statements"}</span>
@@ -3420,39 +3650,39 @@ const EventManagementPage: React.FC = () => {
               {/* CARD 2: Submissions (Beside Give Problem Statements) */}
               <div
                 onClick={() => setIsSubmissionsModalOpen(true)}
-                className="bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 p-6 sm:p-8 rounded-3xl text-white shadow-xl relative overflow-hidden border border-indigo-500/30 cursor-pointer hover:border-indigo-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-indigo-500/10"
+                className="bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 p-6 sm:p-7 rounded-3xl text-white shadow-xl relative overflow-hidden border border-indigo-500/30 cursor-pointer hover:border-indigo-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-indigo-500/10"
               >
                 <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
 
                 <div className="relative z-10 space-y-4 text-left">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 backdrop-blur-md">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 backdrop-blur-md">
                       LIVE SUBMISSIONS MONITOR
                     </span>
-                    <span className="px-3.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                       {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length} / {eventAccessRegistrations.length} SUBMITTED
                     </span>
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-                      <FileText className="w-7 h-7 text-indigo-400 group-hover:scale-110 transition-transform shrink-0" />
+                    <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
+                      <FileText className="w-6 h-6 text-indigo-400 group-hover:scale-110 transition-transform shrink-0" />
                       <span>Submissions</span>
                     </h3>
                     <p className="text-xs sm:text-sm text-indigo-100/90 font-medium leading-relaxed line-clamp-2">
-                      Monitor team progress, selected problem statements, uploaded SRS specifications, PPT pitch decks, code repositories, and demo video links.
+                      Monitor team progress, selected problem statements, SRS specifications, PPT pitch decks, and repo links.
                     </p>
                   </div>
                 </div>
 
-                <div className="relative z-10 pt-6 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                <div className="relative z-10 pt-5 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
                   {/* Quick Stat Pills */}
-                  <div className="flex items-center gap-2.5">
-                    <span className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-xs font-black">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[11px] font-black">
                       Submitted: {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length}
                     </span>
-                    <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 text-xs font-black">
+                    <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[11px] font-black">
                       Drafts: {eventAccessRegistrations.filter(r => r.submissionStatus === "Draft" || (r.problemStatement && r.submissionStatus !== "Submitted")).length}
                     </span>
                   </div>
@@ -3463,10 +3693,64 @@ const EventManagementPage: React.FC = () => {
                       e.stopPropagation();
                       setIsSubmissionsModalOpen(true);
                     }}
-                    className="px-6 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-indigo-500/30 flex items-center gap-2.5 cursor-pointer border border-indigo-400/30 shrink-0"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2 cursor-pointer border border-indigo-400/30 shrink-0"
                   >
                     <Eye className="w-4 h-4" />
                     <span>Monitor Submissions</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD 3: Quiz Management (Start and Manage Card) */}
+              <div
+                onClick={() => navigate(`/faculty/quizzes?eventId=${eventAccessEvent?.id || ""}`)}
+                className="bg-gradient-to-br from-slate-900 via-purple-950 to-pink-950 p-6 sm:p-7 rounded-3xl text-white shadow-xl relative overflow-hidden border border-purple-500/30 cursor-pointer hover:border-purple-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-purple-500/10"
+              >
+                <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-fuchsia-500/15 rounded-full blur-3xl pointer-events-none" />
+
+                <div className="relative z-10 space-y-4 text-left">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-purple-500/25 text-purple-200 border border-purple-400/40 backdrop-blur-md">
+                      EVENT QUIZ & TEST ENGINE
+                    </span>
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      LIVE TEST READY
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
+                      <HelpCircle className="w-6 h-6 text-fuchsia-400 group-hover:scale-110 transition-transform shrink-0" />
+                      <span>Quiz Management</span>
+                    </h3>
+                    <p className="text-xs sm:text-sm text-purple-100/90 font-medium leading-relaxed line-clamp-2">
+                      Start interactive test sessions, configure AI/custom questions, set countdown timer, and view live participant rankings.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative z-10 pt-5 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+                  {/* Quick Stat Pills */}
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-400/30 text-[11px] font-black">
+                      AI Questions
+                    </span>
+                    <span className="px-2.5 py-1 rounded-xl bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30 text-[11px] font-black">
+                      Live Monitor
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/faculty/quizzes?eventId=${eventAccessEvent?.id || ""}`);
+                    }}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-purple-500/30 flex items-center justify-center gap-2 cursor-pointer border border-purple-400/30 shrink-0"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                    <span>Start & Manage Quiz</span>
                   </button>
                 </div>
               </div>
@@ -4293,35 +4577,171 @@ const EventManagementPage: React.FC = () => {
                           </th>
 
                           {/* Column 1 Square */}
-                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[20%]">
-                            <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700/80 space-y-1 shadow-inner inline-block w-full text-center">
-                              <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider block">STEP 1 BLOCK</span>
-                              <span className="text-xs font-black text-white block truncate">Problem Statement</span>
-                            </div>
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[12%]">
+                            {(() => {
+                              const isLocked = !!eventAccessEvent?.lockedSteps?.[1];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setStepLockTarget({ stepId: 1, name: "Problem Statement" })}
+                                  className={`p-3 rounded-2xl border space-y-1 shadow-inner inline-block w-full text-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                                    isLocked 
+                                      ? "bg-amber-950/90 border-amber-500/90 ring-2 ring-amber-500/30" 
+                                      : "bg-slate-800/90 border-slate-700/80 hover:border-slate-500"
+                                  }`}
+                                  title={isLocked ? "Step 1 is LOCKED. Click to Unlock for participants." : "Click to LOCK Step 1 for participants."}
+                                >
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider">STEP 1</span>
+                                    <Lock className={`w-3 h-3 ${isLocked ? "text-amber-400" : "text-slate-500 opacity-50"}`} />
+                                  </div>
+                                  <span className="text-xs font-black text-white block truncate">Problem Statement</span>
+                                  <span className={`text-[9px] font-extrabold uppercase tracking-widest block ${isLocked ? "text-amber-400" : "text-slate-400"}`}>
+                                    {isLocked ? "🔒 LOCKED" : "🔓 UNLOCKED"}
+                                  </span>
+                                </button>
+                              );
+                            })()}
                           </th>
 
                           {/* Column 2 Square */}
-                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[20%]">
-                            <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700/80 space-y-1 shadow-inner inline-block w-full text-center">
-                              <span className="text-[10px] font-black uppercase text-purple-400 tracking-wider block">STEP 2 BLOCK</span>
-                              <span className="text-xs font-black text-white block truncate">SRS & PPT Submission</span>
-                            </div>
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[12%]">
+                            {(() => {
+                              const isLocked = !!eventAccessEvent?.lockedSteps?.[2];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setStepLockTarget({ stepId: 2, name: "SRS Submission" })}
+                                  className={`p-3 rounded-2xl border space-y-1 shadow-inner inline-block w-full text-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                                    isLocked 
+                                      ? "bg-amber-950/90 border-amber-500/90 ring-2 ring-amber-500/30" 
+                                      : "bg-slate-800/90 border-slate-700/80 hover:border-slate-500"
+                                  }`}
+                                  title={isLocked ? "Step 2 is LOCKED. Click to Unlock for participants." : "Click to LOCK Step 2 for participants."}
+                                >
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span className="text-[10px] font-black uppercase text-purple-400 tracking-wider">STEP 2</span>
+                                    <Lock className={`w-3 h-3 ${isLocked ? "text-amber-400" : "text-slate-500 opacity-50"}`} />
+                                  </div>
+                                  <span className="text-xs font-black text-white block truncate">SRS Submission</span>
+                                  <span className={`text-[9px] font-extrabold uppercase tracking-widest block ${isLocked ? "text-amber-400" : "text-slate-400"}`}>
+                                    {isLocked ? "🔒 LOCKED" : "🔓 UNLOCKED"}
+                                  </span>
+                                </button>
+                              );
+                            })()}
                           </th>
 
                           {/* Column 3 Square */}
-                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[20%]">
-                            <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700/80 space-y-1 shadow-inner inline-block w-full text-center">
-                              <span className="text-[10px] font-black uppercase text-indigo-400 tracking-wider block">STEP 3 BLOCK</span>
-                              <span className="text-xs font-black text-white block truncate">Repo & Feature</span>
-                            </div>
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[12%]">
+                            {(() => {
+                              const isLocked = !!eventAccessEvent?.lockedSteps?.[3];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setStepLockTarget({ stepId: 3, name: "PPT Submission" })}
+                                  className={`p-3 rounded-2xl border space-y-1 shadow-inner inline-block w-full text-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                                    isLocked 
+                                      ? "bg-amber-950/90 border-amber-500/90 ring-2 ring-amber-500/30" 
+                                      : "bg-slate-800/90 border-slate-700/80 hover:border-slate-500"
+                                  }`}
+                                  title={isLocked ? "Step 3 is LOCKED. Click to Unlock for participants." : "Click to LOCK Step 3 for participants."}
+                                >
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span className="text-[10px] font-black uppercase text-pink-400 tracking-wider">STEP 3</span>
+                                    <Lock className={`w-3 h-3 ${isLocked ? "text-amber-400" : "text-slate-500 opacity-50"}`} />
+                                  </div>
+                                  <span className="text-xs font-black text-white block truncate">PPT Submission</span>
+                                  <span className={`text-[9px] font-extrabold uppercase tracking-widest block ${isLocked ? "text-amber-400" : "text-slate-400"}`}>
+                                    {isLocked ? "🔒 LOCKED" : "🔓 UNLOCKED"}
+                                  </span>
+                                </button>
+                              );
+                            })()}
                           </th>
 
                           {/* Column 4 Square */}
-                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[20%]">
-                            <div className="bg-slate-800/90 p-3.5 rounded-2xl border border-slate-700/80 space-y-1 shadow-inner inline-block w-full text-center">
-                              <span className="text-[10px] font-black uppercase text-pink-400 tracking-wider block">STEP 4 BLOCK</span>
-                              <span className="text-xs font-black text-white block truncate">Prototype & Video Link</span>
-                            </div>
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[12%]">
+                            {(() => {
+                              const isLocked = !!eventAccessEvent?.lockedSteps?.[4];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setStepLockTarget({ stepId: 4, name: "Key Features" })}
+                                  className={`p-3 rounded-2xl border space-y-1 shadow-inner inline-block w-full text-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                                    isLocked 
+                                      ? "bg-amber-950/90 border-amber-500/90 ring-2 ring-amber-500/30" 
+                                      : "bg-slate-800/90 border-slate-700/80 hover:border-slate-500"
+                                  }`}
+                                  title={isLocked ? "Step 4 is LOCKED. Click to Unlock for participants." : "Click to LOCK Step 4 for participants."}
+                                >
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span className="text-[10px] font-black uppercase text-indigo-400 tracking-wider">STEP 4</span>
+                                    <Lock className={`w-3 h-3 ${isLocked ? "text-amber-400" : "text-slate-500 opacity-50"}`} />
+                                  </div>
+                                  <span className="text-xs font-black text-white block truncate">Key Features</span>
+                                  <span className={`text-[9px] font-extrabold uppercase tracking-widest block ${isLocked ? "text-amber-400" : "text-slate-400"}`}>
+                                    {isLocked ? "🔒 LOCKED" : "🔓 UNLOCKED"}
+                                  </span>
+                                </button>
+                              );
+                            })()}
+                          </th>
+
+                          {/* Column 5 Square */}
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[12%]">
+                            {(() => {
+                              const isLocked = !!eventAccessEvent?.lockedSteps?.[5];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setStepLockTarget({ stepId: 5, name: "Repo URL" })}
+                                  className={`p-3 rounded-2xl border space-y-1 shadow-inner inline-block w-full text-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                                    isLocked 
+                                      ? "bg-amber-950/90 border-amber-500/90 ring-2 ring-amber-500/30" 
+                                      : "bg-slate-800/90 border-slate-700/80 hover:border-slate-500"
+                                  }`}
+                                  title={isLocked ? "Step 5 is LOCKED. Click to Unlock for participants." : "Click to LOCK Step 5 for participants."}
+                                >
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span className="text-[10px] font-black uppercase text-teal-400 tracking-wider">STEP 5</span>
+                                    <Lock className={`w-3 h-3 ${isLocked ? "text-amber-400" : "text-slate-500 opacity-50"}`} />
+                                  </div>
+                                  <span className="text-xs font-black text-white block truncate">Repo URL</span>
+                                  <span className={`text-[9px] font-extrabold uppercase tracking-widest block ${isLocked ? "text-amber-400" : "text-slate-400"}`}>
+                                    {isLocked ? "🔒 LOCKED" : "🔓 UNLOCKED"}
+                                  </span>
+                                </button>
+                              );
+                            })()}
+                          </th>
+
+                          {/* Column 6 Square */}
+                          <th className="py-4 px-3 border-b border-slate-800 text-center w-[12%]">
+                            {(() => {
+                              const isLocked = !!eventAccessEvent?.lockedSteps?.[6];
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setStepLockTarget({ stepId: 6, name: "Prototype & Video" })}
+                                  className={`p-3 rounded-2xl border space-y-1 shadow-inner inline-block w-full text-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                                    isLocked 
+                                      ? "bg-amber-950/90 border-amber-500/90 ring-2 ring-amber-500/30" 
+                                      : "bg-slate-800/90 border-slate-700/80 hover:border-slate-500"
+                                  }`}
+                                  title={isLocked ? "Step 6 is LOCKED. Click to Unlock for participants." : "Click to LOCK Step 6 for participants."}
+                                >
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span className="text-[10px] font-black uppercase text-orange-400 tracking-wider">STEP 6</span>
+                                    <Lock className={`w-3 h-3 ${isLocked ? "text-amber-400" : "text-slate-500 opacity-50"}`} />
+                                  </div>
+                                  <span className="text-xs font-black text-white block truncate">Prototype & Video</span>
+                                  <span className={`text-[9px] font-extrabold uppercase tracking-widest block ${isLocked ? "text-amber-400" : "text-slate-400"}`}>
+                                    {isLocked ? "🔒 LOCKED" : "🔓 UNLOCKED"}
+                                  </span>
+                                </button>
+                              );
+                            })()}
                           </th>
 
                           {/* Action Column */}
@@ -4338,9 +4758,11 @@ const EventManagementPage: React.FC = () => {
 
                           // Step Completion Conditions
                           const step1Completed = reg.isPsSaved || reg.isPsLocked || !!reg.problemStatement || !!reg.selectedProblemStatementId;
-                          const step2Completed = (!!reg.srsFileName || !!reg.srsFileUrl) && (!!reg.presentationFileName || !!reg.presentationUrl);
-                          const step3Completed = !!reg.githubUrl && !!reg.keyFeatures;
-                          const step4Completed = (!!reg.prototypeUrl && !!reg.demoVideoUrl) || reg.submissionStatus === "Submitted" || !!reg.submittedAt;
+                          const step2Completed = !!reg.srsFileName || !!reg.srsFileUrl;
+                          const step3Completed = !!reg.presentationFileName || !!reg.presentationUrl;
+                          const step4Completed = !!reg.keyFeatures;
+                          const step5Completed = !!reg.githubUrl;
+                          const step6Completed = (!!reg.prototypeUrl && !!reg.demoVideoUrl) || reg.submissionStatus === "Submitted" || !!reg.submittedAt;
 
                           return (
                             <tr key={reg.id || idx} className="hover:bg-blue-50/40 transition-colors group">
@@ -4361,7 +4783,7 @@ const EventManagementPage: React.FC = () => {
                                 </div>
                               </td>
 
-                              {/* Step 1 Node (Line extends right into Step 2) */}
+                              {/* Step 1 Node */}
                               <td className="py-5 px-3 text-center relative overflow-visible">
                                 <div className="flex items-center justify-center relative w-full">
                                   {/* Seamless Connecting Line right */}
@@ -4385,7 +4807,7 @@ const EventManagementPage: React.FC = () => {
                                 </span>
                               </td>
 
-                              {/* Step 2 Node (Line spans left to right across Step 1 and Step 3) */}
+                              {/* Step 2 Node */}
                               <td className="py-5 px-3 text-center relative overflow-visible">
                                 <div className="flex items-center justify-center relative w-full">
                                   {/* Seamless Connecting Line across left & right */}
@@ -4395,7 +4817,7 @@ const EventManagementPage: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => setSelectedTeamSubmission(reg)}
-                                    title={step2Completed ? "Step 2 Completed: SRS & PPT Uploaded" : "Step 2 In Progress / Pending"}
+                                    title={step2Completed ? "Step 2 Completed: SRS Uploaded" : "Step 2 In Progress / Pending"}
                                     className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step2Completed
                                         ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
                                         : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
@@ -4405,21 +4827,19 @@ const EventManagementPage: React.FC = () => {
                                   </button>
                                 </div>
                                 <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
-                                  {step2Completed ? "SRS & PPT Done" : "SRS/PPT Pending"}
+                                  {step2Completed ? "SRS Done" : "SRS Pending"}
                                 </span>
                               </td>
 
-                              {/* Step 3 Node (Line spans left to right across Step 2 and Step 4) */}
+                              {/* Step 3 Node */}
                               <td className="py-5 px-3 text-center relative overflow-visible">
                                 <div className="flex items-center justify-center relative w-full">
-                                  {/* Seamless Connecting Line across left & right */}
                                   <div className={`absolute left-[-50%] right-[-50%] top-1/2 -translate-y-1/2 h-1.5 z-0 ${step3Completed && step4Completed ? 'bg-emerald-500 shadow-xs' : (step2Completed && step3Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300')}`} />
 
-                                  {/* Node Circle 3 */}
                                   <button
                                     type="button"
                                     onClick={() => setSelectedTeamSubmission(reg)}
-                                    title={step3Completed ? "Step 3 Completed: GitHub Repo & Features Saved" : "Step 3 In Progress / Pending"}
+                                    title={step3Completed ? "Step 3 Completed: PPT Uploaded" : "Step 3 In Progress / Pending"}
                                     className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step3Completed
                                         ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
                                         : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
@@ -4429,21 +4849,19 @@ const EventManagementPage: React.FC = () => {
                                   </button>
                                 </div>
                                 <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
-                                  {step3Completed ? "Repo & Feature" : "Repo Pending"}
+                                  {step3Completed ? "PPT Done" : "PPT Pending"}
                                 </span>
                               </td>
 
-                              {/* Step 4 Node (Line extends left from Step 3 to center) */}
+                              {/* Step 4 Node */}
                               <td className="py-5 px-3 text-center relative overflow-visible">
                                 <div className="flex items-center justify-center relative w-full">
-                                  {/* Seamless Connecting Line left */}
-                                  <div className={`absolute left-[-50%] right-1/2 top-1/2 -translate-y-1/2 h-1.5 z-0 ${step4Completed ? 'bg-emerald-500 shadow-xs' : (step3Completed && step4Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300')}`} />
+                                  <div className={`absolute left-[-50%] right-[-50%] top-1/2 -translate-y-1/2 h-1.5 z-0 ${step4Completed && step5Completed ? 'bg-emerald-500 shadow-xs' : (step3Completed && step4Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300')}`} />
 
-                                  {/* Node Circle 4 */}
                                   <button
                                     type="button"
                                     onClick={() => setSelectedTeamSubmission(reg)}
-                                    title={step4Completed ? "Step 4 Completed: Prototype & Demo Video Submitted" : "Step 4 In Progress / Pending"}
+                                    title={step4Completed ? "Step 4 Completed: Key Features Saved" : "Step 4 In Progress / Pending"}
                                     className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step4Completed
                                         ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
                                         : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
@@ -4453,7 +4871,53 @@ const EventManagementPage: React.FC = () => {
                                   </button>
                                 </div>
                                 <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
-                                  {step4Completed ? "Final Submitted" : "Prototype/Video"}
+                                  {step4Completed ? "Features Saved" : "Features Pending"}
+                                </span>
+                              </td>
+
+                              {/* Step 5 Node */}
+                              <td className="py-5 px-3 text-center relative overflow-visible">
+                                <div className="flex items-center justify-center relative w-full">
+                                  <div className={`absolute left-[-50%] right-[-50%] top-1/2 -translate-y-1/2 h-1.5 z-0 ${step5Completed && step6Completed ? 'bg-emerald-500 shadow-xs' : (step4Completed && step5Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300')}`} />
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedTeamSubmission(reg)}
+                                    title={step5Completed ? "Step 5 Completed: GitHub Repo Link Saved" : "Step 5 In Progress / Pending"}
+                                    className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step5Completed
+                                        ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
+                                        : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
+                                      }`}
+                                  >
+                                    {step5Completed ? <Check className="w-6 h-6 stroke-[3]" /> : "5"}
+                                  </button>
+                                </div>
+                                <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
+                                  {step5Completed ? "Repo Saved" : "Repo Pending"}
+                                </span>
+                              </td>
+
+                              {/* Step 6 Node (Line extends left to center) */}
+                              <td className="py-5 px-3 text-center relative overflow-visible">
+                                <div className="flex items-center justify-center relative w-full">
+                                  {/* Seamless Connecting Line left */}
+                                  <div className={`absolute left-[-50%] right-1/2 top-1/2 -translate-y-1/2 h-1.5 z-0 ${step6Completed ? 'bg-emerald-500 shadow-xs' : (step5Completed && step6Completed ? 'bg-emerald-500 shadow-xs' : 'bg-blue-300')}`} />
+
+                                  {/* Node Circle 6 */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedTeamSubmission(reg)}
+                                    title={step6Completed ? "Step 6 Completed: Prototype & Demo Video Submitted" : "Step 6 In Progress / Pending"}
+                                    className={`w-11 h-11 rounded-full relative z-10 flex items-center justify-center font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer border-2 ${step6Completed
+                                        ? 'bg-emerald-500 text-white border-emerald-400 shadow-emerald-500/40 ring-4 ring-emerald-100'
+                                        : 'bg-blue-500 text-white border-blue-400 shadow-blue-500/40 ring-4 ring-blue-100'
+                                      }`}
+                                  >
+                                    {step6Completed ? <Check className="w-6 h-6 stroke-[3]" /> : "6"}
+                                  </button>
+                                </div>
+                                <span className="text-[10px] font-extrabold block mt-2 truncate max-w-[140px] mx-auto text-slate-700">
+                                  {step6Completed ? "Final Submitted" : "Prototype/Video"}
                                 </span>
                               </td>
 
@@ -4594,6 +5058,69 @@ const EventManagementPage: React.FC = () => {
                 className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition-colors cursor-pointer"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Step Lock Modal */}
+      {stepLockTarget && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6 animate-in zoom-in-95 duration-150 text-left">
+            <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold shrink-0 ${
+                eventAccessEvent?.lockedSteps?.[stepLockTarget.stepId] 
+                  ? "bg-emerald-50 text-emerald-600" 
+                  : "bg-amber-50 text-amber-600"
+              }`}>
+                <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900">
+                  {eventAccessEvent?.lockedSteps?.[stepLockTarget.stepId] ? "Unlock Step Block" : "Lock Step Block"}
+                </h3>
+                <p className="text-xs font-bold text-slate-500">
+                  Step {stepLockTarget.stepId}: {stepLockTarget.name}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm font-medium text-slate-600 leading-relaxed">
+              {eventAccessEvent?.lockedSteps?.[stepLockTarget.stepId] ? (
+                <>
+                  Are you sure you want to <strong className="text-emerald-600 font-extrabold">UNLOCK Step {stepLockTarget.stepId} ({stepLockTarget.name})</strong> for all participants? Teams will be allowed to upload and update submissions for this step again.
+                </>
+              ) : (
+                <>
+                  Are you sure you want to <strong className="text-amber-600 font-extrabold">LOCK Step {stepLockTarget.stepId} ({stepLockTarget.name})</strong> for all participants? Teams will be prevented from uploading or changing their submissions for this step.
+                </>
+              )}
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setStepLockTarget(null)}
+                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmStepLockToggle}
+                disabled={isLockingStep}
+                className={`px-6 py-2.5 font-black text-xs rounded-xl shadow-md text-white transition-all flex items-center gap-2 cursor-pointer ${
+                  eventAccessEvent?.lockedSteps?.[stepLockTarget.stepId]
+                    ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20"
+                    : "bg-amber-600 hover:bg-amber-700 shadow-amber-500/20"
+                }`}
+              >
+                {isLockingStep ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                <span>
+                  {eventAccessEvent?.lockedSteps?.[stepLockTarget.stepId] ? "Confirm Unlock" : "Confirm Lock"}
+                </span>
               </button>
             </div>
           </div>

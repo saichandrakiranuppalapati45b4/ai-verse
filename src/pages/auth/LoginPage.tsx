@@ -24,6 +24,7 @@ const LoginPage: React.FC = () => {
     { email: "facultycoordinator@aiverse.in", label: "Faculty Coordinator", role: "faculty", target: "/faculty/dashboard" },
     { email: "studentorganizer@aiverse.in", label: "Student Organizer", role: "organizer", target: "/organizer/dashboard" },
     { email: "jury@aiverse.in", label: "Jury Evaluator", role: "jury", target: "/jury" },
+    { email: "jurry@aiverse.in", label: "Jury Evaluator", role: "jury", target: "/jury" },
     { email: "participant@aiverse.in", label: "Participant Portal", role: "participant", target: "/participant/set-password" },
   ];
 

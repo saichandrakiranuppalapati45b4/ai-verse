@@ -32,9 +32,14 @@ import RegistrationsManagementPage from "../pages/faculty/RegistrationsManagemen
 import AttendanceManagementPage from "../pages/faculty/AttendanceManagementPage";
 import ProfilePage from "../pages/faculty/ProfilePage";
 import FacResultsPage from "../pages/faculty/FacResultsPage";
+// Participant & Quiz Pages
 import ParticipantSetPasswordPage from "../pages/auth/ParticipantSetPasswordPage";
 import ParticipantDashboardPage from "../pages/participant/ParticipantDashboardPage";
 import TeamReviewPage from "../pages/participant/TeamReviewPage";
+import QuizLobbyPage from "../pages/participant/QuizLobbyPage";
+import QuizTakingPage from "../pages/participant/QuizTakingPage";
+import QuizCompletionPage from "../pages/participant/QuizCompletionPage";
+import QuizManagementPage from "../pages/faculty/QuizManagementPage";
 
 const AppRoutes: React.FC = () => {
   return (
@@ -129,6 +134,24 @@ const AppRoutes: React.FC = () => {
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 
+      {/* Standalone Full-Page Quiz Management (No sidebar) */}
+      <Route
+        path="/faculty/quizzes"
+        element={
+          <ProtectedRoute allowedRoles={["faculty", "organizer"]}>
+            <QuizManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/organizer/quizzes"
+        element={
+          <ProtectedRoute allowedRoles={["faculty", "organizer"]}>
+            <QuizManagementPage />
+          </ProtectedRoute>
+        }
+      />
+
       {/* Participant Routes */}
       <Route path="/participant/set-password" element={<ParticipantSetPasswordPage />} />
       <Route path="/set-password" element={<ParticipantSetPasswordPage />} />
@@ -148,7 +171,34 @@ const AppRoutes: React.FC = () => {
           </ProtectedRoute>
         }
       />
-      <Route path="/participant" element={<Navigate to="/participant/review-team" replace />} />
+
+      {/* High-Concurrency Quiz Assessment Routes */}
+      <Route
+        path="/participant/quiz/:quizId/lobby"
+        element={
+          <ProtectedRoute allowedRoles={["participant", "faculty", "organizer"]}>
+            <QuizLobbyPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/participant/quiz/:quizId/take"
+        element={
+          <ProtectedRoute allowedRoles={["participant", "faculty", "organizer"]}>
+            <QuizTakingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/participant/quiz/:quizId/completed"
+        element={
+          <ProtectedRoute allowedRoles={["participant", "faculty", "organizer"]}>
+            <QuizCompletionPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route path="/participant" element={<Navigate to="/participant/dashboard" replace />} />
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/404" replace />} />
