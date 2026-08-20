@@ -14,7 +14,7 @@ export interface QuizTimerState {
 
 export function useQuizTimer({ endTime, onTimeExpired }: UseQuizTimerProps): QuizTimerState {
   const computeRemaining = useCallback(() => {
-    if (!endTime) return 0;
+    if (!endTime || endTime <= 0) return 0;
     const diffMs = endTime - Date.now();
     return Math.max(0, Math.floor(diffMs / 1000));
   }, [endTime]);
@@ -25,13 +25,19 @@ export function useQuizTimer({ endTime, onTimeExpired }: UseQuizTimerProps): Qui
   onTimeExpiredRef.current = onTimeExpired;
 
   useEffect(() => {
+    // If endTime is not set or non-positive, do not activate timer
+    if (!endTime || endTime <= 0) {
+      setRemainingSeconds(0);
+      return;
+    }
+
     expiredTriggeredRef.current = false;
     
     const checkTimer = () => {
       const remaining = computeRemaining();
       setRemainingSeconds(remaining);
 
-      if (remaining <= 0 && !expiredTriggeredRef.current) {
+      if (remaining <= 0 && !expiredTriggeredRef.current && endTime > 0) {
         expiredTriggeredRef.current = true;
         onTimeExpiredRef.current();
       }

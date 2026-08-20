@@ -6,7 +6,10 @@ import {
   updateDoc, 
   collection, 
   getDocs, 
-  writeBatch
+  writeBatch,
+  deleteDoc,
+  query,
+  where
 } from "firebase/firestore";
 import type { 
   Quiz, 
@@ -127,6 +130,8 @@ export async function getAllQuizzes(): Promise<Quiz[]> {
         passingMarks: Number(data.passingMarks) || 20,
         instructions: data.instructions || [],
         status: data.status || "draft",
+        scheduledStartTime: data.scheduledStartTime || 0,
+        scheduledEndTime: data.scheduledEndTime || 0,
         questionsCount: Number(data.questionsCount) || (data.questions?.length || 0),
         questions: data.questions || [],
         createdAt: data.createdAt || Date.now(),
@@ -161,34 +166,81 @@ export async function getOrCreateQuizSession(
 
   try {
     const sessionSnap = await getDoc(sessionRef);
+    const now = Date.now();
+    const durationMs = (quiz.durationMinutes || 30) * 60 * 1000;
+    
+    // Auto-stop logic: The session endTime cannot exceed the Quiz's global scheduledEndTime (if in the future)
+    let authoritativeEndTime = now + durationMs;
+    if (quiz.scheduledEndTime && quiz.scheduledEndTime > now) {
+      authoritativeEndTime = Math.min(authoritativeEndTime, quiz.scheduledEndTime);
+    }
 
     if (sessionSnap.exists()) {
       const data = sessionSnap.data();
-      return {
+      let restoredEndTime = Number(data.endTime) || (now + durationMs);
+      let restoredStartTime = Number(data.startTime) || now;
+      let restoredStatus = data.status || "in_progress";
+      let restoredSubmittedAt = data.submittedAt || undefined;
+      
+      // If the quiz was globally started/restarted AFTER this session was created or submitted:
+      const wasCreatedBeforeQuizStart = quiz.scheduledStartTime && (quiz.scheduledStartTime > (data.submittedAt || restoredStartTime));
+      
+      if (wasCreatedBeforeQuizStart) {
+        restoredStartTime = now;
+        restoredEndTime = authoritativeEndTime;
+        restoredStatus = "in_progress";
+        restoredSubmittedAt = undefined;
+
+        // Clean up previous locked submission and answers draft
+        try {
+          await deleteDoc(doc(db, "quizSubmissions", sessionId));
+          await deleteDoc(doc(db, "quizAnswers", sessionId));
+        } catch (e) {
+          console.warn("[QuizService] Could not clear old submission doc:", e);
+        }
+      } else if (quiz.scheduledEndTime && quiz.scheduledEndTime > now) {
+        restoredEndTime = Math.min(restoredEndTime, quiz.scheduledEndTime);
+      }
+
+      // Helper to strip undefined values so Firestore never errors on setDoc
+      const cleanSessionDoc = (obj: any) => {
+        const cleaned: any = {};
+        Object.keys(obj).forEach((k) => {
+          if (obj[k] !== undefined) {
+            cleaned[k] = obj[k];
+          }
+        });
+        return cleaned;
+      };
+
+      const updatedSession: QuizSession = {
         id: sessionSnap.id,
-        quizId: data.quizId,
+        quizId: data.quizId || quiz.id,
         quizTitle: data.quizTitle || quiz.title,
-        userId: data.userId,
+        userId: data.userId || user.uid,
         userEmail: data.userEmail || user.email || "",
         userName: data.userName || user.displayName || user.name || "Participant",
         teamId: data.teamId || team?.id || "",
         teamName: data.teamName || team?.name || "",
-        startTime: Number(data.startTime) || Date.now(),
-        endTime: Number(data.endTime) || (Date.now() + quiz.durationMinutes * 60 * 1000),
+        startTime: restoredStartTime,
+        endTime: restoredEndTime,
         durationMinutes: Number(data.durationMinutes) || quiz.durationMinutes,
-        status: data.status || "in_progress",
-        lastAutosavedAt: Number(data.lastAutosavedAt) || Date.now(),
-        submittedAt: data.submittedAt || undefined,
-        createdAt: data.createdAt || Date.now(),
-        updatedAt: data.updatedAt || Date.now()
+        status: restoredStatus,
+        lastAutosavedAt: Number(data.lastAutosavedAt) || now,
+        ...(restoredSubmittedAt ? { submittedAt: restoredSubmittedAt } : {}),
+        createdAt: data.createdAt || now,
+        updatedAt: now
       };
+
+      // Persist the updated session if status was reset to in_progress
+      if (wasCreatedBeforeQuizStart || (restoredStatus === "in_progress" && data.status === "submitted")) {
+        await setDoc(sessionRef, cleanSessionDoc(updatedSession));
+      }
+
+      return updatedSession;
     }
 
     // Create New Session with authoritative server timestamp calculation
-    const now = Date.now();
-    const durationMs = (quiz.durationMinutes || 30) * 60 * 1000;
-    const authoritativeEndTime = now + durationMs;
-
     const newSession: QuizSession = {
       id: sessionId,
       quizId: quiz.id,
@@ -211,6 +263,42 @@ export async function getOrCreateQuizSession(
     return newSession;
   } catch (err) {
     console.error("[QuizService] Error initializing quiz session:", err);
+    throw err;
+  }
+}
+
+/**
+ * Reset a single participant's session and submission, allowing them to retake the quiz cleanly
+ */
+export async function resetParticipantQuizSession(quizId: string, userId: string): Promise<void> {
+  const sessionId = getDeterministicSessionId(quizId, userId);
+  try {
+    await deleteDoc(doc(db, "quizSubmissions", sessionId));
+    await deleteDoc(doc(db, "quizSessions", sessionId));
+    await deleteDoc(doc(db, "quizAnswers", sessionId));
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(`quiz_draft_${sessionId}`);
+    }
+  } catch (err) {
+    console.error(`[QuizService] Error resetting session for ${sessionId}:`, err);
+    throw err;
+  }
+}
+
+/**
+ * Reset all submissions and sessions for a quiz
+ */
+export async function resetAllQuizSubmissions(quizId: string): Promise<void> {
+  try {
+    const subSnap = await getDocs(query(collection(db, "quizSubmissions"), where("quizId", "==", quizId)));
+    const sessSnap = await getDocs(query(collection(db, "quizSessions"), where("quizId", "==", quizId)));
+
+    const batch = writeBatch(db);
+    subSnap.forEach(d => batch.delete(d.ref));
+    sessSnap.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  } catch (err) {
+    console.error(`[QuizService] Error resetting all submissions for quiz ${quizId}:`, err);
     throw err;
   }
 }

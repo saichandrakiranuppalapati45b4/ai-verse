@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { getQuizById, getOrCreateQuizSession, getDeterministicSessionId } from "../../services/quizService";
+import { getOrCreateQuizSession, getDeterministicSessionId } from "../../services/quizService";
 import type { Quiz } from "../../types/quiz";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import SEO from "../../components/layout/SEO";
 import { 
@@ -17,7 +17,9 @@ import {
   Wifi, 
   FileText, 
   Loader2,
-  ChevronLeft
+  ChevronLeft,
+  Radio,
+  Hourglass
 } from "lucide-react";
 
 export const QuizLobbyPage: React.FC = () => {
@@ -30,44 +32,121 @@ export const QuizLobbyPage: React.FC = () => {
   const [starting, setStarting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
+  // Clock tick to keep countdown / schedule comparisons live
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Real-time listener for quiz status & changes
   useEffect(() => {
     if (!quizId) return;
 
-    const loadQuizDetails = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await getQuizById(quizId);
-        if (!data) {
-          setError("The requested quiz could not be found or has not been published.");
-          return;
-        }
+    setLoading(true);
+    setError(null);
 
-        setQuiz(data);
+    const quizRef = doc(db, "quizzes", quizId);
+    const unsubQuiz = onSnapshot(quizRef, async (snap) => {
+      if (!snap.exists()) {
+        setError("The requested quiz could not be found or has not been published.");
+        setLoading(false);
+        return;
+      }
 
-        // Check if user already submitted this quiz
-        if (user?.uid) {
+      const data = snap.data();
+      const loadedQuiz: Quiz = {
+        id: snap.id,
+        title: data.title || "AI Verse Quiz",
+        description: data.description || "",
+        eventId: data.eventId || "",
+        eventTitle: data.eventTitle || "",
+        track: data.track || "General",
+        durationMinutes: Number(data.durationMinutes) || 30,
+        totalMarks: Number(data.totalMarks) || 50,
+        passingMarks: Number(data.passingMarks) || 20,
+        instructions: Array.isArray(data.instructions) && data.instructions.length > 0 ? data.instructions : [
+          "Each question has 4 options with single correct answer.",
+          "Your answers are automatically saved periodically in the background.",
+          "You can navigate freely between questions using the Question Palette.",
+          "Once submitted or when the timer expires, no further modifications are allowed.",
+          "Do not close or switch browser tabs to ensure an uninterrupted session."
+        ],
+        status: data.status || "active",
+        scheduledStartTime: data.scheduledStartTime || 0,
+        scheduledEndTime: data.scheduledEndTime || 0,
+        questionsCount: Number(data.questionsCount) || (data.questions?.length || 0),
+        questions: data.questions || [],
+        createdAt: data.createdAt || Date.now(),
+        updatedAt: data.updatedAt || Date.now()
+      };
+
+      setQuiz(loadedQuiz);
+
+      // Check if user already submitted in this current round
+      if (user?.uid) {
+        try {
           const sessionId = getDeterministicSessionId(quizId, user.uid);
           const subSnap = await getDoc(doc(db, "quizSubmissions", sessionId));
           if (subSnap.exists()) {
-            navigate(`/participant/quiz/${quizId}/completed`, { replace: true });
-            return;
+            const subData = subSnap.data();
+            const wasSubmittedBeforeRestart = loadedQuiz.scheduledStartTime && subData.submittedAt && (subData.submittedAt < loadedQuiz.scheduledStartTime);
+            if (!wasSubmittedBeforeRestart) {
+              navigate(`/participant/quiz/${quizId}/completed`, { replace: true });
+              return;
+            }
           }
+        } catch (err) {
+          console.warn("Error checking submission record:", err);
         }
-      } catch (err: any) {
-        console.error("Error loading quiz lobby:", err);
-        setError("Failed to load quiz details. Please check your internet connection.");
-      } finally {
-        setLoading(false);
       }
-    };
 
-    loadQuizDetails();
+      setLoading(false);
+    }, (err) => {
+      console.error("Error subscribing to quiz doc:", err);
+      setError("Failed to load quiz details. Please check your internet connection.");
+      setLoading(false);
+    });
+
+    return () => unsubQuiz();
   }, [quizId, user, navigate]);
 
+  // Derived status computations
+  const isLive = Boolean(
+    quiz &&
+    quiz.status === "active" &&
+    quiz.scheduledStartTime &&
+    quiz.scheduledStartTime <= currentTime &&
+    (!quiz.scheduledEndTime || quiz.scheduledEndTime > currentTime)
+  );
+
+  const isCompleted = Boolean(
+    quiz && (
+      quiz.status === "completed" ||
+      (quiz.scheduledEndTime && quiz.scheduledEndTime <= currentTime && quiz.scheduledStartTime)
+    )
+  );
+
+  const isUpcoming = Boolean(
+    quiz && quiz.scheduledStartTime && quiz.scheduledStartTime > currentTime
+  );
+
+  // Format countdown string for upcoming quiz
+  const formatScheduledCountdown = (targetTime: number) => {
+    const diffMs = Math.max(0, targetTime - currentTime);
+    const totalSecs = Math.floor(diffMs / 1000);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    const hrs = Math.floor(mins / 60);
+    if (hrs > 0) {
+      return `${hrs}h ${mins % 60}m ${secs}s`;
+    }
+    return `${mins}m ${String(secs).padStart(2, "0")}s`;
+  };
+
   const handleStartQuiz = async () => {
-    if (!quiz || !user || starting || !acknowledged) return;
+    if (!quiz || !user || starting || !acknowledged || !isLive) return;
 
     try {
       setStarting(true);
@@ -96,7 +175,7 @@ export const QuizLobbyPage: React.FC = () => {
       <div className="min-h-screen bg-[#F4F7FC] flex items-center justify-center p-6">
         <div className="text-center space-y-4">
           <Loader2 className="w-10 h-10 text-blue-600 animate-spin mx-auto" />
-          <p className="text-sm font-bold text-slate-700">Loading quiz environment...</p>
+          <p className="text-sm font-bold text-slate-700">Connecting to examination hub...</p>
         </div>
       </div>
     );
@@ -139,7 +218,23 @@ export const QuizLobbyPage: React.FC = () => {
         </Link>
 
         <div className="flex items-center gap-3">
-          <span className="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200/70 px-3 py-1 rounded-full">
+          {isLive ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-xs font-bold shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Live Assessment Active</span>
+            </div>
+          ) : isCompleted ? (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold">
+              <span>Assessment Concluded</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 text-xs font-bold shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+              <span>Waiting for Admin</span>
+            </div>
+          )}
+
+          <span className="hidden sm:inline-block text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200/70 px-3 py-1 rounded-full">
             {quiz.track || "General Track"}
           </span>
         </div>
@@ -148,6 +243,76 @@ export const QuizLobbyPage: React.FC = () => {
       {/* Main Content */}
       <main className="max-w-4xl w-full mx-auto p-6 sm:p-10 space-y-8 flex-1">
         
+        {/* ================= WAITING STATE BANNER ================= */}
+        {!isLive && !isCompleted && (
+          <div className="bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0A1128] border border-blue-900/50 rounded-3xl p-6 sm:p-8 text-white shadow-xl space-y-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/15 rounded-full blur-3xl -z-0" />
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-extrabold uppercase px-3 py-1 rounded-full flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                    {isUpcoming ? "QUIZ SCHEDULED" : "WAITING FOR ADMIN TO START"}
+                  </span>
+                  <span className="text-xs text-blue-200/70 font-medium">Real-time sync enabled</span>
+                </div>
+
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  {isUpcoming ? "Assessment Opens Soon" : "Please Wait for Admin to Start"}
+                </h2>
+
+                <p className="text-xs sm:text-sm text-slate-300 font-medium max-w-xl leading-relaxed">
+                  {isUpcoming 
+                    ? `This assessment is scheduled to open soon. Please wait on this page—it will automatically unlock when time is up.`
+                    : `The exam engine is ready. Please wait until the administrator starts the quiz session from the faculty control room. This page will automatically unlock immediately.`
+                  }
+                </p>
+              </div>
+
+              {/* Countdown or Live Pulse Indicator */}
+              <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl p-4 sm:p-5 text-center shrink-0 min-w-[170px] shadow-inner">
+                {isUpcoming && quiz.scheduledStartTime ? (
+                  <div>
+                    <Hourglass className="w-5 h-5 text-amber-400 mx-auto mb-1 animate-spin" />
+                    <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Opens In</span>
+                    <span className="text-2xl font-black text-amber-300 font-mono">
+                      {formatScheduledCountdown(quiz.scheduledStartTime)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 py-1">
+                    <div className="relative w-8 h-8 mx-auto flex items-center justify-center">
+                      <span className="absolute w-full h-full rounded-full bg-blue-500/40 animate-ping" />
+                      <span className="relative w-3.5 h-3.5 rounded-full bg-blue-400" />
+                    </div>
+                    <span className="text-xs font-bold text-blue-200 block">Lobby Connected</span>
+                    <span className="text-[10px] text-slate-400 font-semibold block">Auto-unlocking...</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= COMPLETED BANNER ================= */}
+        {isCompleted && (
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <span className="bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-extrabold uppercase px-3 py-1 rounded-full">
+                ASSESSMENT CLOSED
+              </span>
+              <h2 className="text-xl font-black text-white">This Assessment Has Concluded</h2>
+              <p className="text-xs text-slate-400">The allotted window for this quiz has closed or the administrator has finalized the exam.</p>
+            </div>
+            <Link
+              to="/participant/dashboard"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-6 py-3 rounded-xl transition-all inline-flex items-center gap-2 self-start sm:self-auto cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" /> Return to Dashboard
+            </Link>
+          </div>
+        )}
+
         {/* Hero Card */}
         <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
           <div className="space-y-3">
@@ -225,12 +390,15 @@ export const QuizLobbyPage: React.FC = () => {
             </div>
           </div>
 
-          <label className="flex items-start gap-3 p-4 bg-blue-50/50 border border-blue-100 rounded-2xl cursor-pointer hover:bg-blue-50 transition-colors">
+          <label className={`flex items-start gap-3 p-4 rounded-2xl transition-colors ${
+            isLive ? "bg-blue-50/50 border border-blue-100 cursor-pointer hover:bg-blue-50" : "bg-slate-50 border border-slate-200 opacity-60 cursor-not-allowed"
+          }`}>
             <input
               type="checkbox"
+              disabled={!isLive}
               checked={acknowledged}
               onChange={(e) => setAcknowledged(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+              className="mt-0.5 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer disabled:cursor-not-allowed"
             />
             <span className="text-xs font-semibold text-slate-700 leading-relaxed">
               I confirm that I am ready to begin the exam. I understand that once started, the timer will count down continuously and my answers will automatically submit when time expires.
@@ -245,25 +413,42 @@ export const QuizLobbyPage: React.FC = () => {
               Cancel and return to dashboard
             </Link>
 
-            <button
-              onClick={handleStartQuiz}
-              disabled={!acknowledged || starting}
-              className={`bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm px-8 py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                !acknowledged || starting ? "opacity-50 cursor-not-allowed" : ""
-              }`}
-            >
-              {starting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Initializing Exam Session...</span>
-                </>
-              ) : (
-                <>
-                  <span>Start Examination</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
+            {isLive ? (
+              <button
+                onClick={handleStartQuiz}
+                disabled={!acknowledged || starting}
+                className={`bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm px-8 py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  !acknowledged || starting ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+              >
+                {starting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Initializing Exam Session...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Start Examination</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            ) : isCompleted ? (
+              <button
+                disabled
+                className="bg-slate-200 text-slate-500 font-bold text-xs px-8 py-3.5 rounded-xl cursor-not-allowed"
+              >
+                Assessment Closed
+              </button>
+            ) : (
+              <button
+                disabled
+                className="bg-amber-50 border border-amber-200 text-amber-800 font-bold text-xs px-6 py-3.5 rounded-xl flex items-center gap-2 cursor-not-allowed opacity-90 shadow-2xs"
+              >
+                <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                <span>{isUpcoming ? "Waiting for Scheduled Start Time..." : "Waiting for Admin to Start Quiz..."}</span>
+              </button>
+            )}
           </div>
         </div>
 

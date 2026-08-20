@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import SEO from "../../components/layout/SEO";
 import Papa from "papaparse";
 import { db, firebaseConfig } from "../../config/firebase";
+import { env } from "../../config/env";
 import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment, onSnapshot } from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
@@ -46,7 +47,9 @@ import {
   UserCheck,
   EyeOff,
   AlertTriangle,
-  Mail
+  Mail,
+  IndianRupee,
+  CreditCard
 } from "lucide-react";
 import DatePicker from "../../components/ui/DatePicker";
 import TimePicker from "../../components/ui/TimePicker";
@@ -524,8 +527,8 @@ const EventManagementPage: React.FC = () => {
 
         // Create Supabase Auth user using secondary client (avoids logging out current admin)
         try {
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://glwwaoqbnguvorophdle.supabase.co";
-          const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+          const supabaseUrl = env.supabase.url;
+          const supabaseAnonKey = env.supabase.anonKey;
           
           if (supabaseUrl && supabaseAnonKey) {
             const secondarySupabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -688,28 +691,9 @@ const EventManagementPage: React.FC = () => {
           console.warn("Firestore revoke users error:", userErr);
         }
 
-        // Delete from Supabase public.users and auth.users
+        // Delete from Supabase public.users
         try {
           const teamEmail = generateTeamEmail(reg);
-          
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-          const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-          if (supabaseUrl && serviceRoleKey) {
-            const adminSupabase = createClient(supabaseUrl, serviceRoleKey, {
-              auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-            });
-            
-            // Find and delete from auth.users
-            const { data: usersData } = await adminSupabase.auth.admin.listUsers();
-            if (usersData?.users) {
-              const authUser = usersData.users.find((u: any) => u.email === teamEmail);
-              if (authUser) {
-                await adminSupabase.auth.admin.deleteUser(authUser.id);
-              }
-            }
-          }
-
-          // Delete from public.users
           const supaUser = await userService.getUserByEmail(teamEmail);
           if (supaUser) {
             await userService.deleteUser(supaUser.id);
@@ -765,30 +749,11 @@ const EventManagementPage: React.FC = () => {
         console.warn("Firestore revoke user error:", userErr);
       }
 
-      // Delete from Supabase public.users and auth.users
+      // Delete from Supabase public.users
       try {
         const reg = eventAccessRegistrations.find((r) => r.id === regId);
         if (reg) {
           const teamEmail = generateTeamEmail(reg);
-          
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-          const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-          if (supabaseUrl && serviceRoleKey) {
-            const adminSupabase = createClient(supabaseUrl, serviceRoleKey, {
-              auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-            });
-            
-            // Find and delete from auth.users
-            const { data: usersData } = await adminSupabase.auth.admin.listUsers();
-            if (usersData?.users) {
-              const authUser = usersData.users.find((u: any) => u.email === teamEmail);
-              if (authUser) {
-                await adminSupabase.auth.admin.deleteUser(authUser.id);
-              }
-            }
-          }
-
-          // Delete from public.users
           const supaUser = await userService.getUserByEmail(teamEmail);
           if (supaUser) {
             await userService.deleteUser(supaUser.id);
@@ -970,6 +935,7 @@ const EventManagementPage: React.FC = () => {
   const [formMinTeamSize, setFormMinTeamSize] = useState("1");
   const [formMaxTeamSize, setFormMaxTeamSize] = useState("4");
   const [formRegistrationFee, setFormRegistrationFee] = useState("0");
+  const [formIsPaidEvent, setFormIsPaidEvent] = useState<boolean>(false);
   const [formPosterImages, setFormPosterImages] = useState<{ filename: string, preview: string }[]>([]);
   const [formWhatsGroupLink, setFormWhatsGroupLink] = useState("");
   const [formFacultyCoordinator, setFormFacultyCoordinator] = useState("");
@@ -1071,6 +1037,13 @@ const EventManagementPage: React.FC = () => {
   const [formIsFeatured, setFormIsFeatured] = useState(false);
   const [formSendEmail, setFormSendEmail] = useState(true);
   const [formStatus, setFormStatus] = useState<"Draft" | "Active" | "Opened">("Draft");
+
+  // Give Event Access States
+  const [formAllowLoginAccess, setFormAllowLoginAccess] = useState<boolean>(true);
+  const [formAllowSubmissions, setFormAllowSubmissions] = useState<boolean>(true);
+  const [formAllowQuizAccess, setFormAllowQuizAccess] = useState<boolean>(true);
+  const [formAllowProblemStatements, setFormAllowProblemStatements] = useState<boolean>(true);
+  const [formAllowCertificates, setFormAllowCertificates] = useState<boolean>(false);
 
   const getSpeakerSectionTitle = () => {
     if (formCategory === "Hackathon" || formCategory === "Tech Event") return "Jury Information";
@@ -1175,7 +1148,8 @@ const EventManagementPage: React.FC = () => {
       agendaDesc3: formAgendaItems[2]?.description || "",
       minTeamSize: formMinTeamSize ? Number(formMinTeamSize) : 1,
       maxTeamSize: formMaxTeamSize ? Number(formMaxTeamSize) : 4,
-      registrationFee: formRegistrationFee ? Number(formRegistrationFee) : 0,
+      isPaidEvent: formIsPaidEvent,
+      registrationFee: formIsPaidEvent && formRegistrationFee ? Number(formRegistrationFee) : 0,
       status: formStatus,
       whatsGroupLink: formWhatsGroupLink,
       facultyCoordinator: formFacultyCoordinator,
@@ -1195,6 +1169,11 @@ const EventManagementPage: React.FC = () => {
       bulkRegCsvFilename: formCategory !== "Hackathon" ? bulkRegCsvFilename : "",
       bulkRegCsvData: formCategory !== "Hackathon" ? bulkRegCsvData : [],
       isPastEvent: formIsPastEvent,
+      allowLoginAccess: formAllowLoginAccess,
+      allowSubmissions: formAllowSubmissions,
+      allowQuizAccess: formAllowQuizAccess,
+      allowProblemStatements: formAllowProblemStatements,
+      allowCertificates: formAllowCertificates,
       createdAt: Date.now()
     };
 
@@ -1307,6 +1286,7 @@ const EventManagementPage: React.FC = () => {
       setFormStatus("Draft");
       setFormMinTeamSize("1");
       setFormMaxTeamSize("4");
+      setFormIsPaidEvent(false);
       setFormRegistrationFee("0");
       setFormWhatsGroupLink("");
       setFormFacultyCoordinator("");
@@ -1334,6 +1314,11 @@ const EventManagementPage: React.FC = () => {
       setBulkRegCsvData([]);
       setFormIsPastEvent(false);
       setFormHasAgenda(true);
+      setFormAllowLoginAccess(true);
+      setFormAllowSubmissions(true);
+      setFormAllowQuizAccess(true);
+      setFormAllowProblemStatements(true);
+      setFormAllowCertificates(false);
       setFormAgendaItems([
         { time: "09:00 AM - 10:30 AM", title: "Morning Keynote: The Future of Compute", description: "Opening session detailing next-gen silicon compute." },
         { time: "11:30 AM - 01:00 PM", title: "Workshop: Transformer Efficiency", description: "Hands-on FlashAttention, quantization, and sparse computation models." },
@@ -1396,7 +1381,9 @@ const EventManagementPage: React.FC = () => {
         setFormStatus(data.status || "Draft");
         setFormMinTeamSize(data.minTeamSize ? String(data.minTeamSize) : "1");
         setFormMaxTeamSize(data.maxTeamSize ? String(data.maxTeamSize) : "4");
-        setFormRegistrationFee(data.registrationFee !== undefined ? String(data.registrationFee) : "0");
+        const loadedFee = data.registrationFee !== undefined ? String(data.registrationFee) : "0";
+        setFormRegistrationFee(loadedFee);
+        setFormIsPaidEvent(data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : Number(loadedFee) > 0);
         setFormWhatsGroupLink(data.whatsGroupLink || "");
         setFormFacultyCoordinator(data.facultyCoordinator || "");
         setFormStudentCoordinator(data.studentCoordinator || "");
@@ -1423,6 +1410,11 @@ const EventManagementPage: React.FC = () => {
         setBulkRegCsvData(data.bulkRegCsvData || []);
         setFormIsPastEvent(data.isPastEvent || false);
         setFormHasAgenda(data.hasAgenda !== false);
+        setFormAllowLoginAccess(data.allowLoginAccess !== undefined ? data.allowLoginAccess : true);
+        setFormAllowSubmissions(data.allowSubmissions !== undefined ? data.allowSubmissions : true);
+        setFormAllowQuizAccess(data.allowQuizAccess !== undefined ? data.allowQuizAccess : true);
+        setFormAllowProblemStatements(data.allowProblemStatements !== undefined ? data.allowProblemStatements : true);
+        setFormAllowCertificates(data.allowCertificates !== undefined ? data.allowCertificates : false);
 
         if (data.agendaItems && Array.isArray(data.agendaItems)) {
           setFormAgendaItems(data.agendaItems);
@@ -2859,6 +2851,279 @@ const EventManagementPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* 3. Give Event Access Card */}
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5 text-left">
+                  <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
+                        <Key className="h-4 w-4" />
+                      </div>
+                      Give Event Access
+                    </h3>
+                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider border border-emerald-200/60 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live Access
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                    Control participant dashboard login access, project submissions, quiz assessment rights, and results visibility for this event.
+                  </p>
+
+                  <div className="space-y-3 pt-1">
+                    {/* Toggle 1: Participant Portal Login Access */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5 text-left pr-3">
+                        <div className="flex items-center gap-1.5">
+                          <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">Participant Login Access</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                          Allow registered participants & teams to log in to the portal
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormAllowLoginAccess(!formAllowLoginAccess)}
+                        className={`w-10 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 cursor-pointer ${
+                          formAllowLoginAccess ? "bg-[#2563EB]" : "bg-slate-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                            formAllowLoginAccess ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Toggle 2: Project Submissions Access */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5 text-left pr-3">
+                        <div className="flex items-center gap-1.5">
+                          <FileCode className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">Project Submissions</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                          Permit teams to submit & update project files and code links
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormAllowSubmissions(!formAllowSubmissions)}
+                        className={`w-10 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 cursor-pointer ${
+                          formAllowSubmissions ? "bg-[#2563EB]" : "bg-slate-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                            formAllowSubmissions ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Toggle 3: Online Quiz & Assessments Access */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5 text-left pr-3">
+                        <div className="flex items-center gap-1.5">
+                          <CheckSquare className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">Quiz & Assessment Access</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                          Allow participants to enter exam lobby and take online tests
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormAllowQuizAccess(!formAllowQuizAccess)}
+                        className={`w-10 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 cursor-pointer ${
+                          formAllowQuizAccess ? "bg-[#2563EB]" : "bg-slate-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                            formAllowQuizAccess ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Toggle 4: Problem Statements Access */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5 text-left pr-3">
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">Problem Statements</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                          Display published tracks & problem descriptions to teams
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormAllowProblemStatements(!formAllowProblemStatements)}
+                        className={`w-10 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 cursor-pointer ${
+                          formAllowProblemStatements ? "bg-[#2563EB]" : "bg-slate-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                            formAllowProblemStatements ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Toggle 5: Certificates & Results */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5 text-left pr-3">
+                        <div className="flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">Certificates & Results</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                          Unlock final leaderboard scores and participation certificates
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormAllowCertificates(!formAllowCertificates)}
+                        className={`w-10 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 cursor-pointer ${
+                          formAllowCertificates ? "bg-[#2563EB]" : "bg-slate-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                            formAllowCertificates ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Direct Action Link to Manage Credentials */}
+                  {editingEventId && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const ev = events.find(e => e.id === editingEventId);
+                          if (ev) handleOpenEventAccess(ev);
+                        }}
+                        className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                        <span>Manage & Dispatch Team Credentials</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Set Pricing Card (Shown when Hackathon category is selected) */}
+                {(formCategory === "Hackathon" || String(formCategory).toLowerCase().includes("hackathon")) && (
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5 text-left animate-in fade-in zoom-in-95 duration-200">
+                    <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                      <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+                          <IndianRupee className="h-4 w-4" />
+                        </div>
+                        Set Pricing
+                      </h3>
+                      <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border ${
+                        formIsPaidEvent 
+                          ? "text-emerald-700 bg-emerald-50 border-emerald-200/60" 
+                          : "text-slate-600 bg-slate-50 border-slate-200"
+                      }`}>
+                        {formIsPaidEvent ? "Paid Hackathon" : "Free Event"}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                      Configure registration fees and price per person for teams participating in this hackathon.
+                    </p>
+
+                    {/* Paid Event ON/OFF Switch */}
+                    <div className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5 text-left pr-3">
+                        <div className="flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">Enable Paid Registration</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                          {formIsPaidEvent ? "Participants must pay registration fee" : "Registration is completely free"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextState = !formIsPaidEvent;
+                          setFormIsPaidEvent(nextState);
+                          if (!nextState) {
+                            setFormRegistrationFee("0");
+                          }
+                        }}
+                        className={`w-10 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 cursor-pointer ${
+                          formIsPaidEvent ? "bg-emerald-600" : "bg-slate-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                            formIsPaidEvent ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Pricing Input Section (When ON) */}
+                    {formIsPaidEvent && (
+                      <div className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-100/70 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                            Price Per Person (₹) <span className="text-red-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400 select-none">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="e.g. 250"
+                              value={formRegistrationFee === "0" ? "" : formRegistrationFee}
+                              onChange={(e) => setFormRegistrationFee(e.target.value)}
+                              className="w-full pl-8 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-sm font-bold placeholder:text-slate-300 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Quick preset chips */}
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Quick Presets</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {["99", "149", "199", "250", "499", "999"].map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setFormRegistrationFee(preset)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                                  formRegistrationFee === preset
+                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                    : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-700"
+                                }`}
+                              >
+                                ₹{preset}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <p className="text-[10px] text-slate-400 font-medium leading-tight">
+                          This fee will be required from each person when registering for this hackathon.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
               </div>
             )}

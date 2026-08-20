@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "../../config/firebase";
 import { 
   getQuizById, 
   getOrCreateQuizSession, 
@@ -12,17 +14,17 @@ import { useQuizSession } from "../../hooks/useQuizSession";
 import SEO from "../../components/layout/SEO";
 import { 
   Clock, 
-  Flag, 
   Check, 
   ArrowLeft, 
   ArrowRight, 
-  RotateCcw, 
   Send, 
   AlertCircle, 
-  WifiOff, 
   Loader2, 
   ShieldAlert,
-  Code
+  X,
+  Lightbulb,
+  Network,
+  ChevronDown
 } from "lucide-react";
 
 export const QuizTakingPage: React.FC = () => {
@@ -39,6 +41,7 @@ export const QuizTakingPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showSubmitModal, setShowSubmitModal] = useState<boolean>(false);
   const [showTimeoutModal, setShowTimeoutModal] = useState<boolean>(false);
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState<boolean>(false);
 
   // 1. Initial Load: Quiz & Authoritative Session
   useEffect(() => {
@@ -50,9 +53,23 @@ export const QuizTakingPage: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        const quizData = await getQuizById(quizId);
+        const quizData = await getQuizById(quizId, true);
         if (!quizData || !quizData.questions || quizData.questions.length === 0) {
           throw new Error("Quiz questions are not available for this session.");
+        }
+
+        const now = Date.now();
+        const isLive = Boolean(
+          quizData.status === "active" &&
+          quizData.scheduledStartTime &&
+          quizData.scheduledStartTime <= now &&
+          (!quizData.scheduledEndTime || quizData.scheduledEndTime > now)
+        );
+
+        // If quiz is not live or scheduled for later, redirect to waiting lobby
+        if (!isLive) {
+          navigate(`/participant/quiz/${quizId}/lobby`, { replace: true });
+          return;
         }
 
         const userSession = await getOrCreateQuizSession(quizData, {
@@ -86,6 +103,23 @@ export const QuizTakingPage: React.FC = () => {
     initExam();
     return () => { isMounted = false; };
   }, [quizId, user, navigate]);
+
+  // Real-time listener for remote admin stop during examination
+  useEffect(() => {
+    if (!quizId || !session || session.status !== "in_progress") return;
+
+    const unsub = onSnapshot(doc(db, "quizzes", quizId), (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const isStopped = data.status === "completed" || (data.scheduledEndTime && data.scheduledEndTime <= Date.now());
+      if (isStopped && !isSubmitting) {
+        setShowTimeoutModal(true);
+        handleFinalSubmit(true);
+      }
+    });
+
+    return () => unsub();
+  }, [quizId, session, isSubmitting]);
 
   // Fallback safe objects for hooks
   const safeQuiz: Quiz = quiz || {
@@ -121,12 +155,9 @@ export const QuizTakingPage: React.FC = () => {
   // 2. Client Session & Autosave State Hook
   const {
     answers,
-    flaggedQuestions,
     currentQuestionIndex,
     saveStatus,
     selectOption,
-    clearOption,
-    toggleFlag,
     goToQuestion,
     forceSave
   } = useQuizSession({
@@ -164,12 +195,13 @@ export const QuizTakingPage: React.FC = () => {
 
   // 4. Authoritative Server Timer Hook
   const handleTimeExpired = useCallback(() => {
+    if (!session || session.status !== "in_progress" || isSubmitting) return;
     setShowTimeoutModal(true);
     handleFinalSubmit(true);
-  }, [handleFinalSubmit]);
+  }, [session, isSubmitting, handleFinalSubmit]);
 
   const { formattedTime, isUrgent } = useQuizTimer({
-    endTime: session?.endTime || 0,
+    endTime: session && session.status === "in_progress" ? session.endTime : 0,
     onTimeExpired: handleTimeExpired
   });
 
@@ -178,8 +210,14 @@ export const QuizTakingPage: React.FC = () => {
   const currentQuestion: QuizQuestion | undefined = questionsList[currentQuestionIndex];
   const totalQuestions = questionsList.length;
   const answeredCount = useMemo(() => Object.keys(answers).filter(k => !!answers[k]).length, [answers]);
-  const flaggedCount = flaggedQuestions.length;
   const unansweredCount = Math.max(0, totalQuestions - answeredCount);
+
+  // Compute unique categories
+  const categories = useMemo(() => {
+    if (!quiz?.questions) return [];
+    const cats = quiz.questions.map(q => q.category).filter(Boolean) as string[];
+    return Array.from(new Set(cats));
+  }, [quiz]);
 
   if (loading) {
     return (
@@ -210,262 +248,225 @@ export const QuizTakingPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F7FC] flex flex-col font-sans text-slate-800 antialiased select-none">
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased select-none">
       <SEO 
         title={`Assessment: ${quiz.title} - AI Verse`}
         description="Active examination environment with autosave and authoritative countdown timer." 
       />
 
-      {/* ================= TOP NAV BAR / TIMER & AUTOSAVE STATUS ================= */}
-      <header className="h-16 px-4 sm:px-8 border-b border-slate-200/90 bg-white flex items-center justify-between sticky top-0 z-30 shadow-xs">
+      {/* ================= TOP NAV BAR ================= */}
+      <header className="h-16 px-4 sm:px-8 border-b border-slate-200 bg-white flex flex-col justify-center relative sticky top-0 z-30">
+        <div className="flex items-center justify-between w-full">
+          {/* Left Brand & Quiz Info */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <Lightbulb className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-[#0F172A] truncate tracking-tight">{quiz.title}</h1>
+              <p className="text-[10px] text-slate-500 font-medium truncate">
+                {quiz.description || "Module Assessment"}
+              </p>
+            </div>
+          </div>
+
+          {/* Right: Save & Exit Button */}
+          <div className="flex items-center gap-4">
+             {/* Autosave Status Pill */}
+             <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full">
+               {saveStatus === "saving" && <span className="text-blue-600 text-[11px]">Saving...</span>}
+               {saveStatus === "saved" && <span className="text-slate-400 text-[11px]">Saved</span>}
+               {saveStatus === "offline" && <span className="text-amber-500 text-[11px]">Offline</span>}
+             </div>
+
+             <button
+               onClick={() => navigate("/participant/dashboard")}
+               className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 font-bold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+             >
+               <X className="w-4 h-4" />
+               <span>Save & Exit</span>
+             </button>
+          </div>
+        </div>
         
-        {/* Left Brand & Quiz Info */}
-        <div className="flex items-center gap-3 min-w-0">
-          <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-xl object-contain shrink-0" />
-          <div className="min-w-0 hidden md:block">
-            <h1 className="text-sm font-black text-[#0F172A] truncate tracking-tight">{quiz.title}</h1>
-            <p className="text-[10px] text-slate-400 font-semibold truncate">
-              {user?.name} {user?.teamName ? `• ${user.teamName}` : ""}
-            </p>
-          </div>
-        </div>
-
-        {/* Center: Authoritative Countdown Timer */}
-        <div className={`flex items-center gap-2 px-4 py-1.5 rounded-2xl transition-all ${
-          isUrgent 
-            ? "bg-red-50 text-red-600 border border-red-200 animate-pulse font-black" 
-            : "bg-[#0A1128] text-white border border-slate-800 font-extrabold shadow-inner"
-        }`}>
-          <Clock className={`w-4 h-4 ${isUrgent ? "text-red-500" : "text-blue-400"}`} />
-          <span className="text-sm font-mono tracking-wider tabular-nums">
-            {formattedTime}
-          </span>
-          <span className="text-[10px] uppercase font-bold opacity-75 hidden sm:inline">Remaining</span>
-        </div>
-
-        {/* Right: Autosave Pill & Quick Submit Button */}
-        <div className="flex items-center gap-3">
-          
-          {/* Autosave Status Pill */}
-          <div className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full border bg-slate-50 border-slate-200">
-            {saveStatus === "saving" && (
-              <>
-                <Loader2 className="w-3 h-3 text-blue-600 animate-spin" />
-                <span className="text-blue-600 text-[11px] hidden sm:inline">Saving...</span>
-              </>
-            )}
-            {saveStatus === "saved" && (
-              <>
-                <Check className="w-3 h-3 text-emerald-600" />
-                <span className="text-emerald-700 text-[11px] hidden sm:inline">Saved</span>
-              </>
-            )}
-            {saveStatus === "retrying" && (
-              <>
-                <Loader2 className="w-3 h-3 text-amber-600 animate-spin" />
-                <span className="text-amber-700 text-[11px] hidden sm:inline">Retrying...</span>
-              </>
-            )}
-            {saveStatus === "offline" && (
-              <>
-                <WifiOff className="w-3 h-3 text-slate-400" />
-                <span className="text-slate-500 text-[11px] hidden sm:inline">Offline (Saved Locally)</span>
-              </>
-            )}
-            {saveStatus === "error" && (
-              <>
-                <AlertCircle className="w-3 h-3 text-red-500" />
-                <span className="text-red-600 text-[11px] hidden sm:inline">Save Error</span>
-              </>
-            )}
-          </div>
-
-          <button
-            onClick={() => setShowSubmitModal(true)}
-            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-blue-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Finish & Submit</span>
-          </button>
+        {/* Progress Bar (Bottom of Header) */}
+        <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-slate-100">
+          <div 
+            className="h-full bg-blue-600 transition-all duration-300 ease-out" 
+            style={{ width: `${(answeredCount / totalQuestions) * 100}%` }}
+          />
         </div>
       </header>
 
       {/* ================= MAIN EXAMINATION GRID ================= */}
-      <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
         {/* ================= LEFT COLUMN: QUESTION CONTENT (8 COLS) ================= */}
-        <div className="lg:col-span-8 space-y-5">
+        <div className="lg:col-span-8 space-y-6">
           
-          {/* Question Card */}
-          <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+          {/* Top Info Pill */}
+          <div className="flex items-center gap-4 relative">
+            <span className="bg-blue-100 text-blue-800 font-bold text-xs px-3 py-1.5 rounded-full">
+              Question {currentQuestionIndex + 1} of {totalQuestions}
+            </span>
             
-            {/* Question Top Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="bg-blue-50 text-blue-700 font-extrabold text-xs px-3 py-1 rounded-full border border-blue-200/70">
-                  Question {currentQuestionIndex + 1} of {totalQuestions}
-                </span>
-              </div>
-
-              {/* Mark for Review Button */}
-              <button
-                onClick={() => toggleFlag(currentQuestion.id)}
-                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                  flaggedQuestions.includes(currentQuestion.id)
-                    ? "bg-amber-100 text-amber-800 border border-amber-300"
-                    : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200"
-                }`}
+            {/* Category Dropdown */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                className="text-slate-500 hover:text-blue-600 text-xs font-bold flex items-center gap-1.5 cursor-pointer bg-white border border-slate-200 hover:border-blue-300 px-3 py-1.5 rounded-full transition-all"
               >
-                <Flag className={`w-3.5 h-3.5 ${flaggedQuestions.includes(currentQuestion.id) ? "fill-amber-500 text-amber-600" : ""}`} />
-                <span>{flaggedQuestions.includes(currentQuestion.id) ? "Flagged for Review" : "Flag for Review"}</span>
+                <Network className="w-3.5 h-3.5" />
+                {currentQuestion.category || quiz.title}
+                {categories.length > 0 && <ChevronDown className="w-3.5 h-3.5 opacity-70" />}
               </button>
-            </div>
 
-            {/* Question Text */}
-            <div className="space-y-4">
-              <p className="text-base sm:text-lg font-bold text-[#0F172A] leading-relaxed">
-                {currentQuestion.text}
-              </p>
-
-              {/* Code Snippet Block (if question has code) */}
-              {currentQuestion.codeSnippet && (
-                <div className="bg-[#0B132B] text-blue-200 rounded-2xl p-4 font-mono text-xs overflow-x-auto border border-slate-800 shadow-inner">
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-[10px] text-slate-400 uppercase font-bold">
-                    <span className="flex items-center gap-1"><Code className="w-3 h-3 text-blue-400" /> {currentQuestion.codeLanguage || "Code"}</span>
+              {isCategoryDropdownOpen && categories.length > 0 && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setIsCategoryDropdownOpen(false)} />
+                  <div className="absolute top-full left-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg z-20 py-2 overflow-hidden">
+                    <div className="px-3 pb-2 mb-2 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Jump to Section
+                    </div>
+                    {categories.map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => {
+                          const firstQIdx = questionsList.findIndex(q => q.category === cat);
+                          if (firstQIdx !== -1) {
+                            goToQuestion(firstQIdx);
+                          }
+                          setIsCategoryDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer ${
+                          currentQuestion.category === cat ? "text-blue-600 bg-blue-50/50" : "text-slate-600"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
                   </div>
-                  <pre className="whitespace-pre">{currentQuestion.codeSnippet}</pre>
-                </div>
+                </>
               )}
             </div>
+          </div>
 
-            {/* Options List */}
-            <div className="space-y-3 pt-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                SELECT ONE OPTION:
-              </span>
+          {/* Question Text */}
+          <div className="space-y-4 pt-2">
+            <h2 className="text-2xl sm:text-3xl font-bold text-[#0F172A] leading-tight tracking-tight">
+              {currentQuestion.text}
+            </h2>
 
-              {currentQuestion.options.map((option, idx) => {
-                const isSelected = answers[currentQuestion.id] === option.id;
-                const optionLetters = ["A", "B", "C", "D", "E", "F"];
-                const letter = optionLetters[idx] || `${idx + 1}`;
-
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => selectOption(currentQuestion.id, option.id)}
-                    className={`w-full text-left p-4 rounded-2xl border transition-all flex items-start gap-4 cursor-pointer ${
-                      isSelected
-                        ? "bg-blue-50/70 border-blue-600 shadow-sm ring-2 ring-blue-500/20"
-                        : "bg-white border-slate-200 hover:border-blue-300 hover:bg-slate-50/50"
-                    }`}
-                  >
-                    {/* Option Letter Circle */}
-                    <div className={`w-8 h-8 rounded-xl font-black text-xs flex items-center justify-center shrink-0 transition-colors ${
-                      isSelected
-                        ? "bg-blue-600 text-white shadow-xs"
-                        : "bg-slate-100 text-slate-700"
-                    }`}>
-                      {letter}
-                    </div>
-
-                    {/* Option Text */}
-                    <span className={`text-sm font-medium mt-1 leading-relaxed ${
-                      isSelected ? "text-blue-950 font-bold" : "text-slate-700"
-                    }`}>
-                      {option.text}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Question Navigation Controls */}
-            <div className="flex items-center justify-between pt-6 border-t border-slate-100 gap-3">
-              <div>
-                {answers[currentQuestion.id] && (
-                  <button
-                    onClick={() => clearOption(currentQuestion.id)}
-                    className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Clear selection</span>
-                  </button>
-                )}
+            {/* Code Snippet Block (if question has code) */}
+            {currentQuestion.codeSnippet && (
+              <div className="bg-[#0F172A] text-blue-100 rounded-2xl p-5 font-mono text-sm overflow-x-auto shadow-inner mt-4">
+                <pre className="whitespace-pre">{currentQuestion.codeSnippet}</pre>
               </div>
+            )}
+          </div>
 
-              <div className="flex items-center gap-2">
+          {/* Options List */}
+          <div className="space-y-3 pt-6">
+            {currentQuestion.options.map((option) => {
+              const isSelected = answers[currentQuestion.id] === option.id;
+
+              return (
                 <button
-                  onClick={() => goToQuestion(currentQuestionIndex - 1)}
-                  disabled={currentQuestionIndex === 0}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-30 disabled:cursor-not-allowed font-bold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                  key={option.id}
+                  type="button"
+                  onClick={() => selectOption(currentQuestion.id, option.id)}
+                  className={`w-full text-left p-4 sm:p-5 rounded-2xl border transition-all flex items-center gap-4 cursor-pointer ${
+                    isSelected
+                      ? "bg-blue-50/50 border-blue-600 shadow-sm ring-1 ring-blue-600"
+                      : "bg-white border-slate-200 hover:border-slate-300"
+                  }`}
                 >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Previous</span>
-                </button>
+                  {/* Option Circular Radio */}
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                    isSelected
+                      ? "border-blue-600"
+                      : "border-slate-300"
+                  }`}>
+                    {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                  </div>
 
-                <button
-                  onClick={() => goToQuestion(currentQuestionIndex + 1)}
-                  disabled={currentQuestionIndex === totalQuestions - 1}
-                  className="bg-[#0F172A] hover:bg-slate-800 text-white disabled:opacity-30 disabled:cursor-not-allowed font-bold text-xs px-5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <span>Next</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {/* Option Text */}
+                  <span className={`text-base sm:text-lg ${
+                    isSelected ? "text-[#0F172A] font-semibold" : "text-slate-700"
+                  }`}>
+                    {option.text}
+                  </span>
                 </button>
-              </div>
-            </div>
+              );
+            })}
+          </div>
 
+          {/* Question Navigation Controls */}
+          <div className="flex items-center justify-between pt-8 gap-3">
+            <button
+              onClick={() => goToQuestion(currentQuestionIndex - 1)}
+              disabled={currentQuestionIndex === 0}
+              className="text-slate-500 hover:text-slate-800 disabled:opacity-30 disabled:cursor-not-allowed font-bold text-sm py-2 transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Previous</span>
+            </button>
+
+            <button
+              onClick={() => {
+                if (currentQuestionIndex === totalQuestions - 1) {
+                  setShowSubmitModal(true);
+                } else {
+                  goToQuestion(currentQuestionIndex + 1);
+                }
+              }}
+              className="bg-blue-700 hover:bg-blue-800 text-white font-bold text-sm px-6 py-3 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+            >
+              <span>{currentQuestionIndex === totalQuestions - 1 ? "Review & Submit" : "Next Question"}</span>
+              {currentQuestionIndex !== totalQuestions - 1 && <ArrowRight className="w-4 h-4" />}
+            </button>
           </div>
         </div>
 
-        {/* ================= RIGHT COLUMN: PALETTE & METRICS (4 COLS) ================= */}
-        <div className="lg:col-span-4 space-y-5">
+        {/* ================= RIGHT COLUMN: SIDEBAR (4 COLS) ================= */}
+        <div className="lg:col-span-4 space-y-6">
           
-          {/* Question Palette Card */}
-          <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm space-y-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-[#0F172A] uppercase tracking-wider">
-                Question Palette
+          {/* Time Remaining Card */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col items-center justify-center">
+            <div className={`flex flex-col items-center justify-center transition-all ${isUrgent ? "text-red-500 animate-pulse" : "text-[#0F172A]"}`}>
+              <div className="flex items-center gap-2 text-amber-500 font-bold text-xs tracking-widest uppercase mb-2">
+                <Clock className="w-4 h-4" />
+                <span>Time Remaining</span>
+              </div>
+              <span className="text-4xl sm:text-5xl font-black tracking-tight tabular-nums">
+                {formattedTime}
+              </span>
+            </div>
+          </div>
+          
+          {/* Question Grid Card */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="text-base font-bold text-[#0F172A]">
+                Question Grid
               </h3>
-              <span className="text-xs font-bold text-blue-600">
+              <span className="text-xs font-bold text-slate-500">
                 {answeredCount}/{totalQuestions} Answered
               </span>
             </div>
 
-            {/* Quick Status Legend */}
-            <div className="grid grid-cols-3 gap-2 text-[10px] font-bold">
-              <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2 py-1.5 rounded-lg border border-blue-100">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                <span>Answered ({answeredCount})</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-amber-50 text-amber-800 px-2 py-1.5 rounded-lg border border-amber-200">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                <span>Flagged ({flaggedCount})</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-50 text-slate-600 px-2 py-1.5 rounded-lg border border-slate-200">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                <span>Pending ({unansweredCount})</span>
-              </div>
-            </div>
-
             {/* Question Buttons Matrix */}
-            <div className="grid grid-cols-5 gap-2 max-h-[320px] overflow-y-auto p-1">
+            <div className="grid grid-cols-5 gap-2.5">
               {questionsList.map((q, idx) => {
                 const isAnswered = !!answers[q.id];
-                const isFlagged = flaggedQuestions.includes(q.id);
                 const isCurrent = currentQuestionIndex === idx;
 
-                let btnStyle = "bg-slate-100 text-slate-600 hover:bg-slate-200";
+                let btnStyle = "bg-slate-100 text-slate-600 hover:bg-slate-200 border border-transparent";
                 if (isAnswered) {
-                  btnStyle = "bg-blue-600 text-white font-black shadow-xs shadow-blue-500/20";
+                  btnStyle = "bg-blue-600 text-white font-bold shadow-sm";
                 }
-                if (isFlagged) {
-                  btnStyle = isAnswered 
-                    ? "bg-gradient-to-br from-blue-600 to-amber-500 text-white font-black ring-2 ring-amber-400"
-                    : "bg-amber-400 text-amber-950 font-black shadow-xs";
-                }
-                if (isCurrent) {
-                  btnStyle += " ring-3 ring-blue-500 ring-offset-2";
+                if (isCurrent && !isAnswered) {
+                  btnStyle = "bg-white text-blue-600 border-2 border-blue-600 font-bold";
                 }
 
                 return (
@@ -473,36 +474,38 @@ export const QuizTakingPage: React.FC = () => {
                     key={q.id}
                     type="button"
                     onClick={() => goToQuestion(idx)}
-                    className={`h-10 rounded-xl text-xs font-bold transition-all flex items-center justify-center relative cursor-pointer ${btnStyle}`}
+                    className={`h-11 rounded-lg text-sm transition-all flex items-center justify-center cursor-pointer ${btnStyle}`}
                   >
-                    <span>{idx + 1}</span>
-                    {isFlagged && (
-                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border-2 border-white" />
-                    )}
+                    {idx + 1}
                   </button>
                 );
               })}
             </div>
 
-            {/* Finish & Submit Action Card */}
-            <div className="pt-3 border-t border-slate-100 space-y-3">
-              <button
-                type="button"
-                onClick={() => setShowSubmitModal(true)}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm py-3.5 rounded-2xl shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Send className="w-4 h-4" />
-                <span>Submit Assessment</span>
-              </button>
-              <p className="text-[11px] text-center text-slate-400 font-medium">
-                Autosaving continually • Safe to refresh
-              </p>
+            {/* Legend */}
+            <div className="flex items-center justify-center gap-4 pt-2 text-[11px] font-bold text-slate-500">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-blue-600" />
+                <span>Answered</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-slate-200" />
+                <span>Unanswered</span>
+              </div>
             </div>
-
           </div>
+          
+          {/* Submit Assessment Button */}
+          <button
+            type="button"
+            onClick={() => setShowSubmitModal(true)}
+            className="w-full bg-white hover:bg-blue-50 border border-blue-600 text-blue-700 font-bold text-sm py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+          >
+            <Check className="w-4 h-4" />
+            <span>Submit Assessment</span>
+          </button>
 
         </div>
-
       </main>
 
       {/* ================= FINAL SUBMISSION CONFIRMATION MODAL ================= */}
@@ -520,7 +523,7 @@ export const QuizTakingPage: React.FC = () => {
             </div>
 
             {/* Summary Statistics */}
-            <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 text-center">
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 text-center">
               <div>
                 <span className="text-xs font-bold text-slate-400 block">Answered</span>
                 <span className="text-lg font-black text-emerald-600">{answeredCount}</span>
@@ -530,10 +533,6 @@ export const QuizTakingPage: React.FC = () => {
                 <span className={`text-lg font-black ${unansweredCount > 0 ? "text-amber-600" : "text-slate-700"}`}>
                   {unansweredCount}
                 </span>
-              </div>
-              <div>
-                <span className="text-xs font-bold text-slate-400 block">Flagged</span>
-                <span className="text-lg font-black text-indigo-600">{flaggedCount}</span>
               </div>
             </div>
 
@@ -558,7 +557,7 @@ export const QuizTakingPage: React.FC = () => {
                 type="button"
                 onClick={() => handleFinalSubmit(false)}
                 disabled={isSubmitting}
-                className="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs py-3 rounded-xl shadow-md shadow-blue-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>

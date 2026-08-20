@@ -719,40 +719,74 @@ export const ParticipantDashboardPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {availableQuizzes.map((quiz) => (
-                      <div
-                        key={quiz.id}
-                        className="bg-slate-50 border border-slate-200 hover:border-blue-300 rounded-2xl p-5 flex flex-col justify-between space-y-4 transition-all"
-                      >
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/60">
-                              {quiz.track || "General"}
-                            </span>
-                            <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5 text-blue-600" /> {quiz.durationMinutes} Mins
-                            </span>
+                    {availableQuizzes.map((quiz) => {
+                      const now = Date.now();
+                      const isLive = Boolean(
+                        quiz.status === "active" &&
+                        quiz.scheduledStartTime &&
+                        quiz.scheduledStartTime <= now &&
+                        (!quiz.scheduledEndTime || quiz.scheduledEndTime > now)
+                      );
+                      const isCompleted = Boolean(
+                        quiz.status === "completed" ||
+                        (quiz.scheduledEndTime && quiz.scheduledEndTime <= now && quiz.scheduledStartTime)
+                      );
+                      const isUpcoming = Boolean(quiz.scheduledStartTime && quiz.scheduledStartTime > now);
+
+                      return (
+                        <div
+                          key={quiz.id}
+                          className="bg-slate-50 border border-slate-200 hover:border-blue-300 rounded-2xl p-5 flex flex-col justify-between space-y-4 transition-all"
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/60">
+                                {quiz.track || "General"}
+                              </span>
+                              
+                              {isLive ? (
+                                <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live Now
+                                </span>
+                              ) : isCompleted ? (
+                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                                  Concluded
+                                </span>
+                              ) : isUpcoming ? (
+                                <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200 flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-indigo-500" /> Scheduled
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" /> Waiting for Admin
+                                </span>
+                              )}
+                            </div>
+
+                            <h3 className="text-base font-extrabold text-[#0F172A] leading-tight">{quiz.title}</h3>
+                            <p className="text-xs text-slate-500 font-medium line-clamp-2">{quiz.description}</p>
                           </div>
 
-                          <h3 className="text-base font-extrabold text-[#0F172A] leading-tight">{quiz.title}</h3>
-                          <p className="text-xs text-slate-500 font-medium line-clamp-2">{quiz.description}</p>
-                        </div>
+                          <div className="pt-2 flex items-center justify-between border-t border-slate-200/60">
+                            <span className="text-xs font-bold text-slate-500">
+                              {quiz.questions?.length || quiz.questionsCount || 0} Questions • {quiz.durationMinutes}m
+                            </span>
 
-                        <div className="pt-2 flex items-center justify-between border-t border-slate-200/60">
-                          <span className="text-xs font-bold text-slate-500">
-                            {quiz.questions?.length || quiz.questionsCount || 0} Questions • {quiz.totalMarks} Pts
-                          </span>
-
-                          <Link
-                            to={`/participant/quiz/${quiz.id}/lobby`}
-                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <span>Enter Quiz</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
-                          </Link>
+                            <Link
+                              to={`/participant/quiz/${quiz.id}/lobby`}
+                              className={`text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                                isLive 
+                                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700" 
+                                  : "bg-[#0F172A] hover:bg-slate-800"
+                              }`}
+                            >
+                              <span>{isLive ? "Enter Exam" : "Enter Lobby"}</span>
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </Link>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

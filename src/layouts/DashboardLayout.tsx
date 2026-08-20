@@ -53,9 +53,9 @@ const DashboardLayout: React.FC = () => {
   ];
 
   if (user.email?.toLowerCase().trim() === "facultycoordinator@aiverse.in") {
-    menuItems = menuItems.filter(item => 
-      item.path !== "/faculty/gallery" && 
-      item.path !== "/faculty/settings" && 
+    menuItems = menuItems.filter(item =>
+      item.path !== "/faculty/gallery" &&
+      item.path !== "/faculty/settings" &&
       item.path !== "/faculty/users"
     );
   }
@@ -184,11 +184,11 @@ const DashboardLayout: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-grow flex flex-col min-w-0 h-full overflow-y-auto">
         {/* Topbar / Header */}
-        <header className="h-14 flex items-center justify-between px-4 sm:px-6 lg:px-8 sticky top-0 z-30 bg-slate-50/80 backdrop-blur-md">
+        <header className="h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shrink-0 shadow-xs">
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsMobileOpen(true)}
-              className="lg:hidden p-2 hover:bg-slate-50 rounded-lg text-slate-500"
+              className="lg:hidden p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -196,24 +196,25 @@ const DashboardLayout: React.FC = () => {
             {/* Sidebar toggle button for desktop */}
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="hidden lg:flex p-1.5 hover:bg-slate-50 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+              title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-500 hover:text-slate-800 transition-all shadow-2xs cursor-pointer"
             >
-              {isSidebarOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+              {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             </button>
           </div>
 
           <div className="flex items-center gap-3 sm:gap-5">
             {/* Notification Bell with red dot */}
-            <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl relative transition-colors">
-              <Bell className="h-5 w-5 animate-none" />
+            <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl relative transition-colors cursor-pointer">
+              <Bell className="h-4.5 w-4.5" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
             </button>
 
             {/* Status indicator badge */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-[#E6F9F0] text-[#10B981] border border-[#B3F3D2]/30 text-[10px] sm:text-xs font-bold font-sans shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse"></span>
-              <span className="hidden sm:inline">Al Verse <span className="uppercase text-[9px] opacity-80">Online</span></span>
-              <span className="inline sm:hidden uppercase text-[9px] opacity-80">Online</span>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200/60 text-[10px] sm:text-xs font-bold font-sans shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="hidden sm:inline">AI Verse <span className="uppercase text-[9px] opacity-80 font-black">ONLINE</span></span>
+              <span className="inline sm:hidden uppercase text-[9px] opacity-80 font-black">ONLINE</span>
             </div>
 
             {/* Profile Avatar / Circle */}

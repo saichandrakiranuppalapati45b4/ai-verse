@@ -78,158 +78,175 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Initialize and listen to real Firebase Auth state changes with real-time Firestore sync
   useEffect(() => {
     let unsubSnapshot: (() => void) | null = null;
+    let unsubscribeAuth: (() => void) | null = null;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true);
-      if (unsubSnapshot) {
-        unsubSnapshot();
-        unsubSnapshot = null;
-      }
-
-      if (firebaseUser) {
-        const userEmail = firebaseUser.email?.toLowerCase().trim() || "";
-        
-        const savedUserStr = localStorage.getItem("aether_mock_user");
-        let localUser: UserProfile | null = null;
-        if (savedUserStr) {
-          try {
-            localUser = JSON.parse(savedUserStr);
-          } catch (e) {}
+    try {
+      unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+        setLoading(true);
+        if (unsubSnapshot) {
+          unsubSnapshot();
+          unsubSnapshot = null;
         }
 
-        // Allow authorized emails, participant role accounts, and any @aiverse.in team emails
-        const isAllowed = ALLOWED_EMAILS.includes(userEmail) || localUser?.role === "participant" || userEmail.includes("participant") || userEmail.endsWith("@aiverse.in");
-        
-        if (!isAllowed) {
-          console.warn(`[AuthContext] Denying access to unauthorized user: ${userEmail}`);
-          await signOut(auth);
-          setUser(null);
-          localStorage.removeItem("aether_mock_user");
-          setLoading(false);
-          return;
-        }
+        if (firebaseUser) {
+          const userEmail = firebaseUser.email?.toLowerCase().trim() || "";
+          
+          const savedUserStr = localStorage.getItem("aether_mock_user");
+          let localUser: UserProfile | null = null;
+          if (savedUserStr) {
+            try {
+              localUser = JSON.parse(savedUserStr);
+            } catch (e) {}
+          }
 
-        // For team emails (e.g. alphaa@aiverse.in), the user doc is stored under
-        // the sanitized email ID (e.g. alphaa_aiverse_in), not the Firebase Auth UID.
-        // Check that doc first so we get registrationId, teamName, etc.
-        const sanitizedEmailId = userEmail.replace(/[^a-z0-9]/g, '_');
-        let userDocRef = doc(db, "users", firebaseUser.uid);
-        
-        // If a user doc exists under the sanitized email ID, use that instead
-        if (sanitizedEmailId !== firebaseUser.uid) {
-          try {
-            const emailDocSnap = await getDoc(doc(db, "users", sanitizedEmailId));
-            if (emailDocSnap.exists()) {
-              userDocRef = doc(db, "users", sanitizedEmailId);
+          // Allow authorized emails, participant role accounts, and any @aiverse.in team emails
+          const isAllowed = ALLOWED_EMAILS.includes(userEmail) || localUser?.role === "participant" || userEmail.includes("participant") || userEmail.endsWith("@aiverse.in");
+          
+          if (!isAllowed) {
+            console.warn(`[AuthContext] Denying access to unauthorized user: ${userEmail}`);
+            await signOut(auth).catch(() => {});
+            setUser(null);
+            localStorage.removeItem("aether_mock_user");
+            setLoading(false);
+            return;
+          }
+
+          // For team emails (e.g. alphaa@aiverse.in), the user doc is stored under
+          // the sanitized email ID (e.g. alphaa_aiverse_in), not the Firebase Auth UID.
+          // Check that doc first so we get registrationId, teamName, etc.
+          const sanitizedEmailId = userEmail.replace(/[^a-z0-9]/g, '_');
+          let userDocRef = doc(db, "users", firebaseUser.uid);
+          
+          // If a user doc exists under the sanitized email ID, use that instead
+          if (sanitizedEmailId !== firebaseUser.uid) {
+            try {
+              const emailDocSnap = await getDoc(doc(db, "users", sanitizedEmailId));
+              if (emailDocSnap.exists()) {
+                userDocRef = doc(db, "users", sanitizedEmailId);
+              }
+            } catch (e) {
+              // Fallback to UID-based doc
             }
-          } catch (e) {
-            // Fallback to UID-based doc
           }
-        }
-        
-        let forcedRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty";
-        let forcedDisplayRole = "Super Admin";
-        let defaultName = "System Admin";
-        
-        if (userEmail === "admin@aiverse.in") {
-          forcedRole = "faculty";
-          forcedDisplayRole = "Super Admin";
-          defaultName = "System Admin";
-        } else if (userEmail === "facultycoordinator@aiverse.in") {
-          forcedRole = "faculty";
-          forcedDisplayRole = "Faculty Coordinator";
-          defaultName = "Faculty Coordinator";
-        } else if (userEmail === "studentorganizer@aiverse.in") {
-          forcedRole = "organizer";
-          forcedDisplayRole = "Student Organizer";
-          defaultName = "Student Organizer";
-        } else if (userEmail === "jury@aiverse.in" || userEmail === "jurry@aiverse.in") {
-          forcedRole = "jury";
-          forcedDisplayRole = "Jury Evaluator";
-          defaultName = "Jury Panelist";
-        } else if (userEmail === "participant@aiverse.in") {
-          forcedRole = "participant";
-          forcedDisplayRole = "Participant";
-          defaultName = "Alex Rivera";
-        } else if (userEmail.endsWith("@aiverse.in")) {
-          // Team participant emails like alphaa@aiverse.in, betaa@aiverse.in
-          forcedRole = "participant";
-          forcedDisplayRole = "Participant";
-          defaultName = userEmail.split("@")[0];
-        }
-
-        const fallbackProfile: UserProfile = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || "",
-          name: firebaseUser.displayName || defaultName,
-          role: forcedRole,
-          displayRole: forcedDisplayRole
-        };
-
-        // Setup real-time listener for user profile changes
-        unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const profileData = docSnap.data();
-            const userRole = normalizeRole(profileData.role, forcedRole);
-            setUser({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || "",
-              name: profileData.displayName || profileData.name || profileData.teamLeadName || defaultName,
-              role: userRole,
-              displayRole: profileData.displayRole || profileData.role || forcedDisplayRole,
-              image: profileData.image || "",
-              year: profileData.year,
-              requiresPasswordChange: profileData.requiresPasswordChange,
-              teamName: profileData.teamName,
-              eventTitle: profileData.eventTitle,
-              registrationId: profileData.registrationId
-            });
-          } else {
-            setUser(fallbackProfile);
-            // Write a default profile document for them in Firestore asynchronously
-            const defaultProfile = {
-              name: firebaseUser.displayName || defaultName,
-              email: firebaseUser.email || "",
-              role: forcedRole,
-              displayRole: forcedDisplayRole,
-              status: "Active"
-            };
-            setDoc(userDocRef, defaultProfile).catch((err) => {
-              console.error("[AuthContext] Error creating default profile document:", err);
-            });
+          
+          let forcedRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty";
+          let forcedDisplayRole = "Super Admin";
+          let defaultName = "System Admin";
+          
+          if (userEmail === "admin@aiverse.in") {
+            forcedRole = "faculty";
+            forcedDisplayRole = "Super Admin";
+            defaultName = "System Admin";
+          } else if (userEmail === "facultycoordinator@aiverse.in") {
+            forcedRole = "faculty";
+            forcedDisplayRole = "Faculty Coordinator";
+            defaultName = "Faculty Coordinator";
+          } else if (userEmail === "studentorganizer@aiverse.in") {
+            forcedRole = "organizer";
+            forcedDisplayRole = "Student Organizer";
+            defaultName = "Student Organizer";
+          } else if (userEmail === "jury@aiverse.in" || userEmail === "jurry@aiverse.in") {
+            forcedRole = "jury";
+            forcedDisplayRole = "Jury Evaluator";
+            defaultName = "Jury Panelist";
+          } else if (userEmail === "participant@aiverse.in") {
+            forcedRole = "participant";
+            forcedDisplayRole = "Participant";
+            defaultName = "Alex Rivera";
+          } else if (userEmail.endsWith("@aiverse.in")) {
+            // Team participant emails like alphaa@aiverse.in, betaa@aiverse.in
+            forcedRole = "participant";
+            forcedDisplayRole = "Participant";
+            defaultName = userEmail.split("@")[0];
           }
-          setLoading(false);
-        }, (error) => {
-          console.warn("[AuthContext] Firestore sync unavailable, using default profile:", error?.message || error);
-          setUser(fallbackProfile);
-          setLoading(false);
-        });
 
-      } else {
-        // If not authenticated via Firebase, check local session
-        const savedUserStr = localStorage.getItem("aether_mock_user");
-        if (savedUserStr) {
+          const fallbackProfile: UserProfile = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || "",
+            name: firebaseUser.displayName || defaultName,
+            role: forcedRole,
+            displayRole: forcedDisplayRole
+          };
+
+          // Setup real-time listener for user profile changes
           try {
-            const savedUser = JSON.parse(savedUserStr);
-            if (savedUser && savedUser.email && savedUser.role) {
-              setUser(savedUser);
-            } else {
+            unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
+              if (docSnap.exists()) {
+                const profileData = docSnap.data();
+                const userRole = normalizeRole(profileData.role, forcedRole);
+                setUser({
+                  uid: firebaseUser.uid,
+                  email: firebaseUser.email || "",
+                  name: profileData.displayName || profileData.name || profileData.teamLeadName || defaultName,
+                  role: userRole,
+                  displayRole: profileData.displayRole || profileData.role || forcedDisplayRole,
+                  image: profileData.image || "",
+                  year: profileData.year,
+                  requiresPasswordChange: profileData.requiresPasswordChange,
+                  teamName: profileData.teamName,
+                  eventTitle: profileData.eventTitle,
+                  registrationId: profileData.registrationId
+                });
+              } else {
+                setUser(fallbackProfile);
+                // Write a default profile document for them in Firestore asynchronously
+                const defaultProfile = {
+                  name: firebaseUser.displayName || defaultName,
+                  email: firebaseUser.email || "",
+                  role: forcedRole,
+                  displayRole: forcedDisplayRole,
+                  status: "Active"
+                };
+                setDoc(userDocRef, defaultProfile).catch((err) => {
+                  console.error("[AuthContext] Error creating default profile document:", err);
+                });
+              }
+              setLoading(false);
+            }, (error) => {
+              console.warn("[AuthContext] Firestore sync unavailable, using default profile:", error?.message || error);
+              setUser(fallbackProfile);
+              setLoading(false);
+            });
+          } catch (e) {
+            setUser(fallbackProfile);
+            setLoading(false);
+          }
+
+        } else {
+          // If not authenticated via Firebase, check local session
+          const savedUserStr = localStorage.getItem("aether_mock_user");
+          if (savedUserStr) {
+            try {
+              const savedUser = JSON.parse(savedUserStr);
+              if (savedUser && savedUser.email && savedUser.role) {
+                setUser(savedUser);
+              } else {
+                localStorage.removeItem("aether_mock_user");
+                setUser(null);
+              }
+            } catch (e) {
               localStorage.removeItem("aether_mock_user");
               setUser(null);
             }
-          } catch (e) {
-            localStorage.removeItem("aether_mock_user");
+          } else {
             setUser(null);
           }
-        } else {
-          setUser(null);
+          setLoading(false);
         }
-        setLoading(false);
+      });
+    } catch (authInitErr) {
+      console.warn("[AuthContext] Firebase Auth listener initialization warning:", authInitErr);
+      const savedUserStr = localStorage.getItem("aether_mock_user");
+      if (savedUserStr) {
+        try {
+          setUser(JSON.parse(savedUserStr));
+        } catch (e) {}
       }
-    });
+      setLoading(false);
+    }
 
     return () => {
-      unsubscribeAuth();
+      if (unsubscribeAuth) unsubscribeAuth();
       if (unsubSnapshot) unsubSnapshot();
     };
   }, []);

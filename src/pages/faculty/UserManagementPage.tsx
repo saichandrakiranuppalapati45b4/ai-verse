@@ -25,7 +25,9 @@ import {
   FileUp,
   ClipboardPaste,
   Edit2,
-  Eye
+  Eye,
+  Users,
+  ChevronDown
 } from "lucide-react";
 import Papa from "papaparse";
 import { db, app } from "../../config/firebase";
@@ -41,7 +43,7 @@ export interface UserItem {
   name: string;
   email: string;
   phone?: string;
-  role: "Student Member" | "Student Organizer" | "Faculty Coordinator" | "Guest";
+  role: "Faculty Coordinator" | "Student Organizer" | "Volunteer" | "Guest" | "Student Member" | "Organizer" | "Convener" | "Event Manager" | "System Admin" | "Jury Evaluator";
   status: "Active" | "Pending" | "Deactivated";
   image?: string;
   showInAbout?: "Yes" | "No";
@@ -49,6 +51,58 @@ export interface UserItem {
   linkedin?: string;
   github?: string;
 }
+
+const SYSTEM_STAFF_EMAILS = [
+  "admin@aiverse.in",
+  "facultycoordinator@aiverse.in",
+  "studentorganizer@aiverse.in",
+  "jurry@aiverse.in",
+  "jury@aiverse.in"
+];
+
+export const formatRoleLabel = (role: string): string => {
+  if (!role) return "Select Role";
+  const rLower = role.toLowerCase().trim();
+  if (rLower === "conviner") return "Convener";
+  if (rLower === "media handing") return "Media Handling";
+  if (rLower === "pr and marketing") return "PR & Marketing";
+  if (rLower === "video and photography") return "Video & Photography";
+  if (rLower === "student organizer") return "Student Organizer";
+  if (rLower === "student co-organizer") return "Student Co-Organizer";
+  if (rLower === "faculty coordinator") return "Faculty Coordinator";
+  if (rLower === "mobile app developer") return "Mobile App Developer";
+  if (rLower === "web app developer") return "Web App Developer";
+  if (rLower === "event manager") return "Event Manager";
+  if (rLower === "volunteer") return "Volunteer";
+  if (rLower === "student member") return "Student Member";
+  if (rLower === "jury evaluator") return "Jury Evaluator";
+  if (rLower === "system admin") return "System Admin";
+
+  return role
+    .split(" ")
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+};
+
+export const isAiVerseMember = (u: UserItem) => {
+  const email = (u.email || "").toLowerCase().trim();
+  const role = (u.role || "").toLowerCase().trim();
+
+  // Exclude system administrative / staff accounts
+  if (SYSTEM_STAFF_EMAILS.includes(email)) return false;
+  if (
+    role.includes("admin") ||
+    role.includes("faculty") ||
+    role.includes("coordinator") ||
+    role.includes("organizer") ||
+    role.includes("jury") ||
+    role.includes("evaluator")
+  ) {
+    return false;
+  }
+
+  return role.includes("member") || role.includes("volunteer") || role.includes("student") || role === "user" || role === "aiverse member";
+};
 
 // Helper to resolve legacy/db roles to settings configuration roles
 const getDisplayRole = (dbRole: string, rolesList: string[]) => {
@@ -78,32 +132,24 @@ const UserManagementPage: React.FC = () => {
 
   // Fetch users from database
   React.useEffect(() => {
-    const SYSTEM_ACCOUNTS = [
-      "facultycoordinator@aiverse.in",
-      "admin@aiverse.in",
-      "studentorganizer@aiverse.in"
-    ];
-
     const fetchUsers = async () => {
       try {
         // Fetch from Supabase
         const supabaseUsers = await userService.getUsers();
         if (supabaseUsers && supabaseUsers.length > 0) {
-          const list: UserItem[] = supabaseUsers
-            .filter((u) => !SYSTEM_ACCOUNTS.includes((u.email || "").toLowerCase().trim()))
-            .map((u) => ({
-              id: u.id,
-              name: u.name || u.display_name || "Unnamed User",
-              email: u.email || "",
-              phone: u.phone || "",
-              role: (u.role || "Guest") as any,
-              status: (u.status || "Active") as any,
-              image: u.image || "",
-              showInAbout: u.show_in_about ? "Yes" : "No",
-              bio: u.bio || "",
-              linkedin: u.linkedin || "",
-              github: u.github || ""
-            }));
+          const list: UserItem[] = supabaseUsers.map((u) => ({
+            id: u.id,
+            name: u.name || u.display_name || "Unnamed User",
+            email: u.email || "",
+            phone: u.phone || "",
+            role: (u.role || "Guest") as any,
+            status: (u.status || "Active") as any,
+            image: u.image || "",
+            showInAbout: u.show_in_about ? "Yes" : "No",
+            bio: u.bio || "",
+            linkedin: u.linkedin || "",
+            github: u.github || ""
+          }));
           setUsers(list);
           return;
         }
@@ -113,10 +159,6 @@ const UserManagementPage: React.FC = () => {
         const list: UserItem[] = [];
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
-          const email = (data.email || "").toLowerCase().trim();
-          if (SYSTEM_ACCOUNTS.includes(email)) {
-            return;
-          }
           list.push({
             id: docSnap.id,
             name: data.name || data.displayName || "Unnamed User",
@@ -423,13 +465,7 @@ const UserManagementPage: React.FC = () => {
 
   // Filters logic
   const filteredUsers = useMemo(() => {
-    const SYSTEM_ACCOUNTS = [
-      "facultycoordinator@aiverse.in",
-      "admin@aiverse.in",
-      "studentorganizer@aiverse.in"
-    ];
     return users.filter(user => {
-      if (SYSTEM_ACCOUNTS.includes(user.email.toLowerCase().trim())) return false;
       const matchesSearch = 
         user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
         user.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -439,6 +475,8 @@ const UserManagementPage: React.FC = () => {
         ? true 
         : roleFilter === "Show in About Page"
         ? user.showInAbout === "Yes"
+        : roleFilter === "AI Verse Members"
+        ? isAiVerseMember(user)
         : displayRole === roleFilter;
       const matchesStatus = statusFilter === "All" || user.status === statusFilter;
 
@@ -818,13 +856,17 @@ const UserManagementPage: React.FC = () => {
 
   // Helper to render beautiful role badge dynamically
   const renderRoleBadge = (role: string) => {
-    const rLower = role.toLowerCase();
+    const rLower = (role || "").toLowerCase();
     let bg = "bg-slate-100 text-slate-750 border-slate-205";
-    if (rLower.includes("faculty") || rLower.includes("advisor") || rLower.includes("coordinator")) {
+    if (rLower.includes("admin")) {
+      bg = "bg-blue-50 text-blue-700 border-blue-200";
+    } else if (rLower.includes("faculty") || rLower.includes("advisor") || rLower.includes("coordinator")) {
       bg = "bg-emerald-50 text-emerald-700 border-emerald-100";
     } else if (rLower.includes("organizer") || rLower.includes("lead") || rLower.includes("head") || rLower.includes("manager") || rLower.includes("conviner")) {
-      bg = "bg-blue-50 text-blue-700 border-blue-100";
-    } else if (rLower.includes("volunteer") || rLower.includes("guest")) {
+      bg = "bg-indigo-50 text-indigo-700 border-indigo-100";
+    } else if (rLower.includes("jury") || rLower.includes("evaluator")) {
+      bg = "bg-purple-50 text-purple-700 border-purple-100";
+    } else if (rLower.includes("volunteer") || rLower.includes("guest") || rLower.includes("member") || rLower.includes("participant")) {
       bg = "bg-slate-100 text-slate-600 border-slate-200";
     } else {
       bg = "bg-purple-50 text-purple-700 border-purple-100";
@@ -936,7 +978,7 @@ const UserManagementPage: React.FC = () => {
                             : "bg-white border-slate-200 text-slate-655 hover:bg-slate-50"
                         }`}
                       >
-                        {role}
+                        {formatRoleLabel(role)}
                       </button>
                     ))}
                   </div>
@@ -1225,7 +1267,7 @@ const UserManagementPage: React.FC = () => {
           <button
             onClick={() => setRoleFilter("All")}
             className={`pb-3 px-1 text-xs font-bold transition-all border-b-2 select-none whitespace-nowrap
-              ${roleFilter !== "Show in About Page" 
+              ${roleFilter === "All" 
                 ? "border-[#2563EB] text-[#2563EB] font-black" 
                 : "border-transparent text-slate-400 hover:text-slate-600"
               }`}
@@ -1242,6 +1284,17 @@ const UserManagementPage: React.FC = () => {
           >
             <Eye className="h-3.5 w-3.5" />
             Show in About Page ({users.filter(u => u.showInAbout === "Yes").length})
+          </button>
+          <button
+            onClick={() => setRoleFilter("AI Verse Members")}
+            className={`pb-3 px-1 text-xs font-bold transition-all border-b-2 select-none whitespace-nowrap flex items-center gap-1.5
+              ${roleFilter === "AI Verse Members" 
+                ? "border-[#2563EB] text-[#2563EB] font-black" 
+                : "border-transparent text-slate-400 hover:text-slate-600"
+              }`}
+          >
+            <Users className="h-3.5 w-3.5" />
+            AI Verse Members ({users.filter(isAiVerseMember).length})
           </button>
         </div>
       </div>
@@ -1271,8 +1324,9 @@ const UserManagementPage: React.FC = () => {
             >
               <option value="All">Role: All</option>
               <option value="Show in About Page">Show in About Page</option>
+              <option value="AI Verse Members">AI Verse Members</option>
               {availableRoles.map(role => (
-                <option key={role} value={role}>{role}</option>
+                <option key={role} value={role}>{formatRoleLabel(role)}</option>
               ))}
               {!availableRoles.includes("Student Member") && <option value="Student Member">Student Member</option>}
               {!availableRoles.includes("Student Organizer") && <option value="Student Organizer">Student Organizer</option>}
@@ -1370,8 +1424,8 @@ const UserManagementPage: React.FC = () => {
       </div>
 
       {/* ================= USERS TABLE ================= */}
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-visible">
+        <div className="overflow-x-auto overflow-y-visible min-h-[300px]">
           <table className="w-full border-collapse text-left text-sm text-slate-600">
             <thead className="bg-slate-50 text-[10px] font-bold text-slate-400 tracking-wider uppercase border-b border-slate-100">
               <tr>
@@ -1383,8 +1437,11 @@ const UserManagementPage: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {paginatedUsers.length > 0 ? (
-                paginatedUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50/50 transition-colors group">
+                paginatedUsers.map((user, index) => {
+                  const isNearBottom = paginatedUsers.length <= 3 || index >= Math.max(0, paginatedUsers.length - 2);
+
+                  return (
+                  <tr key={user.id} className={`hover:bg-slate-50/50 transition-colors group relative ${activeMenuId === user.id ? "z-30" : "z-auto"}`}>
                     {/* User Identity */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
@@ -1469,7 +1526,7 @@ const UserManagementPage: React.FC = () => {
                                   className="fixed inset-0 z-40"
                                   onClick={() => setActiveMenuId(null)}
                                 />
-                                <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-100 rounded-2xl shadow-xl py-2 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in duration-100">
+                                <div className={`absolute right-0 ${isNearBottom ? "bottom-full mb-2 origin-bottom-right" : "top-full mt-2 origin-top-right"} w-52 bg-white border border-slate-100 rounded-2xl shadow-2xl py-2 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in duration-100`}>
                                   {showRoleSubMenu ? (
                                     <>
                                       <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1 flex justify-between items-center">
@@ -1578,7 +1635,8 @@ const UserManagementPage: React.FC = () => {
                       )}
                     </td>
                   </tr>
-                ))
+                  );
+                })
               ) : (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-slate-400 font-medium font-sans">
@@ -1695,7 +1753,7 @@ const UserManagementPage: React.FC = () => {
                   className="w-full px-4 py-2 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 cursor-pointer"
                 >
                   {availableRoles.map(role => (
-                    <option key={role} value={role}>{role}</option>
+                    <option key={role} value={role}>{formatRoleLabel(role)}</option>
                   ))}
                   {!availableRoles.includes("Student Member") && <option value="Student Member">Student Member</option>}
                   {!availableRoles.includes("Student Organizer") && <option value="Student Organizer">Student Organizer</option>}
@@ -1741,7 +1799,7 @@ const UserManagementPage: React.FC = () => {
                 >
                   <option value="All">All Roles</option>
                   {availableRoles.map(role => (
-                    <option key={role} value={role}>{role}</option>
+                    <option key={role} value={role}>{formatRoleLabel(role)}</option>
                   ))}
                 </select>
               </div>
@@ -1797,16 +1855,22 @@ const UserManagementPage: React.FC = () => {
                       {gridColumns.map(col => (
                         <td key={col} className="p-0 border-r border-slate-50 last:border-r-0 focus-within:ring-1 focus-within:ring-inset focus-within:ring-blue-500">
                           {col === "Role Type" ? (
-                            <select
-                              value={row[col]}
-                              onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
-                              className="w-full min-w-[150px] px-4 py-3 bg-transparent border-0 focus:outline-none text-slate-700 text-sm font-medium"
-                            >
-                              <option value="" disabled>Select Role</option>
-                              {availableRoles.map(role => (
-                                <option key={role} value={role}>{role}</option>
-                              ))}
-                            </select>
+                            <div className="relative flex items-center p-1.5">
+                              <select
+                                value={row[col]}
+                                onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
+                                className="w-full min-w-[160px] appearance-none pl-3 pr-8 py-2 bg-slate-50 border border-slate-200/90 rounded-xl focus:outline-none focus:border-blue-500 focus:bg-white text-slate-800 text-xs font-semibold cursor-pointer transition-all shadow-2xs"
+                              >
+                                <option value="" disabled className="text-slate-400">Select Role</option>
+                                {availableRoles.map(role => (
+                                  <option key={role} value={role} className="text-slate-800 font-medium py-1">{formatRoleLabel(role)}</option>
+                                ))}
+                                {!availableRoles.some(r => r.toLowerCase().includes("member")) && (
+                                  <option value="Student Member" className="text-slate-800 font-medium py-1">Student Member</option>
+                                )}
+                              </select>
+                              <ChevronDown className="absolute right-3.5 pointer-events-none h-3.5 w-3.5 text-slate-400" />
+                            </div>
                           ) : (
                             <input
                               type="text"
