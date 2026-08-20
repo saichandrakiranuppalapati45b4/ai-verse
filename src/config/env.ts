@@ -24,7 +24,7 @@ export interface AppEnvConfig {
 }
 
 // 1. Read environment variables with safe string fallbacks
-const FIREBASE_API_KEY = (import.meta.env.VITE_FIREBASE_API_KEY || "").trim();
+const FIREBASE_API_KEY = (import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyB9eYytrVSNVbAMp58rrWxpNm730b68N6U").trim();
 const FIREBASE_AUTH_DOMAIN = (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "ai-verse-54c65.firebaseapp.com").trim();
 const FIREBASE_PROJECT_ID = (import.meta.env.VITE_FIREBASE_PROJECT_ID || "ai-verse-54c65").trim();
 const FIREBASE_STORAGE_BUCKET = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "ai-verse-54c65.firebasestorage.app").trim();
