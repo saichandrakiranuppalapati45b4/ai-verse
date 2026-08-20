@@ -1,33 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://ai-verse-54c65.web.app/</loc>
-    <lastmod>2026-07-04</lastmod>
+    <loc>https://aiversevitb.dpdns.org/</loc>
+    <lastmod>2026-08-20</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://ai-verse-54c65.web.app/about</loc>
-    <lastmod>2026-07-04</lastmod>
+    <loc>https://aiversevitb.dpdns.org/about</loc>
+    <lastmod>2026-08-20</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-verse-54c65.web.app/events</loc>
-    <lastmod>2026-07-04</lastmod>
+    <loc>https://aiversevitb.dpdns.org/events</loc>
+    <lastmod>2026-08-20</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://ai-verse-54c65.web.app/gallery</loc>
-    <lastmod>2026-07-04</lastmod>
+    <loc>https://aiversevitb.dpdns.org/gallery</loc>
+    <lastmod>2026-08-20</lastmod>
     <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
+    <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ai-verse-54c65.web.app/team</loc>
-    <lastmod>2026-07-04</lastmod>
+    <loc>https://aiversevitb.dpdns.org/team</loc>
+    <lastmod>2026-08-20</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://aiversevitb.dpdns.org/contact</loc>
+    <lastmod>2026-08-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
   </url>
 </urlset>

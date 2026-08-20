@@ -1,4 +1,18 @@
+# Allow all crawlers
 User-agent: *
 Allow: /
 
-Sitemap: https://ai-verse-54c65.web.app/sitemap.xml
+# Block private/dashboard routes from indexing
+Disallow: /faculty/
+Disallow: /organizer/
+Disallow: /participant/
+Disallow: /admin-setup
+Disallow: /jury
+Disallow: /set-password
+Disallow: /login
+
+# Sitemap location
+Sitemap: https://aiversevitb.dpdns.org/sitemap.xml
+
+# Crawl delay (optional, for polite crawling)
+Crawl-delay: 1
