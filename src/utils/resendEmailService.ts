@@ -26,11 +26,17 @@ export const sendResendEmail = async ({
       body: JSON.stringify({ to, subject, html, from }),
     });
 
-    const result = await response.json();
+    const text = await response.text();
+    let result: any = {};
+    try {
+      result = text ? JSON.parse(text) : {};
+    } catch {
+      result = { error: text || `HTTP ${response.status} ${response.statusText}` };
+    }
 
     if (!response.ok || !result.success) {
       console.error("Email API Error:", result);
-      return { success: false, error: result.error || "Failed to send email" };
+      return { success: false, error: result.error || result.message || "Failed to send email" };
     }
 
     return { success: true, data: result.data };
