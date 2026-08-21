@@ -35,13 +35,13 @@ export const sendResendEmail = async ({
     }
 
     if (!response.ok || !result.success) {
-      console.error("Email API Error:", result);
+      console.error("Email API Error:", result?.error || result);
       return { success: false, error: result.error || result.message || "Failed to send email" };
     }
 
     return { success: true, data: result.data };
   } catch (err: any) {
-    console.error("Error calling send-email API:", err);
+    console.error("Error calling send-email API:", err?.message || err);
     return { success: false, error: err.message || "Network error sending email" };
   }
 };

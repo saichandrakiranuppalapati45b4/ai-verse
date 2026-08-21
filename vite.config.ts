@@ -40,10 +40,16 @@ export default defineConfig({
               });
 
               const result = (await response.json()) as any;
+              console.log(`[Resend API] Status ${response.status}:`, JSON.stringify(result));
               res.statusCode = response.status;
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ success: response.ok, data: result, error: !response.ok ? (result?.message || 'Resend error') : undefined }));
+              res.end(JSON.stringify({ 
+                success: response.ok, 
+                data: result, 
+                error: !response.ok ? (result?.message || result?.error || `Resend Error (HTTP ${response.status})`) : undefined 
+              }));
             } catch (err: any) {
+              console.error("[Resend API Error]:", err);
               res.statusCode = 500;
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({ success: false, error: err.message || 'Server error' }));
