@@ -15,7 +15,6 @@ import {
   ClipboardList,
   Send,
   QrCode,
-  CreditCard,
   UploadCloud,
   CheckCircle2,
   Eye,

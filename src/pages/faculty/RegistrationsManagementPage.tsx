@@ -13,9 +13,7 @@ import {
   RefreshCw,
   Download,
   CreditCard,
-  Receipt,
   ExternalLink,
-  Mail,
   CheckCircle2
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
@@ -314,18 +312,6 @@ const RegistrationsManagementPage: React.FC = () => {
         console.error("Error deleting registration:", err);
         alert("Failed to delete registration.");
       }
-    }
-  };
-
-  const handleUpdateStatus = async (regId: string, newStatus: "Confirmed" | "Pending" | "Waitlisted") => {
-    try {
-      await updateDoc(doc(db, "registrations", regId), {
-        status: newStatus
-      });
-      setRegistrations(prev => prev.map(r => r.id === regId ? { ...r, status: newStatus } : r));
-    } catch (err) {
-      console.error("Error updating status:", err);
-      alert("Failed to update status.");
     }
   };
 

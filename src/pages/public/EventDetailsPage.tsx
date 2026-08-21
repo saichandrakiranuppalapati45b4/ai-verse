@@ -9,9 +9,7 @@ import {
   ChevronLeft,
   SlidersHorizontal,
   Bookmark,
-  IndianRupee,
-  QrCode,
-  CreditCard
+  IndianRupee
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import Button from "../../components/ui/Button";

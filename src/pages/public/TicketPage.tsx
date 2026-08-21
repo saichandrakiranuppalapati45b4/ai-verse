@@ -9,15 +9,11 @@ import {
    MessageSquare, 
    Home,
    Clock,
-   CheckCircle2,
    ShieldCheck,
-   AlertCircle,
    Calendar,
    MapPin,
    Sparkles,
-   User,
-   Users,
-   Check
+   Users
 } from "lucide-react";
 
 interface Teammate {
