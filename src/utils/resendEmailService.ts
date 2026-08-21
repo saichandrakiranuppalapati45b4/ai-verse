@@ -1,6 +1,7 @@
 /**
  * Resend Email Service Helper
- * Dispatches HTML emails via API route with direct Resend fallback.
+ * Dispatches HTML emails via /api/send-email (Cloudflare Pages Function or Vite dev middleware).
+ * Never calls Resend directly from the browser (blocked by CORS).
  */
 
 export interface SendResendEmailParams {
@@ -10,8 +11,6 @@ export interface SendResendEmailParams {
   from?: string;
 }
 
-const DEFAULT_RESEND_API_KEY = "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
-
 export const sendResendEmail = async ({
   to,
   subject,
@@ -20,71 +19,39 @@ export const sendResendEmail = async ({
 }: SendResendEmailParams): Promise<{ success: boolean; data?: any; error?: string }> => {
   const recipients = Array.isArray(to) ? to : [to];
 
-  // 1. Try local/serverless /api/send-email endpoint first
   try {
     const response = await fetch("/api/send-email", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ to: recipients, subject, html, from }),
     });
 
+    // Read response as text first to avoid JSON parse crash on HTML/empty responses
     const text = await response.text();
-    const isHtmlResponse = text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html");
 
-    // If endpoint responded with valid JSON
-    if (!isHtmlResponse && text.trim().startsWith("{")) {
-      try {
-        const result = JSON.parse(text);
-        if (response.ok && result.success) {
-          return { success: true, data: result.data };
-        }
-        if (result.error) {
-          console.error("Resend Server Error:", result.error);
-          return { success: false, error: result.error };
-        }
-      } catch (parseErr) {
-        console.warn("Error parsing /api/send-email JSON:", parseErr);
-      }
+    // Detect if we got back an HTML page (SPA fallback) instead of JSON
+    if (!text || text.trim().startsWith("<!") || text.trim().startsWith("<html")) {
+      console.error("Email API Error: /api/send-email returned HTML instead of JSON. The API function is not deployed.");
+      return { success: false, error: "Email service is not available. API function may not be deployed." };
     }
-  } catch (apiErr) {
-    console.warn("Primary /api/send-email route unreachable, trying direct Resend fallback:", apiErr);
-  }
 
-  // 2. Fallback: Call Resend API directly from browser
-  try {
-    const directResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${DEFAULT_RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: recipients,
-        subject,
-        html,
-      }),
-    });
-
-    const directText = await directResponse.text();
-    let directResult: any = {};
+    let result: any;
     try {
-      directResult = directText ? JSON.parse(directText) : {};
+      result = JSON.parse(text);
     } catch {
-      directResult = { message: directText };
+      console.error("Email API Error: Could not parse response:", text.substring(0, 200));
+      return { success: false, error: `Invalid API response: ${text.substring(0, 100)}` };
     }
 
-    if (!directResponse.ok) {
-      const errMsg = directResult?.message || directResult?.error || `HTTP ${directResponse.status}`;
-      console.error("Resend API Direct Error:", errMsg);
-      return { success: false, error: errMsg };
+    if (!response.ok || !result.success) {
+      const errorMsg = result.error || result.message || `HTTP ${response.status}`;
+      console.error("Email API Error:", errorMsg);
+      return { success: false, error: errorMsg };
     }
 
-    return { success: true, data: directResult };
+    return { success: true, data: result.data };
   } catch (err: any) {
-    console.error("Error dispatching email:", err?.message || err);
-    return { success: false, error: err?.message || "Failed to send email" };
+    console.error("Error calling send-email API:", err?.message || err);
+    return { success: false, error: err?.message || "Network error sending email" };
   }
 };
