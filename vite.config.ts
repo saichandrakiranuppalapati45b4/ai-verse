@@ -39,10 +39,10 @@ export default defineConfig({
                 }),
               });
 
-              const result = await response.json();
+              const result = (await response.json()) as any;
               res.statusCode = response.status;
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ success: response.ok, data: result, error: !response.ok ? (result.message || 'Resend error') : undefined }));
+              res.end(JSON.stringify({ success: response.ok, data: result, error: !response.ok ? (result?.message || 'Resend error') : undefined }));
             } catch (err: any) {
               res.statusCode = 500;
               res.setHeader('Content-Type', 'application/json');
