@@ -49,7 +49,8 @@ import {
   AlertTriangle,
   Mail,
   IndianRupee,
-  CreditCard
+  CreditCard,
+  QrCode
 } from "lucide-react";
 import DatePicker from "../../components/ui/DatePicker";
 import TimePicker from "../../components/ui/TimePicker";
@@ -79,6 +80,19 @@ const EventManagementPage: React.FC = () => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const speakerFileInputRef = React.useRef<HTMLInputElement>(null);
   const juryFileInputRef = React.useRef<HTMLInputElement>(null);
+  const paymentQrFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handlePaymentQrFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormPaymentQrImageFilename(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormPaymentQrImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSpeakerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -479,7 +493,7 @@ const EventManagementPage: React.FC = () => {
 
       for (const reg of eventAccessRegistrations) {
         const teamEmail = generateTeamEmail(reg);
-        const targetEmail = reg.teamLeadEmail || reg.email;
+        const targetEmail = reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email;
         allIds.push(reg.id);
 
         // Update Firestore document with credentials
@@ -936,6 +950,9 @@ const EventManagementPage: React.FC = () => {
   const [formMaxTeamSize, setFormMaxTeamSize] = useState("4");
   const [formRegistrationFee, setFormRegistrationFee] = useState("0");
   const [formIsPaidEvent, setFormIsPaidEvent] = useState<boolean>(false);
+  const [formPaymentQrImageFilename, setFormPaymentQrImageFilename] = useState("");
+  const [formPaymentQrImagePreview, setFormPaymentQrImagePreview] = useState("");
+  const [formUpiId, setFormUpiId] = useState("");
   const [formPosterImages, setFormPosterImages] = useState<{ filename: string, preview: string }[]>([]);
   const [formWhatsGroupLink, setFormWhatsGroupLink] = useState("");
   const [formFacultyCoordinator, setFormFacultyCoordinator] = useState("");
@@ -1150,6 +1167,10 @@ const EventManagementPage: React.FC = () => {
       maxTeamSize: formMaxTeamSize ? Number(formMaxTeamSize) : 4,
       isPaidEvent: formIsPaidEvent,
       registrationFee: formIsPaidEvent && formRegistrationFee ? Number(formRegistrationFee) : 0,
+      paymentQrImageFilename: formIsPaidEvent ? formPaymentQrImageFilename : "",
+      paymentQrImagePreview: formIsPaidEvent ? formPaymentQrImagePreview : "",
+      paymentQr: formIsPaidEvent ? formPaymentQrImagePreview : "",
+      upiId: formIsPaidEvent ? formUpiId.trim() : "",
       status: formStatus,
       whatsGroupLink: formWhatsGroupLink,
       facultyCoordinator: formFacultyCoordinator,
@@ -1288,6 +1309,9 @@ const EventManagementPage: React.FC = () => {
       setFormMaxTeamSize("4");
       setFormIsPaidEvent(false);
       setFormRegistrationFee("0");
+      setFormPaymentQrImageFilename("");
+      setFormPaymentQrImagePreview("");
+      setFormUpiId("");
       setFormWhatsGroupLink("");
       setFormFacultyCoordinator("");
       setFormStudentCoordinator("");
@@ -1384,6 +1408,9 @@ const EventManagementPage: React.FC = () => {
         const loadedFee = data.registrationFee !== undefined ? String(data.registrationFee) : "0";
         setFormRegistrationFee(loadedFee);
         setFormIsPaidEvent(data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : Number(loadedFee) > 0);
+        setFormPaymentQrImageFilename(data.paymentQrImageFilename || "");
+        setFormPaymentQrImagePreview(data.paymentQrImagePreview || data.paymentQr || "");
+        setFormUpiId(data.upiId || "");
         setFormWhatsGroupLink(data.whatsGroupLink || "");
         setFormFacultyCoordinator(data.facultyCoordinator || "");
         setFormStudentCoordinator(data.studentCoordinator || "");
@@ -1510,7 +1537,11 @@ const EventManagementPage: React.FC = () => {
                   setFormStatus("Draft");
                   setFormMinTeamSize("1");
                   setFormMaxTeamSize("4");
+                  setFormIsPaidEvent(false);
                   setFormRegistrationFee("0");
+                  setFormPaymentQrImageFilename("");
+                  setFormPaymentQrImagePreview("");
+                  setFormUpiId("");
 
                   setFormSpeakerName("");
                   setFormSpeakerRole("");
@@ -3077,7 +3108,7 @@ const EventManagementPage: React.FC = () => {
 
                     {/* Pricing Input Section (When ON) */}
                     {formIsPaidEvent && (
-                      <div className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-100/70 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-100/70 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
                         <div>
                           <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
                             Price Per Person (₹) <span className="text-red-500">*</span>
@@ -3117,8 +3148,116 @@ const EventManagementPage: React.FC = () => {
                           </div>
                         </div>
 
-                        <p className="text-[10px] text-slate-400 font-medium leading-tight">
-                          This fee will be required from each person when registering for this hackathon.
+                        {/* Payment QR Code Upload Section */}
+                        <div className="space-y-2 pt-3 border-t border-emerald-100/70">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <QrCode className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Upload Payment QR Code</span>
+                              <span className="text-red-500">*</span>
+                            </label>
+                            {formPaymentQrImagePreview && (
+                              <span className="text-[9px] font-black text-emerald-700 bg-emerald-100/90 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <Check className="w-2.5 h-2.5" /> Uploaded
+                              </span>
+                            )}
+                          </div>
+
+                          <input
+                            type="file"
+                            ref={paymentQrFileInputRef}
+                            className="hidden"
+                            accept="image/*"
+                            onChange={handlePaymentQrFileChange}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+
+                          {formPaymentQrImagePreview ? (
+                            <div className="bg-white p-3.5 rounded-2xl border border-emerald-200/90 shadow-xs flex items-center gap-3.5">
+                              <div 
+                                onClick={() => setActiveImageLightbox(formPaymentQrImagePreview)}
+                                className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center shrink-0 cursor-pointer group shadow-inner"
+                                title="Click to enlarge QR"
+                              >
+                                <img
+                                  src={formPaymentQrImagePreview}
+                                  alt="Payment QR Code"
+                                  className="w-full h-full object-contain p-1 group-hover:scale-105 transition-transform"
+                                />
+                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <Eye className="w-4 h-4 text-white" />
+                                </div>
+                              </div>
+
+                              <div className="flex-1 min-w-0 text-left space-y-1">
+                                <p className="text-xs font-bold text-slate-800 truncate" title={formPaymentQrImageFilename || "payment_qr.png"}>
+                                  {formPaymentQrImageFilename || "Payment QR Image"}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-medium leading-tight">
+                                  UPI scan-and-pay QR active for registered teams
+                                </p>
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => paymentQrFileInputRef.current?.click()}
+                                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Change QR
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFormPaymentQrImageFilename("");
+                                      setFormPaymentQrImagePreview("");
+                                    }}
+                                    className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-[10px] rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => paymentQrFileInputRef.current?.click()}
+                              className="p-4 rounded-2xl border-2 border-dashed border-emerald-200 hover:border-emerald-400 bg-white hover:bg-emerald-50/20 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group shadow-xs"
+                            >
+                              <div className="w-10 h-10 rounded-xl bg-emerald-100/70 text-emerald-700 flex items-center justify-center group-hover:scale-110 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
+                                <QrCode className="h-5 w-5" />
+                              </div>
+                              <div className="space-y-0.5">
+                                <p className="text-xs font-bold text-slate-800">
+                                  Click to Upload Payment QR Code
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-medium">
+                                  GPay, PhonePe, Paytm, BHIM UPI (PNG, JPG, WebP)
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* UPI ID / VPA field */}
+                          <div className="pt-2">
+                            <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                              UPI ID / VPA (Optional)
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="text"
+                                placeholder="e.g. hackathon@upi or 9876543210@paytm"
+                                value={formUpiId}
+                                onChange={(e) => setFormUpiId(e.target.value)}
+                                className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-semibold placeholder:text-slate-300 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all font-mono"
+                              />
+                            </div>
+                            <p className="text-[9px] text-slate-400 font-medium mt-1">
+                              Participants can also copy this UPI ID to pay manually.
+                            </p>
+                          </div>
+                        </div>
+
+                        <p className="text-[10px] text-slate-400 font-medium leading-tight pt-1">
+                          This fee and QR code will be presented to each participant when registering.
                         </p>
                       </div>
                     )}
@@ -3417,6 +3556,39 @@ const EventManagementPage: React.FC = () => {
                           </span>
                         </div>
                       </div>
+
+                      {/* Payment QR in Event Details */}
+                      {(selectedEventDetails?.paymentQrImagePreview || selectedEventDetails?.paymentQr || selectedEventDetails?.upiId) && (
+                        <div className="mt-3 p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 flex flex-col sm:flex-row items-center gap-4 text-left">
+                          {(selectedEventDetails?.paymentQrImagePreview || selectedEventDetails?.paymentQr) && (
+                            <div 
+                              onClick={() => setActiveImageLightbox(selectedEventDetails?.paymentQrImagePreview || selectedEventDetails?.paymentQr)}
+                              className="w-20 h-20 bg-white rounded-xl border border-emerald-200 p-1 flex items-center justify-center shrink-0 cursor-pointer shadow-xs group"
+                              title="Click to zoom QR Code"
+                            >
+                              <img
+                                src={selectedEventDetails?.paymentQrImagePreview || selectedEventDetails?.paymentQr}
+                                alt="Payment QR"
+                                className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                              />
+                            </div>
+                          )}
+                          <div className="space-y-1 text-center sm:text-left flex-1 min-w-0">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 block flex items-center gap-1.5 justify-center sm:justify-start">
+                              <QrCode className="w-3.5 h-3.5" />
+                              Official Payment QR & UPI
+                            </span>
+                            {selectedEventDetails?.upiId && (
+                              <p className="text-xs font-mono font-bold text-slate-800 break-all">
+                                UPI: <span className="text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-md">{selectedEventDetails.upiId}</span>
+                              </p>
+                            )}
+                            <p className="text-[10px] text-slate-500 font-medium">
+                              Fee: ₹{selectedEventDetails?.registrationFee || 0} per attendee
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* 5. WhatsApp Group Link */}
@@ -4120,9 +4292,14 @@ const EventManagementPage: React.FC = () => {
 
                                 {/* Contact Email & Phone */}
                                 <td className="py-3.5 px-3 space-y-0.5">
-                                  <span className="font-bold text-slate-800 text-xs block truncate max-w-[160px]" title={reg.teamLeadEmail || reg.email}>
-                                    {reg.teamLeadEmail || reg.email || "N/A"}
+                                  <span className="font-bold text-slate-800 text-xs block truncate max-w-[170px]" title={reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email}>
+                                    {reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email || "N/A"}
                                   </span>
+                                  {reg.teamLeadCollegeEmail && reg.teamLeadCollegeEmail !== (reg.teamLeadPersonalEmail || reg.personalEmail) && (
+                                    <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[170px]" title={`College: ${reg.teamLeadCollegeEmail}`}>
+                                      🏛️ {reg.teamLeadCollegeEmail}
+                                    </span>
+                                  )}
                                   {reg.phoneNumber && (
                                     <span className="text-[10px] text-slate-400 font-semibold block">
                                       {reg.phoneNumber}

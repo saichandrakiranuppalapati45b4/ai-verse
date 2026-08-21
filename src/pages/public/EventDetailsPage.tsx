@@ -8,7 +8,10 @@ import {
   ChevronRight,
   ChevronLeft,
   SlidersHorizontal,
-  Bookmark
+  Bookmark,
+  IndianRupee,
+  QrCode,
+  CreditCard
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import Button from "../../components/ui/Button";
@@ -48,6 +51,11 @@ interface DetailedEvent {
   speakerImagePreview?: string;
   minTeamSize?: number;
   maxTeamSize?: number;
+  registrationFee?: number;
+  isPaidEvent?: boolean;
+  paymentQrImagePreview?: string;
+  paymentQr?: string;
+  upiId?: string;
   agendaTime1?: string;
   agendaTitle1?: string;
   agendaDesc1?: string;
@@ -131,6 +139,11 @@ const EventDetailsPage: React.FC = () => {
             speakerImagePreview: data.speakerImagePreview || "",
             minTeamSize: data.minTeamSize || null,
             maxTeamSize: data.maxTeamSize || null,
+            registrationFee: data.registrationFee !== undefined ? Number(data.registrationFee) : 0,
+            isPaidEvent: data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : (Number(data.registrationFee) > 0),
+            paymentQrImagePreview: data.paymentQrImagePreview || data.paymentQr || "",
+            paymentQr: data.paymentQr || data.paymentQrImagePreview || "",
+            upiId: data.upiId || "",
             agendaTime1: data.agendaTime1 || "09:00 AM - 10:30 AM",
             agendaTitle1: data.agendaTitle1 || "Morning Keynote: The Future of Compute",
             agendaDesc1: data.agendaDesc1 || "Opening session detailing next-generation silicon and computation architectural design patterns.",
@@ -271,9 +284,35 @@ const EventDetailsPage: React.FC = () => {
                 </div>
 
                 <div className="space-y-1">
-                  <h3 className="text-3xl font-black text-slate-800 tracking-tight">Free</h3>
-                  <p className="text-[10px] text-slate-400 font-semibold">Early Bird RSVP active</p>
+                  <div className="flex items-baseline gap-1.5">
+                    <h3 className="text-3xl font-black text-slate-800 tracking-tight">
+                      {event.isPaidEvent && event.registrationFee && event.registrationFee > 0
+                        ? `₹${event.registrationFee}`
+                        : "Free"}
+                    </h3>
+                    {event.isPaidEvent && event.registrationFee && event.registrationFee > 0 && (
+                      <span className="text-xs font-bold text-slate-400">/ person</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-semibold">
+                    {event.isPaidEvent && event.registrationFee && event.registrationFee > 0
+                      ? "Paid Hackathon Entry"
+                      : "Early Bird RSVP active"}
+                  </p>
                 </div>
+
+                {/* Paid Hackathon Payment Status Badge */}
+                {event.isPaidEvent && event.registrationFee && event.registrationFee > 0 && (
+                  <div className="bg-emerald-50/70 rounded-2xl p-2.5 border border-emerald-100 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-emerald-800 font-bold text-[11px]">
+                      <IndianRupee className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Paid Registration</span>
+                    </div>
+                    <span className="text-[9px] font-black text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200 uppercase tracking-wider">
+                      UPI / QR
+                    </span>
+                  </div>
+                )}
 
                 {event.type === "Hackathon" && event.minTeamSize && event.maxTeamSize && (
                   <div className="bg-slate-50/50 rounded-2xl p-3 border border-slate-100/50 flex items-center justify-between text-xs mt-2 text-left">
@@ -462,6 +501,51 @@ const EventDetailsPage: React.FC = () => {
                 </p>
               </div>
             </div>
+
+            {/* 3. Pricing & Payment QR Information */}
+            {event.isPaidEvent && event.registrationFee && event.registrationFee > 0 && (
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <IndianRupee className="w-4 h-4 text-emerald-600" />
+                    Payment Details
+                  </h3>
+                  <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase">
+                    ₹{event.registrationFee} / person
+                  </span>
+                </div>
+
+                <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-100/80 space-y-2.5">
+                  <p className="text-[11px] text-slate-600 font-semibold leading-relaxed">
+                    Registration fee is required for all participating members. Scan the QR code or pay to the official UPI ID.
+                  </p>
+
+                  {(event.paymentQrImagePreview || event.paymentQr) && (
+                    <div className="bg-white p-2.5 rounded-xl border border-emerald-200 shadow-xs flex flex-col items-center justify-center gap-1.5">
+                      <div className="w-28 h-28 flex items-center justify-center">
+                        <img
+                          src={event.paymentQrImagePreview || event.paymentQr}
+                          alt="Official Payment QR"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                        Scan to Pay via UPI
+                      </span>
+                    </div>
+                  )}
+
+                  {event.upiId && (
+                    <div className="bg-white p-2 rounded-xl border border-emerald-200/80 text-center">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase block">Official UPI ID</span>
+                      <span className="text-xs font-mono font-black text-emerald-700 select-all block mt-0.5">
+                        {event.upiId}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
           </div>
 

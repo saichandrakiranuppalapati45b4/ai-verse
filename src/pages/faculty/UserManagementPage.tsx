@@ -1308,6 +1308,9 @@ const UserManagementPage: React.FC = () => {
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
+              id="search-users"
+              name="search-users"
+              autoComplete="off"
               placeholder="Search by name, email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1318,6 +1321,8 @@ const UserManagementPage: React.FC = () => {
           {/* Role Filter */}
           <div className="relative w-full sm:w-auto">
             <select
+              id="role-filter"
+              name="role-filter"
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
               className="appearance-none w-full sm:w-48 px-4 py-2 pr-10 bg-slate-50 border border-slate-200/80 rounded-2xl text-slate-700 text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium cursor-pointer"
@@ -1341,6 +1346,8 @@ const UserManagementPage: React.FC = () => {
           {/* Status Filter */}
           <div className="relative w-full sm:w-auto">
             <select
+              id="status-filter"
+              name="status-filter"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="appearance-none w-full sm:w-36 px-4 py-2 pr-10 bg-slate-50 border border-slate-200/80 rounded-2xl text-slate-700 text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-all font-medium cursor-pointer"

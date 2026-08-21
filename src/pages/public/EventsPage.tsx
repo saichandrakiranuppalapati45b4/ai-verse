@@ -34,6 +34,8 @@ interface Event {
   maxReg: number;
   endDate?: string;
   isPastEvent?: boolean;
+  registrationFee?: number;
+  isPaidEvent?: boolean;
 }
 
 const EventsPage: React.FC = () => {
@@ -99,7 +101,9 @@ const EventsPage: React.FC = () => {
             currentReg: Math.max(0, Number(data.currentReg) || 0),
             maxReg: data.maxReg || 100,
             endDate: data.endDate || data.startDate || "",
-            isPastEvent: Boolean(data.isPastEvent)
+            isPastEvent: Boolean(data.isPastEvent),
+            registrationFee: data.registrationFee !== undefined ? Number(data.registrationFee) : 0,
+            isPaidEvent: data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : (Number(data.registrationFee) > 0)
           });
         });
         setEvents(list);
@@ -365,8 +369,17 @@ const EventsPage: React.FC = () => {
                           </Link>
                         </div>
 
-                        {/* Category & Status Tags in right box region */}
+                        {/* Category, Price & Status Tags in right box region */}
                         <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-black tracking-wider px-2.5 py-1 rounded-lg uppercase shadow-sm ${
+                            event.isPaidEvent && event.registrationFee && event.registrationFee > 0
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-slate-50 text-slate-600 border border-slate-200"
+                          }`}>
+                            {event.isPaidEvent && event.registrationFee && event.registrationFee > 0
+                              ? `₹${event.registrationFee}`
+                              : "Free"}
+                          </span>
                           <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-lg uppercase shadow-sm ${getCategoryStyles(event.type)}`}>
                             {event.type}
                           </span>

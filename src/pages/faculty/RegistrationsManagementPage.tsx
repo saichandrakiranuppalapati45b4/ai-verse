@@ -11,11 +11,17 @@ import {
   Users as UsersIcon,
   X,
   RefreshCw,
-  Download
+  Download,
+  CreditCard,
+  Receipt,
+  ExternalLink,
+  Mail,
+  CheckCircle2
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, deleteDoc, updateDoc, increment } from "firebase/firestore";
+import { sendResendEmail } from "../../utils/resendEmailService";
 
 interface RegistrationItem {
   id: string;
@@ -24,6 +30,8 @@ interface RegistrationItem {
   groupName: string;
   teamLeadName: string;
   teamLeadEmail: string;
+  teamLeadCollegeEmail?: string;
+  teamLeadPersonalEmail?: string;
   teamLeadStudentId: string;
   phoneNumber: string;
   branch: string;
@@ -32,6 +40,12 @@ interface RegistrationItem {
   teamSize: number;
   members: Array<{ name: string; email: string; studentId: string; role?: string }>;
   status?: "Confirmed" | "Pending" | "Waitlisted";
+  paymentProofPreview?: string;
+  paymentProofFilename?: string;
+  transactionId?: string;
+  utrNumber?: string;
+  paymentStatus?: string;
+  totalFeePaid?: number;
   createdAt: number;
 }
 
@@ -53,6 +67,8 @@ const RegistrationsManagementPage: React.FC = () => {
   const [deleteModeOption, setDeleteModeOption] = useState<"single" | "group" | "event">("single");
   const [selectedRegIds, setSelectedRegIds] = useState<string[]>([]);
   const [isDeleteSelectionMode, setIsDeleteSelectionMode] = useState(false);
+  const [confirmingRegId, setConfirmingRegId] = useState<string | null>(null);
+  const [confirmSuccessMsg, setConfirmSuccessMsg] = useState<string | null>(null);
 
   // Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -247,6 +263,8 @@ const RegistrationsManagementPage: React.FC = () => {
           groupName: data.groupName || "Individual RSVP",
           teamLeadName: data.teamLeadName || "Student Registrant",
           teamLeadEmail: data.teamLeadEmail || "",
+          teamLeadCollegeEmail: data.teamLeadCollegeEmail || data.collegeEmail || "",
+          teamLeadPersonalEmail: data.teamLeadPersonalEmail || data.personalEmail || "",
           teamLeadStudentId: data.teamLeadStudentId || "",
           phoneNumber: data.phoneNumber || "",
           branch: data.branch || "",
@@ -255,6 +273,12 @@ const RegistrationsManagementPage: React.FC = () => {
           teamSize: data.teamSize || 1,
           members: data.members || [],
           status: data.status || "Confirmed",
+          paymentProofPreview: data.paymentProofPreview || data.paymentProof || "",
+          paymentProofFilename: data.paymentProofFilename || "",
+          transactionId: data.transactionId || data.utrNumber || "",
+          utrNumber: data.utrNumber || data.transactionId || "",
+          paymentStatus: data.paymentStatus || "",
+          totalFeePaid: data.totalFeePaid || 0,
           createdAt: data.createdAt || Date.now()
         });
       });
@@ -302,6 +326,105 @@ const RegistrationsManagementPage: React.FC = () => {
     } catch (err) {
       console.error("Error updating status:", err);
       alert("Failed to update status.");
+    }
+  };
+
+  const handleConfirmRegistrationAndSendEmail = async (reg: RegistrationItem) => {
+    setConfirmingRegId(reg.id);
+    try {
+      // 1. Update status to Confirmed in Firestore
+      await updateDoc(doc(db, "registrations", reg.id), {
+        status: "Confirmed",
+        paymentStatus: "Confirmed",
+        confirmedAt: Date.now()
+      });
+
+      // Update state
+      setRegistrations(prev => prev.map(r => r.id === reg.id ? { ...r, status: "Confirmed", paymentStatus: "Confirmed" } : r));
+      if (selectedReg?.id === reg.id) {
+        setSelectedReg(prev => prev ? { ...prev, status: "Confirmed", paymentStatus: "Confirmed" } : null);
+      }
+
+      // 2. Identify target personal mail (Priority: teamLeadPersonalEmail -> teamLeadEmail -> teamLeadCollegeEmail)
+      const targetEmail = (reg.teamLeadPersonalEmail || reg.teamLeadEmail || reg.teamLeadCollegeEmail || "").trim();
+
+      if (targetEmail) {
+        const ticketUrl = `${window.location.origin}/ticket/${reg.id}`;
+        
+        const emailResult = await sendResendEmail({
+          to: targetEmail,
+          subject: `Registration Confirmed: ${reg.eventTitle} - AI Verse`,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 20px; background-color: #ffffff; color: #1e293b;">
+              <div style="background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%); padding: 24px; border-radius: 16px; color: #ffffff; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;">AI VERSE</h1>
+                <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.95; font-weight: 600;">Official Registration Confirmation</p>
+              </div>
+
+              <div style="padding: 24px 8px;">
+                <p style="font-size: 15px; line-height: 1.6; margin-bottom: 16px;">
+                  Hello <strong>${reg.teamLeadName}</strong>,
+                </p>
+                
+                <p style="font-size: 14px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
+                  Thank you for your registration! We are pleased to confirm that your registration for <strong>${reg.eventTitle}</strong> has been officially <span style="color: #16a34a; font-weight: 800;">CONFIRMED</span> by the organizing committee.
+                </p>
+
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; margin: 20px 0;">
+                  <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">📋 Registration Summary</div>
+                  <div style="font-size: 13px; color: #334155; line-height: 1.8;">
+                    <div><strong>Event:</strong> ${reg.eventTitle}</div>
+                    <div><strong>Team / Group:</strong> ${reg.groupName || "Individual Participant"}</div>
+                    <div><strong>Team Lead:</strong> ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})</div>
+                    <div><strong>Total Participants:</strong> ${reg.teamSize || (reg.members.length + 1)} member(s)</div>
+                    ${reg.transactionId ? `<div><strong>Transaction ID / UTR:</strong> <span style="font-family: monospace; font-weight: bold;">${reg.transactionId}</span></div>` : ""}
+                    <div><strong>Status:</strong> <span style="color: #16a34a; font-weight: bold;">Verified & Confirmed</span></div>
+                  </div>
+                </div>
+
+                ${reg.members && reg.members.length > 0 ? `
+                  <div style="margin: 18px 0;">
+                    <p style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px;">Registered Teammates:</p>
+                    <ul style="font-size: 13px; color: #334155; padding-left: 20px; margin: 0; line-height: 1.6;">
+                      ${reg.members.map(m => `<li><strong>${m.name}</strong> (${m.studentId || m.email})</li>`).join("")}
+                    </ul>
+                  </div>
+                ` : ""}
+
+                <div style="text-align: center; margin: 28px 0 16px 0;">
+                  <a href="${ticketUrl}" style="display: inline-block; background: #2563EB; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 12px; font-weight: 700; font-size: 13px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
+                    View Entry Pass & Attendance QR Code
+                  </a>
+                </div>
+
+                <p style="font-size: 12px; color: #64748b; line-height: 1.5; text-align: center; margin-top: 16px;">
+                  Please keep your digital attendance ticket accessible for venue check-in.
+                </p>
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+              <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
+                AI Verse • Automated Event Verification System
+              </p>
+            </div>
+          `
+        });
+
+        if (emailResult.success) {
+          setConfirmSuccessMsg(`Registration confirmed & confirmation email sent to ${targetEmail}!`);
+        } else {
+          setConfirmSuccessMsg(`Registration confirmed in database. (Email notice: ${emailResult.error || "failed"})`);
+        }
+      } else {
+        setConfirmSuccessMsg("Registration confirmed successfully!");
+      }
+
+      setTimeout(() => setConfirmSuccessMsg(null), 6000);
+    } catch (err) {
+      console.error("Error confirming registration:", err);
+      alert("Failed to confirm registration.");
+    } finally {
+      setConfirmingRegId(null);
     }
   };
 
@@ -572,6 +695,19 @@ const RegistrationsManagementPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Confirmation Success Toast Banner */}
+          {confirmSuccessMsg && (
+            <div className="mx-6 mb-3 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-2xl flex items-center justify-between gap-2 shadow-xs animate-in fade-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{confirmSuccessMsg}</span>
+              </div>
+              <button onClick={() => setConfirmSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700 p-1">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* Directory Table */}
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-xs text-slate-600">
@@ -616,6 +752,7 @@ const RegistrationsManagementPage: React.FC = () => {
                     const displayTeamName = isGroup ? reg.groupName : (reg.teamLeadName || "Participant");
                     const initial = displayTeamName ? displayTeamName.substring(0, 2).toUpperCase() : "US";
                     const isSelected = selectedRegIds.includes(reg.id);
+                    const isConfirmed = (reg.status || "Confirmed") === "Confirmed";
                     
                     return (
                       <tr 
@@ -636,49 +773,41 @@ const RegistrationsManagementPage: React.FC = () => {
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              onChange={(e) => toggleSelectReg(reg.id, e as any)}
+                              onChange={() => toggleSelectReg(reg.id)}
                               className="w-4 h-4 rounded-full border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer accent-red-600"
                             />
                           </td>
                         )}
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-[10px] shrink-0 shadow-xs">
+                            <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 font-extrabold flex items-center justify-center text-[10px] shrink-0 border border-blue-100">
                               {initial}
                             </div>
-                            <div className="text-left leading-normal">
-                              <span className="font-extrabold text-slate-900 text-xs block truncate max-w-[180px]">
-                                {displayTeamName}
-                              </span>
-                              <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
-                                {isGroup ? `Lead: ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})` : (reg.teamLeadStudentId || "REG-2026-000")}
+                            <div className="flex flex-col">
+                              <span className="font-extrabold text-slate-800 text-xs">{displayTeamName}</span>
+                              <span className="text-[10px] text-slate-450 font-medium">
+                                Lead: {reg.teamLeadName} {reg.teamLeadStudentId ? `(${reg.teamLeadStudentId})` : ""}
                               </span>
                             </div>
                           </div>
                         </td>
 
-                        <td className="px-6 py-4 font-bold text-slate-700 max-w-[150px] truncate">
+                        <td className="px-6 py-4 whitespace-nowrap font-bold text-slate-700">
                           {reg.eventTitle}
                         </td>
 
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {isGroup ? (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[8px] font-black tracking-wide bg-blue-50 text-blue-700 border border-blue-100/30 uppercase">
-                              Group ({reg.teamSize})
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[8px] font-black tracking-wide bg-slate-100 text-slate-500 border border-slate-200/50 uppercase">
-                              Individual
-                            </span>
-                          )}
+                          <span className="px-2.5 py-0.5 rounded-md text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-100/50 uppercase tracking-wide">
+                            {isGroup ? `Group (${reg.teamSize})` : "Individual"}
+                          </span>
                         </td>
 
-                        <td className="px-6 py-4 font-semibold text-slate-500 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap text-slate-500 font-medium">
                           {new Date(reg.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                         </td>
 
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {(reg.status || "Confirmed") === "Confirmed" && (
+                          {isConfirmed && (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100/30">
                               <span className="w-1 h-1 rounded-full bg-emerald-600 animate-pulse"></span>
                               Confirmed
@@ -699,16 +828,41 @@ const RegistrationsManagementPage: React.FC = () => {
                         </td>
 
                         <td className="px-6 py-4 text-right whitespace-nowrap relative">
-                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                            {(reg.status || "Confirmed") !== "Confirmed" && (
-                              <button
-                                onClick={() => handleUpdateStatus(reg.id, "Confirmed")}
-                                className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
-                                title="Approve Registration"
-                              >
-                                <Check className="h-3.5 w-3.5" />
-                              </button>
-                            )}
+                          <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                            {/* Confirm & Dispatch Email Button */}
+                            <button
+                              onClick={() => handleConfirmRegistrationAndSendEmail(reg)}
+                              disabled={confirmingRegId === reg.id}
+                              className={`px-2.5 py-1 rounded-xl text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
+                                isConfirmed
+                                  ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200/80"
+                                  : "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent shadow-emerald-600/20"
+                              }`}
+                              title={
+                                isConfirmed
+                                  ? `Registration confirmed. Click to re-send confirmation email to ${(reg.teamLeadPersonalEmail || reg.teamLeadEmail)}`
+                                  : `Confirm Registration & Send Confirmation Email to ${(reg.teamLeadPersonalEmail || reg.teamLeadEmail)}`
+                              }
+                            >
+                              {confirmingRegId === reg.id ? (
+                                <>
+                                  <Loader2 className="h-3 w-3 animate-spin text-current" />
+                                  <span>Sending...</span>
+                                </>
+                              ) : isConfirmed ? (
+                                <>
+                                  <Check className="h-3 w-3 stroke-[2.5]" />
+                                  <span>Confirmed</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="h-3 w-3 stroke-[2.5]" />
+                                  <span>Confirm</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Delete Button */}
                             <button
                               onMouseDown={() => {
                                 isLongPressActive.current = false;
@@ -748,7 +902,7 @@ const RegistrationsManagementPage: React.FC = () => {
                                   handleDeleteRegistration(reg.id, reg.eventId, reg.teamSize);
                                 }
                               }}
-                              className="p-1 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-lg transition-all relative"
+                              className="p-1.5 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-xl transition-all cursor-pointer relative"
                               title="Hold for Multiple Delete Options"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -829,18 +983,18 @@ const RegistrationsManagementPage: React.FC = () => {
 
       {/* Registration Details Modal */}
       {selectedReg && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-2xl w-full mx-4 overflow-hidden animate-in zoom-in-95 duration-200 text-left">
-            {/* Header */}
-            <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+            {/* Sticky Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 shrink-0">
               <div>
-                <span className="text-[10px] font-black text-blue-600 tracking-wider uppercase block">Roster Details</span>
-                <h3 className="text-lg font-black text-slate-800 tracking-tight mt-1 flex items-center gap-3">
-                  {selectedReg.eventTitle}
+                <span className="text-[10px] font-black text-blue-600 tracking-wider uppercase block">Roster & Registration Details</span>
+                <h3 className="text-lg font-black text-slate-800 tracking-tight mt-0.5 flex flex-wrap items-center gap-2.5">
+                  <span>{selectedReg.eventTitle}</span>
                   {!isEditing && (
                     <button
                       onClick={() => setIsEditing(true)}
-                      className="px-2.5 py-1 text-[10px] font-black bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200/50 rounded-lg transition-all"
+                      className="px-2.5 py-1 text-[10px] font-black bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200/50 rounded-lg transition-all cursor-pointer"
                     >
                       Edit Roster
                     </button>
@@ -852,229 +1006,326 @@ const RegistrationsManagementPage: React.FC = () => {
                   setSelectedReg(null);
                   setIsEditing(false);
                 }}
-                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-all"
+                className="w-8 h-8 rounded-full hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-all cursor-pointer"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4.5 w-4.5" />
               </button>
             </div>
 
-            {/* Content */}
-            <div className="p-6 space-y-6 max-h-[500px] overflow-y-auto">
+            {/* Scrollable Content Body */}
+            <div className="p-5 sm:p-6 space-y-6 flex-1 overflow-y-auto">
               
               {/* Group Identity Card */}
-              <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4.5 space-y-4">
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <div className="bg-slate-50/70 border border-slate-200/60 rounded-2xl p-4.5 space-y-3.5">
+                <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <UsersIcon className="h-3.5 w-3.5 text-blue-600" />
                   Group Summary
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase">Group Name</span>
                     {isEditing ? (
                       <input 
                         type="text" 
-                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500" 
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 bg-white" 
                         value={editForm?.groupName || ""}
                         onChange={(e) => setEditForm(prev => prev ? { ...prev, groupName: e.target.value } : null)}
                       />
                     ) : (
-                      <span className="text-xs font-bold text-slate-800 block">{selectedReg.groupName || "Individual RSVP"}</span>
+                      <span className="text-xs font-black text-slate-800 block">{selectedReg.groupName || "Individual RSVP"}</span>
                     )}
                   </div>
                   <div className="space-y-0.5">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase">Registration Date</span>
-                    <span className="text-xs font-bold text-slate-800 block">
+                    <span className="text-xs font-bold text-slate-700 block">
                       {new Date(selectedReg.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Team Size & Status</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 bg-blue-100/80 text-blue-700 font-black rounded-md text-[10px]">
+                        {selectedReg.teamSize || selectedReg.members.length + 1} Member{selectedReg.members.length > 0 ? "s" : ""}
+                      </span>
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 font-black rounded-md text-[10px]">
+                        {selectedReg.status || "Confirmed"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Roster Table */}
               <div className="space-y-3">
-                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider pl-1 flex items-center gap-1.5">
-                  <ClipboardList className="h-3.5 w-3.5 text-blue-600" />
-                  Roster List ({selectedReg.members.length + 1} members)
-                </h4>
+                <div className="flex items-center justify-between pl-1">
+                  <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <ClipboardList className="h-3.5 w-3.5 text-blue-600" />
+                    Roster List ({selectedReg.members.length + 1} members)
+                  </h4>
+                </div>
                 
-                <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-sm">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-[9px] font-black text-slate-450 tracking-wider uppercase border-b border-slate-100">
-                      <tr>
-                        <th className="px-4 py-3">Member</th>
-                        <th className="px-4 py-3">Student ID</th>
-                        <th className="px-4 py-3">Email</th>
-                        <th className="px-4 py-3 text-right">Role</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                      {/* Team Lead */}
-                      <tr className="bg-blue-50/10">
-                        <td className="px-4 py-3.5">
-                          {isEditing ? (
-                            <div className="space-y-1">
+                <div className="border border-slate-200/80 rounded-2xl overflow-hidden bg-white shadow-xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-[9px] font-black text-slate-450 tracking-wider uppercase border-b border-slate-200/70">
+                        <tr>
+                          <th className="px-4 py-3">Member</th>
+                          <th className="px-4 py-3">Student ID</th>
+                          <th className="px-4 py-3">Email Address</th>
+                          <th className="px-4 py-3 text-right">Role</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                        {/* Team Lead */}
+                        <tr className="bg-blue-50/20">
+                          <td className="px-4 py-3.5">
+                            {isEditing ? (
+                              <div className="space-y-1">
+                                <input 
+                                  type="text" 
+                                  className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-850" 
+                                  value={editForm?.teamLeadName || ""}
+                                  onChange={(e) => setEditForm(prev => prev ? { ...prev, teamLeadName: e.target.value } : null)}
+                                />
+                                <span className="text-[8px] font-bold text-blue-600 uppercase tracking-wider block">Team Lead</span>
+                              </div>
+                            ) : (
+                              <>
+                                <span className="font-extrabold text-slate-850 block">{selectedReg.teamLeadName}</span>
+                                <span className="text-[8px] font-bold text-blue-600 uppercase tracking-wider block mt-0.5">Team Lead</span>
+                              </>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 font-bold text-slate-600">
+                            {isEditing ? (
                               <input 
-                                type="text"
-                                className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-850"
-                                value={editForm?.teamLeadName || ""}
-                                onChange={(e) => setEditForm(prev => prev ? { ...prev, teamLeadName: e.target.value } : null)}
+                                type="text" 
+                                className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-700 font-bold" 
+                                value={editForm?.teamLeadStudentId || ""}
+                                onChange={(e) => setEditForm(prev => prev ? { ...prev, teamLeadStudentId: e.target.value } : null)}
                               />
-                              <span className="text-[8px] font-bold text-blue-600 uppercase tracking-wider block">Team Lead</span>
-                            </div>
-                          ) : (
-                            <>
-                              <span className="font-extrabold text-slate-800 block">{selectedReg.teamLeadName}</span>
-                              <span className="text-[8px] font-bold text-blue-600 uppercase tracking-wider block mt-0.5">Team Lead</span>
-                            </>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 font-bold text-slate-500">
-                          {isEditing ? (
-                            <input 
-                              type="text"
-                              className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-700 font-bold"
-                              value={editForm?.teamLeadStudentId || ""}
-                              onChange={(e) => setEditForm(prev => prev ? { ...prev, teamLeadStudentId: e.target.value } : null)}
-                            />
-                          ) : (
-                            selectedReg.teamLeadStudentId || "REG-2026-TL"
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-655">
-                          {isEditing ? (
-                            <input 
-                              type="text"
-                              className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-705"
-                              value={editForm?.teamLeadEmail || ""}
-                              onChange={(e) => setEditForm(prev => prev ? { ...prev, teamLeadEmail: e.target.value } : null)}
-                            />
-                          ) : (
-                            selectedReg.teamLeadEmail
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 text-right">
-                          <span className="inline-block px-2 py-0.5 bg-blue-100 border border-blue-200 text-blue-700 font-black rounded text-[8px] uppercase tracking-wide">
-                            Leader
-                          </span>
-                        </td>
-                      </tr>
+                            ) : (
+                              <span className="font-mono">{selectedReg.teamLeadStudentId || "N/A"}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-slate-655 space-y-0.5">
+                            {isEditing ? (
+                              <input 
+                                type="text" 
+                                className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-705" 
+                                value={editForm?.teamLeadEmail || ""}
+                                onChange={(e) => setEditForm(prev => prev ? { ...prev, teamLeadEmail: e.target.value } : null)}
+                              />
+                            ) : (
+                              <>
+                                <span className="font-bold text-slate-800 text-xs block">{selectedReg.teamLeadEmail}</span>
+                                {selectedReg.teamLeadCollegeEmail && selectedReg.teamLeadCollegeEmail !== selectedReg.teamLeadEmail && (
+                                  <span className="text-[10px] text-slate-400 font-medium block">
+                                    🏛️ {selectedReg.teamLeadCollegeEmail}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-right">
+                            <span className="inline-block px-2.5 py-0.5 bg-blue-100 border border-blue-200 text-blue-700 font-black rounded-md text-[8.5px] uppercase tracking-wide">
+                              Leader
+                            </span>
+                          </td>
+                        </tr>
 
-                      {/* Teammates */}
-                      {selectedReg.members.map((m, idx) => {
-                        const roles = ["Developer", "Researcher", "Analyst"];
-                        const badgeStyles = [
-                          "bg-sky-50 text-sky-700 border-sky-100",
-                          "bg-emerald-50 text-emerald-700 border-emerald-100",
-                          "bg-indigo-50 text-indigo-700 border-indigo-100"
-                        ];
-                        const roleName = roles[idx % roles.length];
-                        const badgeStyle = badgeStyles[idx % badgeStyles.length];
+                        {/* Teammates */}
+                        {selectedReg.members.map((m, idx) => {
+                          const roles = ["Developer", "Researcher", "Analyst"];
+                          const badgeStyles = [
+                            "bg-sky-50 text-sky-700 border-sky-100",
+                            "bg-emerald-50 text-emerald-700 border-emerald-100",
+                            "bg-indigo-50 text-indigo-700 border-indigo-100"
+                          ];
+                          const roleName = roles[idx % roles.length];
+                          const badgeStyle = badgeStyles[idx % badgeStyles.length];
 
-                        return (
-                          <tr key={idx} className="hover:bg-slate-50/30">
-                            <td className="px-4 py-3.5">
-                              {isEditing ? (
-                                <div className="space-y-1">
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/40">
+                              <td className="px-4 py-3.5">
+                                {isEditing ? (
+                                  <div className="space-y-1">
+                                    <input 
+                                      type="text" 
+                                      className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-850" 
+                                      value={editForm?.members[idx]?.name || ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setEditForm(prev => {
+                                          if (!prev) return null;
+                                          const members = [...prev.members];
+                                          members[idx] = { ...members[idx], name: val };
+                                          return { ...prev, members };
+                                        });
+                                      }}
+                                    />
+                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Member #{idx + 2}</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <span className="font-bold text-slate-850 block">{m.name}</span>
+                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">Member #{idx + 2}</span>
+                                  </>
+                                )}
+                              </td>
+                              <td className="px-4 py-3.5 font-bold text-slate-600">
+                                {isEditing ? (
                                   <input 
-                                    type="text"
-                                    className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-850"
-                                    value={editForm?.members[idx]?.name || ""}
+                                    type="text" 
+                                    className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-700 font-bold" 
+                                    value={editForm?.members[idx]?.studentId || ""}
                                     onChange={(e) => {
                                       const val = e.target.value;
                                       setEditForm(prev => {
                                         if (!prev) return null;
                                         const members = [...prev.members];
-                                        members[idx] = { ...members[idx], name: val };
+                                        members[idx] = { ...members[idx], studentId: val };
                                         return { ...prev, members };
                                       });
                                     }}
                                   />
-                                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Member #{idx + 2}</span>
-                                </div>
-                              ) : (
-                                <>
-                                  <span className="font-bold text-slate-850 block">{m.name}</span>
-                                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">Member #{idx + 2}</span>
-                                </>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5 font-bold text-slate-500">
-                              {isEditing ? (
-                                <input 
-                                  type="text"
-                                  className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-700 font-bold"
-                                  value={editForm?.members[idx]?.studentId || ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setEditForm(prev => {
-                                      if (!prev) return null;
-                                      const members = [...prev.members];
-                                      members[idx] = { ...members[idx], studentId: val };
-                                      return { ...prev, members };
-                                    });
-                                  }}
-                                />
-                              ) : (
-                                m.studentId
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5 text-slate-655">
-                              {isEditing ? (
-                                <input 
-                                  type="text"
-                                  className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-705"
-                                  value={editForm?.members[idx]?.email || ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setEditForm(prev => {
-                                      if (!prev) return null;
-                                      const members = [...prev.members];
-                                      members[idx] = { ...members[idx], email: val };
-                                      return { ...prev, members };
-                                    });
-                                  }}
-                                />
-                              ) : (
-                                m.email
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5 text-right">
-                              {isEditing ? (
-                                <select
-                                  className="px-2 py-1 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 bg-white focus:outline-none"
-                                  value={editForm?.members[idx]?.role || roleName}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setEditForm(prev => {
-                                      if (!prev) return null;
-                                      const members = [...prev.members];
-                                      members[idx] = { ...members[idx], role: val };
-                                      return { ...prev, members };
-                                    });
-                                  }}
-                                >
-                                  <option value="Developer">Developer</option>
-                                  <option value="Researcher">Researcher</option>
-                                  <option value="Analyst">Analyst</option>
-                                </select>
-                              ) : (
-                                <span className={`inline-block px-2.5 py-0.5 border font-black rounded text-[8px] uppercase tracking-wide ${badgeStyle}`}>
-                                  {m.role || roleName}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                                ) : (
+                                  <span className="font-mono">{m.studentId || "N/A"}</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3.5 text-slate-655">
+                                {isEditing ? (
+                                  <input 
+                                    type="text" 
+                                    className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-705" 
+                                    value={editForm?.members[idx]?.email || ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setEditForm(prev => {
+                                        if (!prev) return null;
+                                        const members = [...prev.members];
+                                        members[idx] = { ...members[idx], email: val };
+                                        return { ...prev, members };
+                                      });
+                                    }}
+                                  />
+                                ) : (
+                                  m.email
+                                )}
+                              </td>
+                              <td className="px-4 py-3.5 text-right">
+                                {isEditing ? (
+                                  <select 
+                                    className="px-2 py-1 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 bg-white focus:outline-none" 
+                                    value={editForm?.members[idx]?.role || roleName}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setEditForm(prev => {
+                                        if (!prev) return null;
+                                        const members = [...prev.members];
+                                        members[idx] = { ...members[idx], role: val };
+                                        return { ...prev, members };
+                                      });
+                                    }}
+                                  >
+                                    <option value="Developer">Developer</option>
+                                    <option value="Researcher">Researcher</option>
+                                    <option value="Analyst">Analyst</option>
+                                  </select>
+                                ) : (
+                                  <span className={`inline-block px-2.5 py-0.5 border font-black rounded text-[8px] uppercase tracking-wide ${badgeStyle}`}>
+                                    {m.role || roleName}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
+              {/* Payment Proof & Transaction Details for Faculty View */}
+              {(selectedReg.paymentProofPreview || selectedReg.transactionId || selectedReg.totalFeePaid) && (
+                <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <CreditCard className="w-4 h-4 text-blue-600" />
+                      Payment Proof & Verification Details
+                    </span>
+                    {selectedReg.paymentStatus && (
+                      <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 font-black rounded-full text-[9.5px] border border-emerald-200">
+                        {selectedReg.paymentStatus}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Transaction ID / UTR Number</span>
+                      <span className="font-mono font-extrabold text-slate-850 text-xs block mt-1 select-all">
+                        {selectedReg.transactionId || selectedReg.utrNumber || "N/A"}
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Amount Paid</span>
+                      <span className="font-black text-emerald-600 text-sm block mt-1">
+                        ₹{selectedReg.totalFeePaid || 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedReg.paymentProofPreview && (
+                    <div className="space-y-2 pt-1">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Attached Payment Receipt</span>
+                      <div className="bg-white p-3 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row items-center gap-4">
+                        <div className="w-28 h-28 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 p-1 shrink-0 flex items-center justify-center">
+                          <img 
+                            src={selectedReg.paymentProofPreview} 
+                            alt="Payment Proof" 
+                            className="w-full h-full object-contain rounded-lg"
+                          />
+                        </div>
+                        <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
+                          <div className="font-mono text-xs font-bold text-slate-700 truncate">
+                            {selectedReg.paymentProofFilename || "payment-proof-receipt.jpg"}
+                          </div>
+                          <p className="text-[11px] text-slate-450 font-medium">
+                            Submitted screenshot for payment verification.
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                            <a
+                              href={selectedReg.paymentProofPreview}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200/70 font-bold rounded-xl text-[11px] inline-flex items-center gap-1.5 transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              View Full Size Receipt
+                            </a>
+                            <a
+                              href={selectedReg.paymentProofPreview}
+                              download={selectedReg.paymentProofFilename || "payment-receipt.jpg"}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold rounded-xl text-[11px] inline-flex items-center gap-1.5 transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              Download
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-2">
+            {/* Sticky Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50/80 flex justify-end gap-2 shrink-0">
               {isEditing ? (
                 <>
                   <button
@@ -1082,24 +1333,43 @@ const RegistrationsManagementPage: React.FC = () => {
                       setIsEditing(false);
                       setEditForm(JSON.parse(JSON.stringify(selectedReg)));
                     }}
-                    className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold rounded-2xl text-xs transition-colors"
+                    className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold rounded-2xl text-xs transition-colors cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSaveRoster}
-                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl text-xs hover:shadow-lg transition-all"
+                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-2xl text-xs hover:shadow-lg transition-all cursor-pointer"
                   >
                     Save Changes
                   </button>
                 </>
               ) : (
-                <button
-                  onClick={() => setSelectedReg(null)}
-                  className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold rounded-2xl text-xs transition-colors"
-                >
-                  Close Roster
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleConfirmRegistrationAndSendEmail(selectedReg)}
+                    disabled={confirmingRegId === selectedReg.id}
+                    className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-2xl text-xs transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {confirmingRegId === selectedReg.id ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Sending Confirmation...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>Confirm & Send Email</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setSelectedReg(null)}
+                    className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold rounded-2xl text-xs transition-colors cursor-pointer shadow-2xs"
+                  >
+                    Close Roster
+                  </button>
+                </div>
               )}
             </div>
 
