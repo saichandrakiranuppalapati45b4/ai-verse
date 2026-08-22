@@ -11,7 +11,10 @@ export default {
     // Handle /api/send-email
     if (url.pathname === "/api/send-email") {
       if (request.method !== "POST") {
-        return Response.json({ error: "Method not allowed" }, { status: 405 });
+        return new Response(JSON.stringify({ error: "Method not allowed" }), {
+          status: 405,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       const RESEND_API_KEY = env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
@@ -20,15 +23,18 @@ export default {
       try {
         body = await request.json();
       } catch {
-        return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
+        return new Response(JSON.stringify({ success: false, error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       const { to, subject, html, from } = body;
 
       if (!to || !subject || !html) {
-        return Response.json(
-          { success: false, error: "Missing required fields: to, subject, html" },
-          { status: 400 }
+        return new Response(
+          JSON.stringify({ success: false, error: "Missing required fields: to, subject, html" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
 
@@ -53,22 +59,29 @@ export default {
         const result = await response.json();
 
         if (!response.ok) {
-          return Response.json(
-            { success: false, error: result.message || result.error || "Failed to send email" },
-            { status: response.status }
+          return new Response(
+            JSON.stringify({ success: false, error: result.message || result.error || "Failed to send email" }),
+            { status: response.status, headers: { "Content-Type": "application/json" } }
           );
         }
 
-        return Response.json({ success: true, data: result });
+        return new Response(JSON.stringify({ success: true, data: result }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       } catch (err) {
-        return Response.json(
-          { success: false, error: err.message || "Network error" },
-          { status: 500 }
+        return new Response(
+          JSON.stringify({ success: false, error: err.message || "Network error" }),
+          { status: 500, headers: { "Content-Type": "application/json" } }
         );
       }
     }
 
-    // All other routes — let Cloudflare serve static assets (dist/)
-    return env.ASSETS.fetch(request);
+    // All other routes — serve static assets from dist/
+    try {
+      return await env.ASSETS.fetch(request);
+    } catch {
+      return new Response("Internal Server Error", { status: 500 });
+    }
   },
 };
