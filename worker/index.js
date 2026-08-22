@@ -29,7 +29,7 @@ export default {
         });
       }
 
-      const { to, subject, html, from } = body;
+      const { to, subject, html, text, from } = body;
 
       if (!to || !subject || !html) {
         return new Response(
@@ -41,6 +41,16 @@ export default {
       const recipients = Array.isArray(to) ? to : [to];
       const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
 
+      const emailPayload = {
+        from: senderEmail,
+        to: recipients,
+        subject,
+        html,
+      };
+      if (text) {
+        emailPayload.text = text;
+      }
+
       try {
         const response = await fetch("https://api.resend.com/emails", {
           method: "POST",
@@ -48,12 +58,7 @@ export default {
             "Authorization": `Bearer ${RESEND_API_KEY}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            from: senderEmail,
-            to: recipients,
-            subject,
-            html,
-          }),
+          body: JSON.stringify(emailPayload),
         });
 
         const result = await response.json();

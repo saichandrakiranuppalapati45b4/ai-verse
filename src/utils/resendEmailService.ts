@@ -8,6 +8,7 @@ export interface SendResendEmailParams {
   to: string | string[];
   subject: string;
   html: string;
+  text?: string;
   from?: string;
 }
 
@@ -15,6 +16,7 @@ export const sendResendEmail = async ({
   to,
   subject,
   html,
+  text,
   from = "AI Verse <noreply@aiversevitb.dpdns.org>",
 }: SendResendEmailParams): Promise<{ success: boolean; data?: any; error?: string }> => {
   const recipients = Array.isArray(to) ? to : [to];
@@ -23,7 +25,7 @@ export const sendResendEmail = async ({
     const response = await fetch("/api/send-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: recipients, subject, html, from }),
+      body: JSON.stringify({ to: recipients, subject, html, text, from }),
     });
 
     // Read response as text first to avoid JSON parse crash on HTML/empty responses

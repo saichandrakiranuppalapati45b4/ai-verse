@@ -14,7 +14,12 @@ import {
   Download,
   CreditCard,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  Phone,
+  Mail,
+  Building2,
+  GraduationCap,
+  Calendar
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
@@ -32,12 +37,13 @@ interface RegistrationItem {
   teamLeadPersonalEmail?: string;
   teamLeadStudentId: string;
   phoneNumber: string;
+  teamLeadPhone?: string;
   branch: string;
   section: string;
   year: string;
   teamSize: number;
-  members: Array<{ name: string; email: string; studentId: string; role?: string }>;
-  status?: "Confirmed" | "Pending" | "Waitlisted";
+  members: Array<{ name: string; email: string; studentId: string; role?: string; phone?: string; phoneNumber?: string }>;
+  status?: "Confirmed" | "Pending" | "Not Confirmed" | "Waitlisted";
   paymentProofPreview?: string;
   paymentProofFilename?: string;
   transactionId?: string;
@@ -254,23 +260,48 @@ const RegistrationsManagementPage: React.FC = () => {
       const list: RegistrationItem[] = [];
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        const phone = data.phoneNumber || data.teamLeadPhone || data.phone || data.leadPhone || "";
+        const collegeEmail = data.teamLeadCollegeEmail || data.collegeEmail || "";
+        const personalEmail = data.teamLeadPersonalEmail || data.personalEmail || data.teamLeadEmail || data.email || "";
+        const primaryEmail = data.teamLeadEmail || personalEmail || collegeEmail || "";
+
+        const rawStatus = (data.status || "").trim();
+        const rawPaymentStatus = (data.paymentStatus || "").trim();
+        
+        let resolvedStatus: "Confirmed" | "Not Confirmed" | "Waitlisted" = "Not Confirmed";
+        if (rawStatus === "Confirmed" || rawPaymentStatus === "Confirmed" || data.confirmedAt) {
+          resolvedStatus = "Confirmed";
+        } else if (rawStatus === "Waitlisted") {
+          resolvedStatus = "Waitlisted";
+        } else {
+          resolvedStatus = "Not Confirmed";
+        }
+
         list.push({
           id: docSnap.id,
           eventId: data.eventId || "",
           eventTitle: data.eventTitle || "Unknown Event",
           groupName: data.groupName || "Individual RSVP",
           teamLeadName: data.teamLeadName || "Student Registrant",
-          teamLeadEmail: data.teamLeadEmail || "",
-          teamLeadCollegeEmail: data.teamLeadCollegeEmail || data.collegeEmail || "",
-          teamLeadPersonalEmail: data.teamLeadPersonalEmail || data.personalEmail || "",
-          teamLeadStudentId: data.teamLeadStudentId || "",
-          phoneNumber: data.phoneNumber || "",
-          branch: data.branch || "",
+          teamLeadEmail: primaryEmail,
+          teamLeadCollegeEmail: collegeEmail,
+          teamLeadPersonalEmail: personalEmail,
+          teamLeadStudentId: data.teamLeadStudentId || data.rollNo || data.studentId || "",
+          phoneNumber: phone,
+          teamLeadPhone: phone,
+          branch: data.branch || data.department || "",
           section: data.section || "",
           year: data.year || "",
           teamSize: data.teamSize || 1,
-          members: data.members || [],
-          status: data.status || "Confirmed",
+          members: (data.members || []).map((m: any) => ({
+            name: m.name || "",
+            email: m.email || "",
+            studentId: m.studentId || m.rollNo || "",
+            role: m.role || "Developer",
+            phone: m.phone || m.phoneNumber || "",
+            phoneNumber: m.phone || m.phoneNumber || ""
+          })),
+          status: resolvedStatus,
           paymentProofPreview: data.paymentProofPreview || data.paymentProof || "",
           paymentProofFilename: data.paymentProofFilename || "",
           transactionId: data.transactionId || data.utrNumber || "",
@@ -335,62 +366,100 @@ const RegistrationsManagementPage: React.FC = () => {
       const targetEmail = (reg.teamLeadPersonalEmail || reg.teamLeadEmail || reg.teamLeadCollegeEmail || "").trim();
 
       if (targetEmail) {
-        const ticketUrl = `${window.location.origin}/ticket/${reg.id}`;
+        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
+        const ticketUrl = `${siteBaseUrl}/ticket/${reg.id}`;
         
+        const plainText = `Hello ${reg.teamLeadName},
+
+Your registration for ${reg.eventTitle} has been confirmed.
+
+Summary:
+- Event: ${reg.eventTitle}
+- Team / Group: ${reg.groupName || "Individual Participant"}
+- Team Lead: ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})
+- Total Participants: ${reg.teamSize || (reg.members.length + 1)}
+${reg.transactionId ? `- Transaction ID: ${reg.transactionId}\n` : ""}- Status: Confirmed
+
+You can view your entry pass and attendance QR code at:
+${ticketUrl}
+
+AI Verse • Event Management`;
+
         const emailResult = await sendResendEmail({
           to: targetEmail,
-          subject: `Registration Confirmed: ${reg.eventTitle} - AI Verse`,
+          subject: `Registration Confirmation: ${reg.eventTitle} - AI Verse`,
+          text: plainText,
           html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 20px; background-color: #ffffff; color: #1e293b;">
-              <div style="background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%); padding: 24px; border-radius: 16px; color: #ffffff; text-align: center;">
-                <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;">AI VERSE</h1>
-                <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.95; font-weight: 600;">Official Registration Confirmation</p>
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1e293b; line-height: 1.6;">
+              <div style="background-color: #1e3a8a; padding: 20px; border-radius: 12px; color: #ffffff; text-align: center;">
+                <h1 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">AI VERSE</h1>
+                <p style="margin: 4px 0 0 0; font-size: 13px; color: #bfdbfe;">Event Registration Confirmation</p>
               </div>
 
-              <div style="padding: 24px 8px;">
-                <p style="font-size: 15px; line-height: 1.6; margin-bottom: 16px;">
+              <div style="padding: 20px 8px;">
+                <p style="font-size: 15px; margin-bottom: 14px;">
                   Hello <strong>${reg.teamLeadName}</strong>,
                 </p>
                 
-                <p style="font-size: 14px; line-height: 1.6; color: #334155; margin-bottom: 20px;">
-                  Thank you for your registration! We are pleased to confirm that your registration for <strong>${reg.eventTitle}</strong> has been officially <span style="color: #16a34a; font-weight: 800;">CONFIRMED</span> by the organizing committee.
+                <p style="font-size: 14px; color: #334155; margin-bottom: 16px;">
+                  We are pleased to inform you that your registration for <strong>${reg.eventTitle}</strong> has been successfully confirmed.
                 </p>
 
-                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 18px; margin: 20px 0;">
-                  <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;">📋 Registration Summary</div>
-                  <div style="font-size: 13px; color: #334155; line-height: 1.8;">
-                    <div><strong>Event:</strong> ${reg.eventTitle}</div>
-                    <div><strong>Team / Group:</strong> ${reg.groupName || "Individual Participant"}</div>
-                    <div><strong>Team Lead:</strong> ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})</div>
-                    <div><strong>Total Participants:</strong> ${reg.teamSize || (reg.members.length + 1)} member(s)</div>
-                    ${reg.transactionId ? `<div><strong>Transaction ID / UTR:</strong> <span style="font-family: monospace; font-weight: bold;">${reg.transactionId}</span></div>` : ""}
-                    <div><strong>Status:</strong> <span style="color: #16a34a; font-weight: bold;">Verified & Confirmed</span></div>
-                  </div>
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 16px 0;">
+                  <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;">Registration Details</div>
+                  <table style="width: 100%; font-size: 13px; color: #334155; border-collapse: collapse;">
+                    <tr>
+                      <td style="padding: 4px 0; color: #64748b; width: 140px;">Event:</td>
+                      <td style="padding: 4px 0; font-weight: 600;">${reg.eventTitle}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 4px 0; color: #64748b;">Team / Group:</td>
+                      <td style="padding: 4px 0; font-weight: 600;">${reg.groupName || "Individual Participant"}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 4px 0; color: #64748b;">Team Lead:</td>
+                      <td style="padding: 4px 0; font-weight: 600;">${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})</td>
+                    </tr>
+                    ${reg.phoneNumber ? `<tr><td style="padding: 4px 0; color: #64748b;">Contact:</td><td style="padding: 4px 0;">${reg.phoneNumber}</td></tr>` : ""}
+                    <tr>
+                      <td style="padding: 4px 0; color: #64748b;">Participants:</td>
+                      <td style="padding: 4px 0;">${reg.teamSize || (reg.members.length + 1)} member(s)</td>
+                    </tr>
+                    ${reg.transactionId ? `<tr><td style="padding: 4px 0; color: #64748b;">Transaction ID:</td><td style="padding: 4px 0; font-family: monospace;">${reg.transactionId}</td></tr>` : ""}
+                    <tr>
+                      <td style="padding: 4px 0; color: #64748b;">Status:</td>
+                      <td style="padding: 4px 0; color: #16a34a; font-weight: 700;">Confirmed</td>
+                    </tr>
+                  </table>
                 </div>
 
                 ${reg.members && reg.members.length > 0 ? `
-                  <div style="margin: 18px 0;">
-                    <p style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 8px;">Registered Teammates:</p>
-                    <ul style="font-size: 13px; color: #334155; padding-left: 20px; margin: 0; line-height: 1.6;">
-                      ${reg.members.map(m => `<li><strong>${m.name}</strong> (${m.studentId || m.email})</li>`).join("")}
+                  <div style="margin: 16px 0;">
+                    <p style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">Team Members:</p>
+                    <ul style="font-size: 13px; color: #334155; padding-left: 20px; margin: 0;">
+                      ${reg.members.map(m => `<li>${m.name} (${m.studentId || m.email})</li>`).join("")}
                     </ul>
                   </div>
                 ` : ""}
 
-                <div style="text-align: center; margin: 28px 0 16px 0;">
-                  <a href="${ticketUrl}" style="display: inline-block; background: #2563EB; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 12px; font-weight: 700; font-size: 13px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
-                    View Entry Pass & Attendance QR Code
+                <div style="text-align: center; margin: 24px 0;">
+                  <a href="${ticketUrl}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                    View Entry Pass & QR Code
                   </a>
+                  <p style="font-size: 11px; color: #64748b; margin-top: 10px;">
+                    Link: <a href="${ticketUrl}" style="color: #2563eb;">${ticketUrl}</a>
+                  </p>
                 </div>
 
-                <p style="font-size: 12px; color: #64748b; line-height: 1.5; text-align: center; margin-top: 16px;">
-                  Please keep your digital attendance ticket accessible for venue check-in.
+                <p style="font-size: 12px; color: #64748b; text-align: center; margin-top: 14px;">
+                  Please keep this pass accessible for event check-in.
                 </p>
               </div>
 
               <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
               <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
-                AI Verse • Automated Event Verification System
+                AI Verse • Event Notification System
               </p>
             </div>
           `
@@ -422,7 +491,14 @@ const RegistrationsManagementPage: React.FC = () => {
         groupName: editForm.groupName,
         teamLeadName: editForm.teamLeadName,
         teamLeadEmail: editForm.teamLeadEmail,
+        teamLeadPersonalEmail: editForm.teamLeadPersonalEmail || editForm.teamLeadEmail,
+        teamLeadCollegeEmail: editForm.teamLeadCollegeEmail || "",
         teamLeadStudentId: editForm.teamLeadStudentId,
+        phoneNumber: editForm.phoneNumber || "",
+        teamLeadPhone: editForm.phoneNumber || "",
+        branch: editForm.branch || "",
+        section: editForm.section || "",
+        year: editForm.year || "",
         members: editForm.members
       });
       
@@ -459,7 +535,10 @@ const RegistrationsManagementPage: React.FC = () => {
         (selectedType === "Group" && isGroup) || 
         (selectedType === "Individual" && !isGroup);
       
-      const matchesStatus = selectedStatus === "All" || (r.status || "Confirmed") === selectedStatus;
+      const matchesStatus = selectedStatus === "All" || 
+        (selectedStatus === "Confirmed" && r.status === "Confirmed") ||
+        (selectedStatus === "Not Confirmed" && r.status !== "Confirmed" && r.status !== "Waitlisted") ||
+        (selectedStatus === "Waitlisted" && r.status === "Waitlisted");
 
       return matchesSearch && matchesEvent && matchesType && matchesStatus;
     });
@@ -468,13 +547,13 @@ const RegistrationsManagementPage: React.FC = () => {
   // Metrics
   const metrics = useMemo(() => {
     const total = registrations.length;
-    const pending = registrations.filter(r => r.status === "Pending").length;
+    const notConfirmed = registrations.filter(r => r.status !== "Confirmed").length;
     const groupCount = registrations.filter(r => r.groupName && r.groupName !== "Individual RSVP").length;
     const individualCount = total - groupCount;
 
     return {
       total: total,
-      pending: pending,
+      pending: notConfirmed,
       group: groupCount,
       individual: individualCount
     };
@@ -621,7 +700,7 @@ const RegistrationsManagementPage: React.FC = () => {
               >
                 <option value="All">All Status</option>
                 <option value="Confirmed">Confirmed</option>
-                <option value="Pending">Pending</option>
+                <option value="Not Confirmed">Not Confirmed</option>
                 <option value="Waitlisted">Waitlisted</option>
               </select>
 
@@ -738,7 +817,7 @@ const RegistrationsManagementPage: React.FC = () => {
                     const displayTeamName = isGroup ? reg.groupName : (reg.teamLeadName || "Participant");
                     const initial = displayTeamName ? displayTeamName.substring(0, 2).toUpperCase() : "US";
                     const isSelected = selectedRegIds.includes(reg.id);
-                    const isConfirmed = (reg.status || "Confirmed") === "Confirmed";
+                    const isConfirmed = reg.status === "Confirmed";
                     
                     return (
                       <tr 
@@ -793,22 +872,20 @@ const RegistrationsManagementPage: React.FC = () => {
                         </td>
 
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {isConfirmed && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100/30">
-                              <span className="w-1 h-1 rounded-full bg-emerald-600 animate-pulse"></span>
+                          {isConfirmed ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100/40 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
                               Confirmed
                             </span>
-                          )}
-                          {(reg.status || "Confirmed") === "Pending" && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-100/30">
-                              <span className="w-1 h-1 rounded-full bg-amber-600"></span>
-                              Pending
-                            </span>
-                          )}
-                          {(reg.status || "Confirmed") === "Waitlisted" && (
+                          ) : reg.status === "Waitlisted" ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-650 border border-slate-200/50">
-                              <span className="w-1 h-1 rounded-full bg-slate-450"></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-450"></span>
                               Waitlisted
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                              Not Confirmed
                             </span>
                           )}
                         </td>
@@ -822,7 +899,7 @@ const RegistrationsManagementPage: React.FC = () => {
                               className={`px-2.5 py-1 rounded-xl text-[10px] font-extrabold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs border ${
                                 isConfirmed
                                   ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200/80"
-                                  : "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent shadow-emerald-600/20"
+                                  : "bg-blue-600 hover:bg-blue-700 text-white border-transparent shadow-blue-600/20"
                               }`}
                               title={
                                 isConfirmed
@@ -833,7 +910,7 @@ const RegistrationsManagementPage: React.FC = () => {
                               {confirmingRegId === reg.id ? (
                                 <>
                                   <Loader2 className="h-3 w-3 animate-spin text-current" />
-                                  <span>Sending...</span>
+                                  <span>Confirming...</span>
                                 </>
                               ) : isConfirmed ? (
                                 <>
@@ -970,13 +1047,16 @@ const RegistrationsManagementPage: React.FC = () => {
       {/* Registration Details Modal */}
       {selectedReg && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+          <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 text-left">
             {/* Sticky Header */}
             <div className="p-5 sm:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 shrink-0">
               <div>
                 <span className="text-[10px] font-black text-blue-600 tracking-wider uppercase block">Roster & Registration Details</span>
                 <h3 className="text-lg font-black text-slate-800 tracking-tight mt-0.5 flex flex-wrap items-center gap-2.5">
                   <span>{selectedReg.eventTitle}</span>
+                  <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-200/60 px-2 py-0.5 rounded-md">
+                    #{selectedReg.id.slice(0, 8).toUpperCase()}
+                  </span>
                   {!isEditing && (
                     <button
                       onClick={() => setIsEditing(true)}
@@ -1001,14 +1081,15 @@ const RegistrationsManagementPage: React.FC = () => {
             {/* Scrollable Content Body */}
             <div className="p-5 sm:p-6 space-y-6 flex-1 overflow-y-auto">
               
-              {/* Group Identity Card */}
-              <div className="bg-slate-50/70 border border-slate-200/60 rounded-2xl p-4.5 space-y-3.5">
+              {/* Group Summary & Lead Profile */}
+              <div className="bg-slate-50/70 border border-slate-200/60 rounded-2xl p-5 space-y-4">
                 <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                   <UsersIcon className="h-3.5 w-3.5 text-blue-600" />
-                  Group Summary
+                  Group Summary & Contact Details
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
-                  <div className="space-y-0.5">
+                  {/* Group Name */}
+                  <div className="space-y-1">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase">Group Name</span>
                     {isEditing ? (
                       <input 
@@ -1021,20 +1102,147 @@ const RegistrationsManagementPage: React.FC = () => {
                       <span className="text-xs font-black text-slate-800 block">{selectedReg.groupName || "Individual RSVP"}</span>
                     )}
                   </div>
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Registration Date</span>
-                    <span className="text-xs font-bold text-slate-700 block">
-                      {new Date(selectedReg.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                    </span>
+
+                  {/* Phone Number */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Contact / Phone Number</span>
+                    {isEditing ? (
+                      <input 
+                        type="tel" 
+                        placeholder="e.g. 9876543210"
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 bg-white" 
+                        value={editForm?.phoneNumber || ""}
+                        onChange={(e) => setEditForm(prev => prev ? { ...prev, phoneNumber: e.target.value } : null)}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <Phone className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        {selectedReg.phoneNumber ? (
+                          <a 
+                            href={`tel:${selectedReg.phoneNumber}`}
+                            className="text-xs font-black text-blue-600 hover:underline inline-flex items-center gap-1"
+                            title="Click to call"
+                          >
+                            {selectedReg.phoneNumber}
+                          </a>
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-400">Not Provided</span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="space-y-0.5">
+
+                  {/* Team Size & Status */}
+                  <div className="space-y-1">
                     <span className="text-[10px] font-bold text-slate-400 block uppercase">Team Size & Status</span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 mt-0.5">
                       <span className="px-2 py-0.5 bg-blue-100/80 text-blue-700 font-black rounded-md text-[10px]">
                         {selectedReg.teamSize || selectedReg.members.length + 1} Member{selectedReg.members.length > 0 ? "s" : ""}
                       </span>
-                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 font-black rounded-md text-[10px]">
-                        {selectedReg.status || "Confirmed"}
+                      <span className={`px-2 py-0.5 font-black rounded-md text-[10px] ${
+                        selectedReg.status === "Confirmed" 
+                          ? "bg-emerald-100 text-emerald-700" 
+                          : selectedReg.status === "Waitlisted"
+                          ? "bg-slate-100 text-slate-700"
+                          : "bg-amber-100 text-amber-700 border border-amber-200/60"
+                      }`}>
+                        {selectedReg.status === "Confirmed" ? "Confirmed" : selectedReg.status === "Waitlisted" ? "Waitlisted" : "Not Confirmed"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Lead Personal Email */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Personal Email</span>
+                    {isEditing ? (
+                      <input 
+                        type="email" 
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 bg-white" 
+                        value={editForm?.teamLeadPersonalEmail || editForm?.teamLeadEmail || ""}
+                        onChange={(e) => setEditForm(prev => prev ? { ...prev, teamLeadPersonalEmail: e.target.value, teamLeadEmail: e.target.value } : null)}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <Mail className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span className="text-xs font-bold text-slate-800 truncate" title={selectedReg.teamLeadPersonalEmail || selectedReg.teamLeadEmail}>
+                          {selectedReg.teamLeadPersonalEmail || selectedReg.teamLeadEmail || "Not Provided"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lead College Email */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase">College Email</span>
+                    {isEditing ? (
+                      <input 
+                        type="email" 
+                        placeholder="student@vishnu.edu.in"
+                        className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 bg-white" 
+                        value={editForm?.teamLeadCollegeEmail || ""}
+                        onChange={(e) => setEditForm(prev => prev ? { ...prev, teamLeadCollegeEmail: e.target.value } : null)}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span className="text-xs font-bold text-slate-700 truncate" title={selectedReg.teamLeadCollegeEmail}>
+                          {selectedReg.teamLeadCollegeEmail || "Not Provided"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Academic Details (Branch / Year / Section) */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 block uppercase">Academic Info</span>
+                    {isEditing ? (
+                      <div className="grid grid-cols-3 gap-1">
+                        <input 
+                          type="text" 
+                          placeholder="Branch"
+                          className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 bg-white" 
+                          value={editForm?.branch || ""}
+                          onChange={(e) => setEditForm(prev => prev ? { ...prev, branch: e.target.value } : null)}
+                        />
+                        <input 
+                          type="text" 
+                          placeholder="Year"
+                          className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 bg-white" 
+                          value={editForm?.year || ""}
+                          onChange={(e) => setEditForm(prev => prev ? { ...prev, year: e.target.value } : null)}
+                        />
+                        <input 
+                          type="text" 
+                          placeholder="Sec"
+                          className="px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 bg-white" 
+                          value={editForm?.section || ""}
+                          onChange={(e) => setEditForm(prev => prev ? { ...prev, section: e.target.value } : null)}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 mt-0.5 text-xs font-bold text-slate-700">
+                        <GraduationCap className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                        <span>
+                          {selectedReg.branch || selectedReg.year || selectedReg.section ? (
+                            <>
+                              {selectedReg.branch || "General"}
+                              {selectedReg.year ? ` • Year ${selectedReg.year}` : ""}
+                              {selectedReg.section ? ` • Sec ${selectedReg.section}` : ""}
+                            </>
+                          ) : (
+                            <span className="text-slate-400 font-semibold">Not Specified</span>
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Registration Date */}
+                  <div className="space-y-1 sm:col-span-2 md:col-span-3 pt-2 border-t border-slate-200/50 flex flex-wrap items-center justify-between gap-2 text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="text-[11px] font-semibold text-slate-600">
+                        Registered on: <strong className="text-slate-800">{new Date(selectedReg.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}</strong>
                       </span>
                     </div>
                   </div>
@@ -1058,6 +1266,7 @@ const RegistrationsManagementPage: React.FC = () => {
                           <th className="px-4 py-3">Member</th>
                           <th className="px-4 py-3">Student ID</th>
                           <th className="px-4 py-3">Email Address</th>
+                          <th className="px-4 py-3">Phone Number</th>
                           <th className="px-4 py-3 text-right">Role</th>
                         </tr>
                       </thead>
@@ -1111,6 +1320,24 @@ const RegistrationsManagementPage: React.FC = () => {
                                   </span>
                                 )}
                               </>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-slate-700">
+                            {isEditing ? (
+                              <input 
+                                type="tel" 
+                                placeholder="Phone"
+                                className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-705 font-bold" 
+                                value={editForm?.phoneNumber || ""}
+                                onChange={(e) => setEditForm(prev => prev ? { ...prev, phoneNumber: e.target.value } : null)}
+                              />
+                            ) : selectedReg.phoneNumber ? (
+                              <a href={`tel:${selectedReg.phoneNumber}`} className="font-mono font-bold text-blue-600 hover:underline flex items-center gap-1">
+                                <Phone className="w-3 h-3" />
+                                {selectedReg.phoneNumber}
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">—</span>
                             )}
                           </td>
                           <td className="px-4 py-3.5 text-right">
@@ -1199,6 +1426,32 @@ const RegistrationsManagementPage: React.FC = () => {
                                   m.email
                                 )}
                               </td>
+                              <td className="px-4 py-3.5 text-slate-700">
+                                {isEditing ? (
+                                  <input 
+                                    type="tel" 
+                                    placeholder="Phone"
+                                    className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs text-slate-705" 
+                                    value={editForm?.members[idx]?.phone || editForm?.members[idx]?.phoneNumber || ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setEditForm(prev => {
+                                        if (!prev) return null;
+                                        const members = [...prev.members];
+                                        members[idx] = { ...members[idx], phone: val, phoneNumber: val };
+                                        return { ...prev, members };
+                                      });
+                                    }}
+                                  />
+                                ) : m.phone || m.phoneNumber ? (
+                                  <a href={`tel:${m.phone || m.phoneNumber}`} className="font-mono font-bold text-blue-600 hover:underline flex items-center gap-1">
+                                    <Phone className="w-3 h-3" />
+                                    {m.phone || m.phoneNumber}
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">—</span>
+                                )}
+                              </td>
                               <td className="px-4 py-3.5 text-right">
                                 {isEditing ? (
                                   <select 
@@ -1283,17 +1536,17 @@ const RegistrationsManagementPage: React.FC = () => {
                             Submitted screenshot for payment verification.
                           </p>
                           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
-                            <a
-                              href={selectedReg.paymentProofPreview}
-                              target="_blank"
+                            <a 
+                              href={selectedReg.paymentProofPreview} 
+                              target="_blank" 
                               rel="noreferrer"
                               className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200/70 font-bold rounded-xl text-[11px] inline-flex items-center gap-1.5 transition-colors"
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                               View Full Size Receipt
                             </a>
-                            <a
-                              href={selectedReg.paymentProofPreview}
+                            <a 
+                              href={selectedReg.paymentProofPreview} 
                               download={selectedReg.paymentProofFilename || "payment-receipt.jpg"}
                               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold rounded-xl text-[11px] inline-flex items-center gap-1.5 transition-colors"
                             >
@@ -1331,31 +1584,68 @@ const RegistrationsManagementPage: React.FC = () => {
                   </button>
                 </>
               ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleConfirmRegistrationAndSendEmail(selectedReg)}
-                    disabled={confirmingRegId === selectedReg.id}
-                    className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-2xl text-xs transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {confirmingRegId === selectedReg.id ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Sending Confirmation...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                        <span>Confirm & Send Email</span>
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setSelectedReg(null)}
-                    className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold rounded-2xl text-xs transition-colors cursor-pointer shadow-2xs"
-                  >
-                    Close Roster
-                  </button>
-                </div>
+                (() => {
+                  const isModalRegConfirmed = selectedReg.status === "Confirmed";
+
+                  return isModalRegConfirmed ? (
+                    <div className="flex items-center gap-2">
+                      <div className="px-4 py-2.5 bg-emerald-50 border border-emerald-200/90 text-emerald-700 font-extrabold rounded-2xl text-xs flex items-center gap-1.5 shadow-2xs">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Confirmed</span>
+                      </div>
+                      <button
+                        onClick={() => handleConfirmRegistrationAndSendEmail(selectedReg)}
+                        disabled={confirmingRegId === selectedReg.id}
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        title={`Resend confirmation email to ${(selectedReg.teamLeadPersonalEmail || selectedReg.teamLeadEmail)}`}
+                      >
+                        {confirmingRegId === selectedReg.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Resending Email...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Mail className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Resend Confirmation Email</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setSelectedReg(null)}
+                        className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold rounded-2xl text-xs transition-colors cursor-pointer shadow-2xs"
+                      >
+                        Close Roster
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleConfirmRegistrationAndSendEmail(selectedReg)}
+                        disabled={confirmingRegId === selectedReg.id}
+                        className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-2xl text-xs transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {confirmingRegId === selectedReg.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Sending Confirmation...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                            <span>Confirm & Send Email</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setSelectedReg(null)}
+                        className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold rounded-2xl text-xs transition-colors cursor-pointer shadow-2xs"
+                      >
+                        Close Roster
+                      </button>
+                    </div>
+                  );
+                })()
               )}
             </div>
 

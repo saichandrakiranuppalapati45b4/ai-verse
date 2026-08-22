@@ -20,10 +20,20 @@ export default defineConfig({
           req.on('data', (chunk: any) => { body += chunk; });
           req.on('end', async () => {
             try {
-              const { to, subject, html, from } = JSON.parse(body || '{}');
+              const { to, subject, html, text, from } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
               const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
+
+              const emailPayload: any = {
+                from: senderEmail,
+                to: recipients,
+                subject,
+                html,
+              };
+              if (text) {
+                emailPayload.text = text;
+              }
 
               const response = await fetch("https://api.resend.com/emails", {
                 method: "POST",
@@ -31,12 +41,7 @@ export default defineConfig({
                   "Authorization": `Bearer ${RESEND_API_KEY}`,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({
-                  from: senderEmail,
-                  to: recipients,
-                  subject,
-                  html,
-                }),
+                body: JSON.stringify(emailPayload),
               });
 
               const result = (await response.json()) as any;
@@ -72,10 +77,20 @@ export default defineConfig({
           req.on('data', (chunk: any) => { body += chunk; });
           req.on('end', async () => {
             try {
-              const { to, subject, html, from } = JSON.parse(body || '{}');
+              const { to, subject, html, text, from } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
               const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
+
+              const emailPayload: any = {
+                from: senderEmail,
+                to: recipients,
+                subject,
+                html,
+              };
+              if (text) {
+                emailPayload.text = text;
+              }
 
               const response = await fetch("https://api.resend.com/emails", {
                 method: "POST",
@@ -83,12 +98,7 @@ export default defineConfig({
                   "Authorization": `Bearer ${RESEND_API_KEY}`,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({
-                  from: senderEmail,
-                  to: recipients,
-                  subject,
-                  html,
-                }),
+                body: JSON.stringify(emailPayload),
               });
 
               const result = (await response.json()) as any;

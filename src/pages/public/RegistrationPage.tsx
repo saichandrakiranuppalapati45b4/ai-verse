@@ -276,6 +276,7 @@ const RegistrationPage: React.FC = () => {
         transactionId: transactionId.trim(),
         utrNumber: transactionId.trim(),
         paymentStatus: isPaid ? "Submitted (Pending Verification)" : "Free",
+        status: isPaid ? "Pending" : "Confirmed",
         createdAt: Date.now()
       };
 
