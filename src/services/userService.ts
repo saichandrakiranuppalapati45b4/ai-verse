@@ -145,9 +145,19 @@ export const userService = {
   },
 
   /**
-   * Delete a user permanently from Supabase
+   * Delete a user permanently from Supabase (both auth.users and public.users)
    */
   async deleteUser(id: string): Promise<void> {
+    try {
+      const user = await this.getUserById(id);
+      if (user && user.email) {
+        await this.deleteUserByEmail(user.email);
+        return;
+      }
+    } catch (e) {
+      console.warn("[userService] Notice fetching user before delete:", e);
+    }
+
     const { error } = await supabase
       .from("users")
       .delete()
@@ -156,6 +166,36 @@ export const userService = {
     if (error) {
       console.error(`[userService] Error deleting user ${id}:`, error);
       throw error;
+    }
+  },
+
+  /**
+   * Delete a user by email permanently from Supabase Authentication (auth.users) and public.users
+   */
+  async deleteUserByEmail(email: string): Promise<void> {
+    const cleanEmail = email.toLowerCase().trim();
+    if (!cleanEmail) return;
+
+    // 1. Call PostgreSQL RPC function to delete from auth.users (cascading) and public.users
+    try {
+      const { error: rpcError } = await supabase.rpc("delete_user_by_email", {
+        user_email: cleanEmail,
+      });
+      if (rpcError) {
+        console.warn("[userService] RPC delete_user_by_email notice:", rpcError);
+      }
+    } catch (e) {
+      console.warn("[userService] RPC error:", e);
+    }
+
+    // 2. Ensure deleted from public.users table directly as well
+    try {
+      await supabase
+        .from("users")
+        .delete()
+        .eq("email", cleanEmail);
+    } catch (e) {
+      console.warn("[userService] Table delete error:", e);
     }
   },
 

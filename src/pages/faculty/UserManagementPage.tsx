@@ -820,9 +820,14 @@ const UserManagementPage: React.FC = () => {
     if (!window.confirm("Are you sure you want to permanently delete this user? This action cannot be undone.")) return;
     
     try {
-      // 1. Delete user record directly from Supabase
+      // 1. Delete user record from Supabase (both auth.users and public.users)
       try {
-        await userService.deleteUser(id);
+        const targetUser = users.find(u => u.id === id);
+        if (targetUser && targetUser.email) {
+          await userService.deleteUserByEmail(targetUser.email);
+        } else {
+          await userService.deleteUser(id);
+        }
       } catch (supaErr) {
         console.warn("Supabase delete user notice:", supaErr);
       }

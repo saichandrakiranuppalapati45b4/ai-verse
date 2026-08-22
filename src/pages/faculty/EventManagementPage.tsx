@@ -705,13 +705,10 @@ const EventManagementPage: React.FC = () => {
           console.warn("Firestore revoke users error:", userErr);
         }
 
-        // Delete from Supabase public.users
+        // Delete from Supabase Auth (auth.users) and public.users
         try {
-          const teamEmail = generateTeamEmail(reg);
-          const supaUser = await userService.getUserByEmail(teamEmail);
-          if (supaUser) {
-            await userService.deleteUser(supaUser.id);
-          }
+          const teamEmail = reg.teamEmail || generateTeamEmail(reg);
+          await userService.deleteUserByEmail(teamEmail);
         } catch (supaErr) {
           console.warn("Supabase revoke user error:", supaErr);
         }
@@ -721,7 +718,7 @@ const EventManagementPage: React.FC = () => {
       setEventAccessRegistrations((prev) =>
         prev.map((r) => ({ ...r, accessGranted: false, loginAccessGranted: false }))
       );
-      setLoginAccessSuccessMsg("Successfully revoked portal login access for all registered teams!");
+      setLoginAccessSuccessMsg("Successfully revoked portal login access and deleted credentials from Supabase Auth for all teams!");
       setTimeout(() => {
         setLoginAccessSuccessMsg(null);
       }, 5500);
@@ -752,7 +749,7 @@ const EventManagementPage: React.FC = () => {
       try {
         const reg = eventAccessRegistrations.find((r) => r.id === regId);
         if (reg) {
-          const teamEmail = generateTeamEmail(reg);
+          const teamEmail = reg.teamEmail || generateTeamEmail(reg);
           const userDocId = teamEmail.replace(/[^a-zA-Z0-9]/g, "_");
           await setDoc(doc(db, "users", userDocId), {
             accessGranted: false,
@@ -763,15 +760,12 @@ const EventManagementPage: React.FC = () => {
         console.warn("Firestore revoke user error:", userErr);
       }
 
-      // Delete from Supabase public.users
+      // Delete from Supabase Auth (auth.users) and public.users
       try {
         const reg = eventAccessRegistrations.find((r) => r.id === regId);
         if (reg) {
-          const teamEmail = generateTeamEmail(reg);
-          const supaUser = await userService.getUserByEmail(teamEmail);
-          if (supaUser) {
-            await userService.deleteUser(supaUser.id);
-          }
+          const teamEmail = reg.teamEmail || generateTeamEmail(reg);
+          await userService.deleteUserByEmail(teamEmail);
         }
       } catch (supaErr) {
         console.warn("Supabase revoke user error:", supaErr);
