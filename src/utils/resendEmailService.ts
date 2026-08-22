@@ -29,20 +29,20 @@ export const sendResendEmail = async ({
     });
 
     // Read response as text first to avoid JSON parse crash on HTML/empty responses
-    const text = await response.text();
+    const responseText = await response.text();
 
     // Detect if we got back an HTML page (SPA fallback) instead of JSON
-    if (!text || text.trim().startsWith("<!") || text.trim().startsWith("<html")) {
+    if (!responseText || responseText.trim().startsWith("<!") || responseText.trim().startsWith("<html")) {
       console.error("Email API Error: /api/send-email returned HTML instead of JSON. The API function is not deployed.");
       return { success: false, error: "Email service is not available. API function may not be deployed." };
     }
 
     let result: any;
     try {
-      result = JSON.parse(text);
+      result = JSON.parse(responseText);
     } catch {
-      console.error("Email API Error: Could not parse response:", text.substring(0, 200));
-      return { success: false, error: `Invalid API response: ${text.substring(0, 100)}` };
+      console.error("Email API Error: Could not parse response:", responseText.substring(0, 200));
+      return { success: false, error: `Invalid API response: ${responseText.substring(0, 100)}` };
     }
 
     if (!response.ok || !result.success) {
