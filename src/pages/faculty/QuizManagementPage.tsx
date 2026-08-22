@@ -7,14 +7,13 @@ import {
   getDocs,
   doc,
   setDoc,
-  deleteDoc,
   updateDoc,
   onSnapshot,
   query,
   where
 } from "firebase/firestore";
 import type { Quiz, QuizQuestion, QuizSubmission, QuizSession } from "../../types/quiz";
-import { resetParticipantQuizSession, resetAllQuizSubmissions } from "../../services/quizService";
+import { resetParticipantQuizSession, resetAllQuizSubmissions, deleteQuizCascading } from "../../services/quizService";
 import SEO from "../../components/layout/SEO";
 import {
   HelpCircle,
@@ -49,7 +48,7 @@ interface EventOption {
 export const QuizManagementPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const eventIdParam = searchParams.get("eventId") || searchParams.get("accessEventId");
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [events, setEvents] = useState<EventOption[]>([]);
@@ -57,6 +56,41 @@ export const QuizManagementPage: React.FC = () => {
   const [activeSessions, setActiveSessions] = useState<QuizSession[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedQuizId, setSelectedQuizId] = useState<string>("");
+  const [selectedEventFilter, setSelectedEventFilter] = useState<string>(eventIdParam || "all");
+
+  // Keep selectedEventFilter in sync if URL eventIdParam changes
+  useEffect(() => {
+    if (eventIdParam) {
+      setSelectedEventFilter(eventIdParam);
+    }
+  }, [eventIdParam]);
+
+  // Compute currently active scoped event if filtered
+  const activeEvent = React.useMemo(() => {
+    if (selectedEventFilter === "all") return null;
+    return events.find((e) => e.id === selectedEventFilter) || null;
+  }, [events, selectedEventFilter]);
+
+  // Filter quizzes strictly by active scoped event
+  const filteredQuizzes = React.useMemo(() => {
+    if (selectedEventFilter === "all") return quizzes;
+    return quizzes.filter((q) => {
+      if (q.eventId && q.eventId === selectedEventFilter) return true;
+      if (activeEvent && q.eventTitle && q.eventTitle.toLowerCase().trim() === activeEvent.title.toLowerCase().trim()) return true;
+      return false;
+    });
+  }, [quizzes, selectedEventFilter, activeEvent]);
+
+  // Automatically update selectedQuizId when filteredQuizzes list changes
+  useEffect(() => {
+    if (filteredQuizzes.length > 0) {
+      if (!selectedQuizId || !filteredQuizzes.some((q) => q.id === selectedQuizId)) {
+        setSelectedQuizId(filteredQuizzes[0].id);
+      }
+    } else {
+      setSelectedQuizId("");
+    }
+  }, [filteredQuizzes, selectedQuizId]);
 
   // View state: "list" or "editor" (Full-page editor mode)
   const [isEditorMode, setIsEditorMode] = useState<boolean>(false);
@@ -85,9 +119,6 @@ export const QuizManagementPage: React.FC = () => {
           qList.push({ id: d.id, ...d.data() } as Quiz);
         });
         setQuizzes(qList);
-        if (qList.length > 0 && !selectedQuizId) {
-          setSelectedQuizId(qList[0].id);
-        }
 
         // 2. Fetch Events for dropdown selection
         const eventSnap = await getDocs(collection(db, "events"));
@@ -113,7 +144,11 @@ export const QuizManagementPage: React.FC = () => {
 
   // Listen to live sessions & submissions for the selected quiz
   useEffect(() => {
-    if (!selectedQuizId) return;
+    if (!selectedQuizId) {
+      setSubmissions([]);
+      setActiveSessions([]);
+      return;
+    }
 
     // Listen to submissions
     const unsubSubmissions = onSnapshot(
@@ -148,12 +183,13 @@ export const QuizManagementPage: React.FC = () => {
     setCustomCategories([]);
     setSelectedCategoryView("");
     setCurrentQuestionIndex(-1);
+    const targetEvent = activeEvent || (events.length > 0 ? events[0] : null);
     setEditingQuiz({
       title: "",
       description: "",
-      eventId: events.length > 0 ? events[0].id : "",
-      eventTitle: events.length > 0 ? events[0].title : "",
-      track: "General Track",
+      eventId: targetEvent ? targetEvent.id : "",
+      eventTitle: targetEvent ? targetEvent.title : "",
+      track: targetEvent?.category ? `${targetEvent.category} Track` : "General Track",
       durationMinutes: 30,
       totalMarks: 50,
       passingMarks: 20,
@@ -248,13 +284,14 @@ export const QuizManagementPage: React.FC = () => {
   };
 
   const handleDeleteQuiz = async (quizId: string) => {
-    if (!confirm("Are you sure you want to delete this quiz? This action cannot be undone.")) return;
+    if (!confirm("Are you sure you want to delete this quiz? All related submissions and session data will also be permanently deleted.")) return;
 
     try {
-      await deleteDoc(doc(db, "quizzes", quizId));
+      await deleteQuizCascading(quizId);
       setQuizzes((prev) => prev.filter((q) => q.id !== quizId));
       if (selectedQuizId === quizId) {
-        setSelectedQuizId(quizzes.find((q) => q.id !== quizId)?.id || "");
+        const remaining = filteredQuizzes.filter((q) => q.id !== quizId);
+        setSelectedQuizId(remaining[0]?.id || "");
       }
     } catch (err: any) {
       console.error("Error deleting quiz:", err);
@@ -1054,10 +1091,72 @@ export const QuizManagementPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Event Scoping / Selector Toolbar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs ${activeEvent ? 'bg-purple-100 text-purple-700' : 'bg-blue-50 text-blue-600'}`}>
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                {activeEvent ? "Event Scoped Quiz Workspace" : "All Events Workspace"}
+              </div>
+              <div className="text-sm font-black text-slate-800 flex items-center gap-2">
+                <span>{activeEvent ? activeEvent.title : "Showing Quizzes for All Events"}</span>
+                {activeEvent?.category && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                    {activeEvent.category}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <label className="text-xs font-bold text-slate-500 whitespace-nowrap">Filter Event:</label>
+            <select
+              value={selectedEventFilter}
+              onChange={(e) => {
+                const newFilter = e.target.value;
+                setSelectedEventFilter(newFilter);
+                if (newFilter !== "all") {
+                  setSearchParams({ eventId: newFilter });
+                } else {
+                  setSearchParams({});
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+            >
+              <option value="all">-- All Events ({quizzes.length} Total Quizzes) --</option>
+              {events.map((ev) => {
+                const count = quizzes.filter(q => q.eventId === ev.id || (q.eventTitle && q.eventTitle.toLowerCase().trim() === ev.title.toLowerCase().trim())).length;
+                return (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.title} ({count} {count === 1 ? "quiz" : "quizzes"})
+                  </option>
+                );
+              })}
+            </select>
+
+            {selectedEventFilter !== "all" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedEventFilter("all");
+                  setSearchParams({});
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                View All
+              </button>
+            )}
+          </div>
+        </div>
+
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 overflow-x-auto">
         {[
-          { id: "quizzes" as const, label: "Quiz Library", icon: FileText, count: quizzes.length },
+          { id: "quizzes" as const, label: "Quiz Library", icon: FileText, count: filteredQuizzes.length },
           { id: "live_monitor" as const, label: "Live Concurrency Monitor", icon: Users, count: inProgressSessions.length },
           { id: "submissions" as const, label: "Submissions & Results", icon: Award, count: submissions.length }
         ].map((tab) => (
@@ -1087,23 +1186,30 @@ export const QuizManagementPage: React.FC = () => {
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-2" />
               <p className="text-xs font-semibold">Loading quiz database...</p>
             </div>
-          ) : quizzes.length === 0 ? (
+          ) : filteredQuizzes.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center space-y-4">
               <HelpCircle className="w-12 h-12 text-slate-300 mx-auto" />
               <div>
-                <h3 className="text-base font-extrabold text-[#0F172A]">No Quizzes Created Yet</h3>
-                <p className="text-xs text-slate-500 font-medium mt-1">Create your first high-concurrency quiz to publish to participants.</p>
+                <h3 className="text-base font-extrabold text-[#0F172A]">
+                  {activeEvent ? `No Quizzes Found for "${activeEvent.title}"` : "No Quizzes Created Yet"}
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  {activeEvent 
+                    ? `Create an assessment specifically for ${activeEvent.title}.`
+                    : "Create your first high-concurrency quiz to publish to participants."
+                  }
+                </p>
               </div>
               <button
                 onClick={handleOpenCreateModal}
                 className="bg-blue-600 text-white font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer"
               >
-                Create First Quiz
+                Create Quiz for {activeEvent ? activeEvent.title : "Event"}
               </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {quizzes.map((q) => (
+              {filteredQuizzes.map((q) => (
                 <div
                   key={q.id}
                   className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-5"
@@ -1224,7 +1330,7 @@ export const QuizManagementPage: React.FC = () => {
                 onChange={(e) => setSelectedQuizId(e.target.value)}
                 className="bg-slate-50 border border-slate-200 text-xs font-bold text-[#0F172A] px-3 py-1.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                {quizzes.map((q) => (
+                {filteredQuizzes.map((q) => (
                   <option key={q.id} value={q.id}>{q.title}</option>
                 ))}
               </select>
@@ -1303,7 +1409,7 @@ export const QuizManagementPage: React.FC = () => {
                 onChange={(e) => setSelectedQuizId(e.target.value)}
                 className="bg-slate-50 border border-slate-200 text-xs font-bold text-[#0F172A] px-3 py-1.5 rounded-xl"
               >
-                {quizzes.map((q) => (
+                {filteredQuizzes.map((q) => (
                   <option key={q.id} value={q.id}>{q.title}</option>
                 ))}
               </select>

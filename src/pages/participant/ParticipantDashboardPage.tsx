@@ -100,9 +100,6 @@ export const ParticipantDashboardPage: React.FC = () => {
       const cleanEmail = user?.email?.toLowerCase().trim() || "";
 
       try {
-        // Fetch active quizzes
-        getAllQuizzes().then((qzList) => setAvailableQuizzes(qzList.filter(q => q.status === "active"))).catch(() => {});
-
         const regSnap = await getDocs(collection(db, "registrations"));
         const allRegs: any[] = [];
         regSnap.forEach((docItem) => {
@@ -137,6 +134,21 @@ export const ParticipantDashboardPage: React.FC = () => {
             }
           }
         }
+
+        // Fetch active quizzes scoped to participant's event
+        getAllQuizzes().then((qzList) => {
+          const activeQz = qzList.filter(q => {
+            if (q.status !== "active") return false;
+            if (targetReg?.eventId && q.eventId) {
+              return q.eventId === targetReg.eventId;
+            }
+            if (targetReg?.eventTitle && q.eventTitle) {
+              return q.eventTitle.toLowerCase().trim() === targetReg.eventTitle.toLowerCase().trim();
+            }
+            return !q.eventId; // include generic quizzes if no event bound
+          });
+          setAvailableQuizzes(activeQz);
+        }).catch(() => {});
 
         if (targetReg) {
           const currentEventTitle = targetReg.eventTitle || "Hackathon";

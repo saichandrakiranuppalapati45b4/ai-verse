@@ -304,6 +304,49 @@ export async function resetAllQuizSubmissions(quizId: string): Promise<void> {
 }
 
 /**
+ * Permanently delete a quiz and all its related submissions, sessions, and answers (Cascading Delete)
+ */
+export async function deleteQuizCascading(quizId: string): Promise<void> {
+  try {
+    await resetAllQuizSubmissions(quizId);
+    await deleteDoc(doc(db, "quizzes", quizId));
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem(`quiz_cache_${quizId}`);
+    }
+  } catch (err) {
+    console.error(`[QuizService] Error deleting quiz ${quizId} cascading:`, err);
+    throw err;
+  }
+}
+
+/**
+ * Delete all quizzes and associated data for a specific event (Event Cascading Delete)
+ */
+export async function deleteQuizzesByEventId(eventId: string, eventTitle?: string): Promise<number> {
+  if (!eventId && !eventTitle) return 0;
+  try {
+    const quizSnap = await getDocs(collection(db, "quizzes"));
+    let deletedCount = 0;
+
+    for (const d of quizSnap.docs) {
+      const data = d.data();
+      const matchId = eventId && data.eventId === eventId;
+      const matchTitle = eventTitle && data.eventTitle && data.eventTitle.toLowerCase().trim() === eventTitle.toLowerCase().trim();
+
+      if (matchId || matchTitle) {
+        const qId = d.id;
+        await deleteQuizCascading(qId);
+        deletedCount++;
+      }
+    }
+    return deletedCount;
+  } catch (err) {
+    console.error(`[QuizService] Error deleting quizzes for event ${eventId}:`, err);
+    return 0;
+  }
+}
+
+/**
  * Load draft answers for an active session
  */
 export async function loadDraftAnswers(sessionId: string): Promise<QuizDraftAnswers | null> {

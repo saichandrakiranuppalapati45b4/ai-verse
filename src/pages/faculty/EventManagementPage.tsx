@@ -10,6 +10,7 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { createClient } from "@supabase/supabase-js";
 import { userService } from "../../services/userService";
+import { deleteQuizzesByEventId } from "../../services/quizService";
 import {
   Calendar,
   Users,
@@ -1351,8 +1352,16 @@ const EventManagementPage: React.FC = () => {
   };
 
   const handleDeleteEvent = async (id: string, title: string) => {
-    if (confirm(`Are you sure you want to delete the event "${title}"?`)) {
+    if (confirm(`Are you sure you want to delete the event "${title}"? This will permanently delete the event along with all its quizzes, submissions, sessions, and records.`)) {
       try {
+        // 1. Cascading delete of all quizzes and submissions belonging to this event
+        try {
+          await deleteQuizzesByEventId(id, title);
+        } catch (quizErr) {
+          console.warn("Notice deleting associated quizzes for event:", quizErr);
+        }
+
+        // 2. Delete the event doc
         const docRef = doc(db, "events", id);
         await deleteDoc(docRef);
         setEvents(prev => prev.filter(e => e.id !== id));
