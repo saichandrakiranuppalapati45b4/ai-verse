@@ -20,14 +20,16 @@ export default defineConfig({
           req.on('data', (chunk: any) => { body += chunk; });
           req.on('end', async () => {
             try {
-              const { to, subject, html, text, from } = JSON.parse(body || '{}');
+              const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
-              const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
+              const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
+              const replyToEmail = reply_to || "saichandrakiranuppalapati@gmail.com";
 
               const emailPayload: any = {
                 from: senderEmail,
                 to: recipients,
+                reply_to: replyToEmail,
                 subject,
                 html,
               };
@@ -77,14 +79,16 @@ export default defineConfig({
           req.on('data', (chunk: any) => { body += chunk; });
           req.on('end', async () => {
             try {
-              const { to, subject, html, text, from } = JSON.parse(body || '{}');
+              const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
-              const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
+              const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
+              const replyToEmail = reply_to || "saichandrakiranuppalapati@gmail.com";
 
               const emailPayload: any = {
                 from: senderEmail,
                 to: recipients,
+                reply_to: replyToEmail,
                 subject,
                 html,
               };

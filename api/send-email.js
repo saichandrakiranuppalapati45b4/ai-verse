@@ -8,14 +8,26 @@ export default async function handler(req, res) {
 
   const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
 
-  const { to, subject, html, from } = req.body;
+  const { to, subject, html, text, from, reply_to } = req.body;
 
   if (!to || !subject || !html) {
     return res.status(400).json({ error: "Missing required fields: to, subject, html" });
   }
 
   const recipients = Array.isArray(to) ? to : [to];
-  const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
+  const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
+  const replyToEmail = reply_to || "saichandrakiranuppalapati@gmail.com";
+
+  const emailPayload = {
+    from: senderEmail,
+    to: recipients,
+    reply_to: replyToEmail,
+    subject,
+    html,
+  };
+  if (text) {
+    emailPayload.text = text;
+  }
 
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -24,12 +36,7 @@ export default async function handler(req, res) {
         "Authorization": `Bearer ${RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: senderEmail,
-        to: recipients,
-        subject,
-        html,
-      }),
+      body: JSON.stringify(emailPayload),
     });
 
     const result = await response.json();

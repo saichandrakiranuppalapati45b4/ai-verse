@@ -29,7 +29,7 @@ export default {
         });
       }
 
-      const { to, subject, html, text, from } = body;
+      const { to, subject, html, text, from, reply_to } = body;
 
       if (!to || !subject || !html) {
         return new Response(
@@ -39,11 +39,13 @@ export default {
       }
 
       const recipients = Array.isArray(to) ? to : [to];
-      const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
+      const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
+      const replyToEmail = reply_to || "saichandrakiranuppalapati@gmail.com";
 
       const emailPayload = {
         from: senderEmail,
         to: recipients,
+        reply_to: replyToEmail,
         subject,
         html,
       };
