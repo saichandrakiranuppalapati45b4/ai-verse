@@ -23,7 +23,7 @@ export default defineConfig({
               const { to, subject, html, from } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
-              const senderEmail = from || "AI Verse <onboarding@resend.dev>";
+              const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
 
               const response = await fetch("https://api.resend.com/emails", {
                 method: "POST",
@@ -75,7 +75,7 @@ export default defineConfig({
               const { to, subject, html, from } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
-              const senderEmail = from || "AI Verse <onboarding@resend.dev>";
+              const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
 
               const response = await fetch("https://api.resend.com/emails", {
                 method: "POST",

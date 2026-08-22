@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   const recipients = Array.isArray(to) ? to : [to];
-  const senderEmail = from || "AI Verse <onboarding@resend.dev>";
+  const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
 
   try {
     const response = await fetch("https://api.resend.com/emails", {

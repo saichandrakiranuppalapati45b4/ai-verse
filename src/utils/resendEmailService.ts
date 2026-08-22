@@ -15,7 +15,7 @@ export const sendResendEmail = async ({
   to,
   subject,
   html,
-  from = "AI Verse <onboarding@resend.dev>",
+  from = "AI Verse <noreply@aiversevitb.dpdns.org>",
 }: SendResendEmailParams): Promise<{ success: boolean; data?: any; error?: string }> => {
   const recipients = Array.isArray(to) ? to : [to];
 
