@@ -370,99 +370,47 @@ const RegistrationsManagementPage: React.FC = () => {
         const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
         const ticketUrl = `${siteBaseUrl}/ticket/${reg.id}`;
         
-        const plainText = `Hello ${reg.teamLeadName},
+        const teamMembers = reg.members && reg.members.length > 0 
+          ? reg.members.map(m => `  - ${m.name} (${m.studentId || m.email})`).join("\n")
+          : "";
 
-Your registration for ${reg.eventTitle} has been confirmed.
-
-Summary:
-- Event: ${reg.eventTitle}
-- Team / Group: ${reg.groupName || "Individual Participant"}
-- Team Lead: ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})
-- Total Participants: ${reg.teamSize || (reg.members.length + 1)}
-${reg.transactionId ? `- Transaction ID: ${reg.transactionId}\n` : ""}- Status: Confirmed
-
-You can view your entry pass and attendance QR code at:
-${ticketUrl}
-
-AI Verse • Event Management`;
+        const plainText = [
+          `Hi ${reg.teamLeadName},`,
+          ``,
+          `Your registration for ${reg.eventTitle} has been confirmed.`,
+          ``,
+          `Event: ${reg.eventTitle}`,
+          `Team: ${reg.groupName || "Individual"}`,
+          `Lead: ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})`,
+          `Participants: ${reg.teamSize || (reg.members.length + 1)}`,
+          reg.transactionId ? `Transaction ID: ${reg.transactionId}` : "",
+          `Status: Confirmed`,
+          teamMembers ? `\nTeam Members:\n${teamMembers}` : "",
+          ``,
+          `View your entry pass: ${ticketUrl}`,
+          ``,
+          `Thanks,`,
+          `AI Verse Team`,
+        ].filter(Boolean).join("\n");
 
         const emailResult = await sendResendEmail({
           to: targetEmail,
-          subject: `Registration Confirmation: ${reg.eventTitle} - AI Verse`,
+          subject: `${reg.eventTitle} - Registration Confirmed`,
           text: plainText,
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff; color: #1e293b; line-height: 1.6;">
-              <div style="background-color: #1e3a8a; padding: 20px; border-radius: 12px; color: #ffffff; text-align: center;">
-                <h1 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">AI VERSE</h1>
-                <p style="margin: 4px 0 0 0; font-size: 13px; color: #bfdbfe;">Event Registration Confirmation</p>
-              </div>
-
-              <div style="padding: 20px 8px;">
-                <p style="font-size: 15px; margin-bottom: 14px;">
-                  Hello <strong>${reg.teamLeadName}</strong>,
-                </p>
-                
-                <p style="font-size: 14px; color: #334155; margin-bottom: 16px;">
-                  We are pleased to inform you that your registration for <strong>${reg.eventTitle}</strong> has been successfully confirmed.
-                </p>
-
-                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin: 16px 0;">
-                  <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;">Registration Details</div>
-                  <table style="width: 100%; font-size: 13px; color: #334155; border-collapse: collapse;">
-                    <tr>
-                      <td style="padding: 4px 0; color: #64748b; width: 140px;">Event:</td>
-                      <td style="padding: 4px 0; font-weight: 600;">${reg.eventTitle}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding: 4px 0; color: #64748b;">Team / Group:</td>
-                      <td style="padding: 4px 0; font-weight: 600;">${reg.groupName || "Individual Participant"}</td>
-                    </tr>
-                    <tr>
-                      <td style="padding: 4px 0; color: #64748b;">Team Lead:</td>
-                      <td style="padding: 4px 0; font-weight: 600;">${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})</td>
-                    </tr>
-                    ${reg.phoneNumber ? `<tr><td style="padding: 4px 0; color: #64748b;">Contact:</td><td style="padding: 4px 0;">${reg.phoneNumber}</td></tr>` : ""}
-                    <tr>
-                      <td style="padding: 4px 0; color: #64748b;">Participants:</td>
-                      <td style="padding: 4px 0;">${reg.teamSize || (reg.members.length + 1)} member(s)</td>
-                    </tr>
-                    ${reg.transactionId ? `<tr><td style="padding: 4px 0; color: #64748b;">Transaction ID:</td><td style="padding: 4px 0; font-family: monospace;">${reg.transactionId}</td></tr>` : ""}
-                    <tr>
-                      <td style="padding: 4px 0; color: #64748b;">Status:</td>
-                      <td style="padding: 4px 0; color: #16a34a; font-weight: 700;">Confirmed</td>
-                    </tr>
-                  </table>
-                </div>
-
-                ${reg.members && reg.members.length > 0 ? `
-                  <div style="margin: 16px 0;">
-                    <p style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 6px;">Team Members:</p>
-                    <ul style="font-size: 13px; color: #334155; padding-left: 20px; margin: 0;">
-                      ${reg.members.map(m => `<li>${m.name} (${m.studentId || m.email})</li>`).join("")}
-                    </ul>
-                  </div>
-                ` : ""}
-
-                <div style="text-align: center; margin: 24px 0;">
-                  <a href="${ticketUrl}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px;">
-                    View Entry Pass & QR Code
-                  </a>
-                  <p style="font-size: 11px; color: #64748b; margin-top: 10px;">
-                    Link: <a href="${ticketUrl}" style="color: #2563eb;">${ticketUrl}</a>
-                  </p>
-                </div>
-
-                <p style="font-size: 12px; color: #64748b; text-align: center; margin-top: 14px;">
-                  Please keep this pass accessible for event check-in.
-                </p>
-              </div>
-
-              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
-              <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
-                AI Verse • Event Notification System
-              </p>
-            </div>
-          `
+          html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#333;line-height:1.5;max-width:560px;margin:0 auto;">
+<p>Hi ${reg.teamLeadName},</p>
+<p>Your registration for <b>${reg.eventTitle}</b> has been confirmed.</p>
+<p>
+<b>Event:</b> ${reg.eventTitle}<br>
+<b>Team:</b> ${reg.groupName || "Individual"}<br>
+<b>Lead:</b> ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})<br>
+<b>Participants:</b> ${reg.teamSize || (reg.members.length + 1)}${reg.transactionId ? `<br><b>Transaction ID:</b> ${reg.transactionId}` : ""}<br>
+<b>Status:</b> Confirmed
+</p>
+${reg.members && reg.members.length > 0 ? `<p><b>Team Members:</b><br>${reg.members.map(m => `${m.name} (${m.studentId || m.email})`).join("<br>")}</p>` : ""}
+<p>View your entry pass and QR code:<br><a href="${ticketUrl}">${ticketUrl}</a></p>
+<p>Thanks,<br>AI Verse Team</p>
+</div>`
         });
 
         if (emailResult.success) {
