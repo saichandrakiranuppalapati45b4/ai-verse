@@ -36,6 +36,7 @@ interface Event {
   isPastEvent?: boolean;
   registrationFee?: number;
   isPaidEvent?: boolean;
+  allowRegistrations?: boolean;
 }
 
 const EventsPage: React.FC = () => {
@@ -103,7 +104,8 @@ const EventsPage: React.FC = () => {
             endDate: data.endDate || data.startDate || "",
             isPastEvent: Boolean(data.isPastEvent),
             registrationFee: data.registrationFee !== undefined ? Number(data.registrationFee) : 0,
-            isPaidEvent: data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : (Number(data.registrationFee) > 0)
+            isPaidEvent: data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : (Number(data.registrationFee) > 0),
+            allowRegistrations: data.allowRegistrations !== undefined ? data.allowRegistrations : true
           });
         });
         setEvents(list);
@@ -200,10 +202,10 @@ const EventsPage: React.FC = () => {
       
       {/* ================= HERO SECTION ================= */}
       <section className="relative pt-24 pb-8 px-4 sm:px-6 lg:px-8 bg-gradient-to-tr from-slate-50 via-blue-50/30 to-sky-50/20 rounded-b-[40px] border-b border-slate-100 shadow-sm">
-        {/* Soft decorative background blurs */}
+        {/* Soft decorative background gradients */}
         <div className="absolute inset-0 overflow-hidden rounded-b-[40px] -z-10 pointer-events-none">
-          <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full bg-blue-100/40 blur-3xl"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full bg-sky-100/30 blur-3xl"></div>
+          <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full bg-[radial-gradient(circle,rgba(219,234,254,0.6)_0%,transparent_70%)] transform-gpu" />
+          <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full bg-[radial-gradient(circle,rgba(224,242,254,0.6)_0%,transparent_70%)] transform-gpu" />
         </div>
 
         <div className="max-w-4xl mx-auto text-center space-y-4 relative z-10 py-1">
@@ -351,7 +353,7 @@ const EventsPage: React.FC = () => {
                             <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
                               Event Completed
                             </Button>
-                          ) : event.status === "Active" ? (
+                          ) : event.allowRegistrations === false ? (
                             <Button variant="secondary" size="sm" disabled className="rounded-lg font-bold text-xs px-5 py-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
                               Registration Closed
                             </Button>

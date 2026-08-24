@@ -26,6 +26,7 @@ export interface Quiz {
   track?: string;
   durationMinutes: number;
   totalMarks: number;
+  pointsPerQuestion?: number;
   passingMarks?: number;
   instructions: string[];
   status: "draft" | "scheduled" | "active" | "completed" | "archived";

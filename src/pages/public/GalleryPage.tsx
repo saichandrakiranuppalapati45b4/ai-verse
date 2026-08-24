@@ -376,8 +376,8 @@ const GalleryPage: React.FC = () => {
       <section className="max-w-5xl mx-auto px-6 lg:px-8 mb-12">
         <div className="bg-gradient-to-r from-[#2563EB] to-blue-600 rounded-[28px] p-10 md:p-14 text-center text-white border border-blue-700 shadow-xl relative overflow-hidden">
           {/* Subtle decoration elements */}
-          <div className="absolute -top-32 -left-32 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none"></div>
-          <div className="absolute -bottom-32 -right-32 w-64 h-64 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute -top-32 -left-32 w-64 h-64 bg-[radial-gradient(circle,rgba(255,255,255,0.1)_0%,transparent_70%)] pointer-events-none transform-gpu" />
+          <div className="absolute -bottom-32 -right-32 w-64 h-64 bg-[radial-gradient(circle,rgba(255,255,255,0.15)_0%,transparent_70%)] pointer-events-none transform-gpu" />
           
           <div className="max-w-xl mx-auto space-y-6 relative z-10">
             <h2 className="text-3xl md:text-4xl font-serif font-semibold leading-tight tracking-tight">

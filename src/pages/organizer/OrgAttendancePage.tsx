@@ -857,7 +857,7 @@ const OrgAttendancePage: React.FC = () => {
                   <>
                     {/* Premium Team Header */}
                     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900 border border-slate-700/50 shadow-lg">
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle,rgba(59,130,246,0.15)_0%,transparent_70%)] pointer-events-none transform-gpu -mr-10 -mt-10" />
                       
                       <div className="px-5 py-4 border-b border-slate-700/50">
                         <span className="inline-block px-2.5 py-1 bg-blue-500/20 text-blue-400 text-[9px] font-black tracking-widest uppercase rounded-full border border-blue-500/30 mb-2 shadow-[0_0_10px_rgba(59,130,246,0.2)]">Scanned Team Info</span>

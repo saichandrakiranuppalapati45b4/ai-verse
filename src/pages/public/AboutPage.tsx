@@ -162,10 +162,10 @@ const AboutPage: React.FC = () => {
       
       {/* ================= HERO SECTION ================= */}
       <section className="relative py-16 lg:py-24 flex items-center">
-        {/* Abstract Background Blurs */}
+        {/* Abstract Background Gradients */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10">
-          <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] rounded-full bg-blue-100/40 blur-3xl"></div>
-          <div className="absolute top-1/3 right-1/4 w-[500px] h-[500px] rounded-full bg-sky-100/30 blur-3xl"></div>
+          <div className="absolute top-1/4 left-1/4 w-[400px] h-[400px] rounded-full bg-[radial-gradient(circle,rgba(219,234,254,0.6)_0%,transparent_70%)] transform-gpu" />
+          <div className="absolute top-1/3 right-1/4 w-[500px] h-[500px] rounded-full bg-[radial-gradient(circle,rgba(224,242,254,0.6)_0%,transparent_70%)] transform-gpu" />
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
@@ -403,8 +403,8 @@ const AboutPage: React.FC = () => {
             className="bg-gradient-to-tr from-aether-blue-50/50 via-sky-50/30 to-blue-50/20 border border-aether-blue-100/40 rounded-[28px] p-10 sm:p-16 text-center max-w-5xl mx-auto space-y-6 relative overflow-hidden shadow-sm"
           >
             {/* Decorative background glow circles */}
-            <div className="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-blue-400/5 blur-3xl pointer-events-none"></div>
-            <div className="absolute -bottom-32 -right-32 w-64 h-64 rounded-full bg-sky-400/5 blur-3xl pointer-events-none"></div>
+            <div className="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-[radial-gradient(circle,rgba(96,165,250,0.12)_0%,transparent_70%)] pointer-events-none transform-gpu" />
+            <div className="absolute -bottom-32 -right-32 w-64 h-64 rounded-full bg-[radial-gradient(circle,rgba(56,189,248,0.12)_0%,transparent_70%)] pointer-events-none transform-gpu" />
 
             <h2 className="text-3xl sm:text-4xl font-extrabold text-aether-dark tracking-tight">
               Ready to Shape the Future?

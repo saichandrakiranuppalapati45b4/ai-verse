@@ -51,6 +51,9 @@ import {
   Mail,
   IndianRupee,
   CreditCard,
+  Layers,
+  Trophy,
+  Award,
   QrCode
 } from "lucide-react";
 import DatePicker from "../../components/ui/DatePicker";
@@ -72,6 +75,7 @@ interface EventItem {
   currentReg: number;
   maxReg: number;
   image?: string;
+  [key: string]: any;
 }
 
 const EventManagementPage: React.FC = () => {
@@ -150,6 +154,7 @@ const EventManagementPage: React.FC = () => {
           }
 
           list.push({
+            ...data,
             id: doc.id,
             title: data.title || "",
             date: data.date || data.startDate || "",
@@ -249,16 +254,18 @@ const EventManagementPage: React.FC = () => {
     return () => unsubscribe();
   }, [isEventAccessModalOpen, eventAccessEvent?.id]);
 
-  // Real-time listener for event document locked steps state
+  // Real-time listener for event document state (rounds, lockedSteps, currentRound, etc.)
   useEffect(() => {
     if (!isEventAccessModalOpen || !eventAccessEvent?.id) return;
 
     const unsubEv = onSnapshot(doc(db, "events", eventAccessEvent.id), (docSnap) => {
       if (docSnap.exists()) {
         const evData = docSnap.data();
-        if (evData.lockedSteps) {
-          setEventAccessEvent((prev: any) => prev ? { ...prev, lockedSteps: evData.lockedSteps } : prev);
-        }
+        setEventAccessEvent((prev: any) => ({
+          ...prev,
+          ...evData,
+          id: docSnap.id
+        }));
       }
     });
 
@@ -445,6 +452,436 @@ const EventManagementPage: React.FC = () => {
       alert("Failed to save and publish problem statements.");
     } finally {
       setSavingMultiProblems(false);
+    }
+  };
+
+  // Event Access - Round Management & Participant Promotion States
+  const [isEventRoundsModalOpen, setIsEventRoundsModalOpen] = useState(false);
+  const [roundModalTab, setRoundModalTab] = useState<"promotion" | "stages">("promotion");
+  const [liveRoundsList, setLiveRoundsList] = useState<any[]>([]);
+  const [liveCurrentRound, setLiveCurrentRound] = useState<number>(1);
+  const [liveTotalRounds, setLiveTotalRounds] = useState<number>(3);
+  const [savingLiveRounds, setSavingLiveRounds] = useState(false);
+  const [roundsSuccessMsg, setRoundsSuccessMsg] = useState<string | null>(null);
+
+  // Promotion Engine Specific States
+  const [promoteFromRound, setPromoteFromRound] = useState<number>(1);
+  const [promoteToRound, setPromoteToRound] = useState<number>(2);
+  const [promotionMode, setPromotionMode] = useState<"quiz" | "jury" | "manual">("quiz");
+  const [promotionSearchQuery, setPromotionSearchQuery] = useState("");
+  const [promotionStatusFilter, setPromotionStatusFilter] = useState<"all" | "selected" | "qualified" | "pending" | "eliminated">("all");
+
+  // Quiz Promotion Criteria
+  const [eventQuizzesList, setEventQuizzesList] = useState<any[]>([]);
+  const [selectedPromotionQuizId, setSelectedPromotionQuizId] = useState<string>("all");
+  const [quizCutoffType, setQuizCutoffType] = useState<"score" | "percentage" | "topN">("score");
+  const [quizCutoffScore, setQuizCutoffScore] = useState<number>(20);
+  const [quizCutoffPercentage, setQuizCutoffPercentage] = useState<number>(60);
+  const [quizTopNCount, setQuizTopNCount] = useState<number>(10);
+
+  // Jury Promotion Criteria
+  const [juryCutoffType, setJuryCutoffType] = useState<"score" | "topN">("score");
+  const [juryCutoffScore, setJuryCutoffScore] = useState<number>(60);
+  const [juryTopNCount, setJuryTopNCount] = useState<number>(10);
+
+  // Promotion Selection & Execution
+  const [selectedPromoteRegIds, setSelectedPromoteRegIds] = useState<string[]>([]);
+  const [markUnselectedAsEliminated, setMarkUnselectedAsEliminated] = useState<boolean>(false);
+  const [advanceEventRoundOnPromote, setAdvanceEventRoundOnPromote] = useState<boolean>(true);
+  const [isExecutingPromotion, setIsExecutingPromotion] = useState(false);
+
+  // Correlation Cache
+  const [allQuizSubmissions, setAllQuizSubmissions] = useState<any[]>([]);
+  const [allJuryEvaluations, setAllJuryEvaluations] = useState<any[]>([]);
+  const [loadingPromotionMetrics, setLoadingPromotionMetrics] = useState(false);
+
+  const fetchPromotionData = async () => {
+    setLoadingPromotionMetrics(true);
+    try {
+      // 1. Fetch Quizzes for this event
+      const quizSnap = await getDocs(collection(db, "quizzes"));
+      const qList: any[] = [];
+      quizSnap.forEach((d) => {
+        const qData = d.data();
+        if (
+          !qData.eventId ||
+          (eventAccessEvent?.id && qData.eventId === eventAccessEvent.id) ||
+          (eventAccessEvent?.title && qData.eventTitle?.toLowerCase().trim() === eventAccessEvent.title.toLowerCase().trim())
+        ) {
+          qList.push({ id: d.id, ...qData });
+        }
+      });
+      setEventQuizzesList(qList);
+      if (qList.length > 0) {
+        setSelectedPromotionQuizId(qList[0].id);
+      } else {
+        setSelectedPromotionQuizId("all");
+      }
+
+      // 2. Fetch Quiz Submissions
+      const subSnap = await getDocs(collection(db, "quizSubmissions"));
+      const subs: any[] = [];
+      subSnap.forEach((d) => subs.push({ id: d.id, ...d.data() }));
+      setAllQuizSubmissions(subs);
+
+      // 3. Fetch Jury Evaluations
+      const jurySnap = await getDocs(collection(db, "jury_evaluations"));
+      const jList: any[] = [];
+      jurySnap.forEach((d) => jList.push({ id: d.id, ...d.data() }));
+      setAllJuryEvaluations(jList);
+    } catch (err) {
+      console.error("Error fetching promotion metrics:", err);
+    } finally {
+      setLoadingPromotionMetrics(false);
+    }
+  };
+
+  const getCleanRoundTitle = (nameStr?: string, roundNum?: number) => {
+    if (!nameStr) return `Stage ${roundNum || 1}`;
+    return nameStr.replace(/^Round\s*\d+:?\s*/i, "").trim() || `Stage ${roundNum || 1}`;
+  };
+
+  const handleOpenEventRoundsModal = () => {
+    const existingRounds = eventAccessEvent?.rounds || [];
+    const currRound = Number(eventAccessEvent?.currentRound) || 1;
+    const totRounds = Number(eventAccessEvent?.totalRounds) || (Array.isArray(existingRounds) && existingRounds.length > 0 ? existingRounds.length : 3);
+
+    if (Array.isArray(existingRounds) && existingRounds.length > 0) {
+      const mappedRounds = existingRounds.map((r: any, idx: number) => ({
+        roundNumber: Number(r.roundNumber) || idx + 1,
+        name: r.name ? getCleanRoundTitle(r.name, idx + 1) : `Stage ${idx + 1}`,
+        type: r.type || "Screening",
+        description: r.description || "",
+        startDate: r.startDate || "",
+        endDate: r.endDate || "",
+        startTime: r.startTime || "",
+        endTime: r.endTime || "",
+        status: r.status || (idx + 1 === currRound ? "Active" : idx + 1 < currRound ? "Completed" : "Upcoming")
+      }));
+      setLiveRoundsList(mappedRounds);
+      setLiveTotalRounds(totRounds);
+      setLiveCurrentRound(currRound);
+    } else {
+      const evStart = eventAccessEvent?.startDate || eventAccessEvent?.date || "";
+      const evEnd = eventAccessEvent?.endDate || "";
+      const defaultRounds = [
+        { roundNumber: 1, name: "Screening & Online Assessment", type: "Screening", description: "Initial abstract, quiz test, problem track selection, and idea deck evaluation.", startDate: evStart, endDate: evEnd, startTime: eventAccessEvent?.startTime || "", endTime: eventAccessEvent?.endTime || "", status: "Active" },
+        { roundNumber: 2, name: "Prototype & SRS Assessment", type: "Assessment", description: "Working code submission, system requirements specification, or MVP demonstration.", startDate: "", endDate: "", startTime: "", endTime: "", status: "Upcoming" },
+        { roundNumber: 3, name: "Grand Finale & Jury Pitch", type: "Finals", description: "Live onstage presentation, demo execution, and final jury evaluation.", startDate: "", endDate: "", startTime: "", endTime: "", status: "Upcoming" }
+      ];
+      setLiveRoundsList(defaultRounds);
+      setLiveTotalRounds(3);
+      setLiveCurrentRound(1);
+    }
+    setPromoteFromRound(currRound);
+    setPromoteToRound(Math.min((existingRounds.length || 3), currRound + 1));
+    setRoundModalTab("promotion");
+    fetchPromotionData();
+    setIsEventRoundsModalOpen(true);
+  };
+
+  // Memoized team score matrix for all registrations in the current event
+  const promotionRoster = useMemo(() => {
+    return eventAccessRegistrations.map((reg) => {
+      const regId = (reg.id || "").toLowerCase().trim();
+      const groupName = (reg.groupName || "").toLowerCase().trim();
+      const leadName = (reg.teamLeadName || reg.name || "").toLowerCase().trim();
+      const leadEmail = (reg.teamLeadEmail || reg.email || "").toLowerCase().trim();
+      const memberEmails = Array.isArray(reg.members)
+        ? reg.members.map((m: any) => (m.email || "").toLowerCase().trim()).filter(Boolean)
+        : [];
+
+      // Find matching quiz submission
+      const targetSubs = selectedPromotionQuizId !== "all"
+        ? allQuizSubmissions.filter((s) => s.quizId === selectedPromotionQuizId)
+        : allQuizSubmissions;
+
+      const matchedQuiz = targetSubs.find((sub) => {
+        if (sub.teamId && (sub.teamId.toLowerCase().trim() === regId || sub.teamId === reg.id)) return true;
+        if (sub.teamName && groupName && sub.teamName.toLowerCase().trim() === groupName) return true;
+        if (sub.userEmail) {
+          const subEmail = sub.userEmail.toLowerCase().trim();
+          if (subEmail === leadEmail || memberEmails.includes(subEmail)) return true;
+        }
+        if (sub.userName && leadName && sub.userName.toLowerCase().trim() === leadName) return true;
+        return false;
+      });
+
+      // Find matching jury evaluation
+      const matchedJury = allJuryEvaluations.find((j) => {
+        if (j.id && (j.id === reg.id || j.id.toLowerCase().trim() === regId)) return true;
+        if (j.teamName && groupName && j.teamName.toLowerCase().trim() === groupName) return true;
+        if (j.teamName && leadName && j.teamName.toLowerCase().trim() === leadName) return true;
+        return false;
+      });
+
+      const quizScore = matchedQuiz ? Number(matchedQuiz.score) || 0 : null;
+      const quizMaxScore = matchedQuiz ? Number(matchedQuiz.maxScore) || 50 : 50;
+      const quizPct = matchedQuiz ? (matchedQuiz.percentage !== undefined ? Number(matchedQuiz.percentage) : Math.round(((quizScore || 0) / quizMaxScore) * 100)) : null;
+
+      const juryScore = matchedJury ? Number(matchedJury.totalScore) || 0 : null;
+
+      const currentTeamRound = Number(reg.currentRound) || 1;
+      const roundStatus = reg.roundStatus || (currentTeamRound > 1 ? "Qualified" : "Pending");
+
+      return {
+        ...reg,
+        currentTeamRound,
+        roundStatus,
+        quizScore,
+        quizMaxScore,
+        quizPercentage: quizPct,
+        quizSubmission: matchedQuiz || null,
+        juryScore,
+        juryEvaluation: matchedJury || null,
+        isQualifiedForTarget: currentTeamRound >= promoteToRound && roundStatus === "Qualified",
+        isEliminated: roundStatus === "Eliminated" || (reg.eliminatedInRound && reg.eliminatedInRound <= promoteFromRound)
+      };
+    });
+  }, [eventAccessRegistrations, allQuizSubmissions, allJuryEvaluations, selectedPromotionQuizId, promoteFromRound, promoteToRound]);
+
+  // Auto-compute eligible teams based on selected criteria
+  const eligibleTeamIds = useMemo(() => {
+    const eligiblePool = promotionRoster.filter((t) => t.currentTeamRound === promoteFromRound && !t.isEliminated);
+
+    if (promotionMode === "quiz") {
+      if (quizCutoffType === "score") {
+        return eligiblePool
+          .filter((t) => t.quizScore !== null && t.quizScore >= quizCutoffScore)
+          .map((t) => t.id);
+      }
+      if (quizCutoffType === "percentage") {
+        return eligiblePool
+          .filter((t) => t.quizPercentage !== null && t.quizPercentage >= quizCutoffPercentage)
+          .map((t) => t.id);
+      }
+      if (quizCutoffType === "topN") {
+        return [...eligiblePool]
+          .filter((t) => t.quizScore !== null)
+          .sort((a, b) => (b.quizScore || 0) - (a.quizScore || 0))
+          .slice(0, quizTopNCount)
+          .map((t) => t.id);
+      }
+    } else if (promotionMode === "jury") {
+      if (juryCutoffType === "score") {
+        return eligiblePool
+          .filter((t) => t.juryScore !== null && t.juryScore >= juryCutoffScore)
+          .map((t) => t.id);
+      }
+      if (juryCutoffType === "topN") {
+        return [...eligiblePool]
+          .filter((t) => t.juryScore !== null)
+          .sort((a, b) => (b.juryScore || 0) - (a.juryScore || 0))
+          .slice(0, juryTopNCount)
+          .map((t) => t.id);
+      }
+    }
+    return [];
+  }, [promotionRoster, promoteFromRound, promotionMode, quizCutoffType, quizCutoffScore, quizCutoffPercentage, quizTopNCount, juryCutoffType, juryCutoffScore, juryTopNCount]);
+
+  // When criteria changes in quiz/jury mode, sync selectedPromoteRegIds
+  useEffect(() => {
+    if (promotionMode === "quiz" || promotionMode === "jury") {
+      setSelectedPromoteRegIds(eligibleTeamIds);
+    }
+  }, [eligibleTeamIds, promotionMode]);
+
+  const handleExecuteBatchPromotion = async () => {
+    if (selectedPromoteRegIds.length === 0) {
+      alert("Please select at least one team to promote to the next round.");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to promote ${selectedPromoteRegIds.length} team(s) from Round ${promoteFromRound} to Round ${promoteToRound}?`)) {
+      return;
+    }
+
+    setIsExecutingPromotion(true);
+    try {
+      const now = Date.now();
+      const promotePromises = selectedPromoteRegIds.map(async (regId) => {
+        const teamInfo = promotionRoster.find((t) => t.id === regId);
+        const scoreUsed = promotionMode === "quiz" 
+          ? teamInfo?.quizScore ?? 0 
+          : promotionMode === "jury" 
+            ? teamInfo?.juryScore ?? 0 
+            : null;
+
+        const regRef = doc(db, "registrations", regId);
+        await updateDoc(regRef, {
+          currentRound: promoteToRound,
+          roundStatus: "Qualified",
+          promotedToRound: promoteToRound,
+          promotionMethod: promotionMode,
+          promotionScore: scoreUsed,
+          promotedAt: now,
+          updatedAt: now
+        });
+      });
+
+      // Handle unselected elimination if checked
+      let eliminatePromises: Promise<any>[] = [];
+      if (markUnselectedAsEliminated) {
+        const unselectedTeams = promotionRoster.filter(
+          (t) => t.currentTeamRound === promoteFromRound && !selectedPromoteRegIds.includes(t.id)
+        );
+        eliminatePromises = unselectedTeams.map(async (t) => {
+          const regRef = doc(db, "registrations", t.id);
+          await updateDoc(regRef, {
+            roundStatus: "Eliminated",
+            eliminatedInRound: promoteFromRound,
+            eliminatedAt: now,
+            updatedAt: now
+          });
+        });
+      }
+
+      await Promise.all([...promotePromises, ...eliminatePromises]);
+
+      // Advance active event stage if requested
+      if (advanceEventRoundOnPromote && eventAccessEvent?.id && promoteToRound > (eventAccessEvent.currentRound || 1)) {
+        const evRef = doc(db, "events", eventAccessEvent.id);
+        await updateDoc(evRef, {
+          currentRound: promoteToRound,
+          updatedAt: now
+        });
+        setLiveCurrentRound(promoteToRound);
+        setEventAccessEvent((prev: any) => ({
+          ...prev,
+          currentRound: promoteToRound
+        }));
+        setEvents((prev) => prev.map((ev) => ev.id === eventAccessEvent.id ? { ...ev, currentRound: promoteToRound } : ev));
+      }
+
+      // Update local eventAccessRegistrations state
+      setEventAccessRegistrations((prev) =>
+        prev.map((r) => {
+          if (selectedPromoteRegIds.includes(r.id)) {
+            const teamInfo = promotionRoster.find((t) => t.id === r.id);
+            const scoreUsed = promotionMode === "quiz" ? teamInfo?.quizScore ?? 0 : promotionMode === "jury" ? teamInfo?.juryScore ?? 0 : null;
+            return {
+              ...r,
+              currentRound: promoteToRound,
+              roundStatus: "Qualified",
+              promotedToRound: promoteToRound,
+              promotionMethod: promotionMode,
+              promotionScore: scoreUsed,
+              promotedAt: now
+            };
+          }
+          if (markUnselectedAsEliminated && (r.currentRound || 1) === promoteFromRound) {
+            return {
+              ...r,
+              roundStatus: "Eliminated",
+              eliminatedInRound: promoteFromRound,
+              eliminatedAt: now
+            };
+          }
+          return r;
+        })
+      );
+
+      setRoundsSuccessMsg(`🎉 Successfully promoted ${selectedPromoteRegIds.length} team(s) to Round ${promoteToRound}!`);
+      setTimeout(() => setRoundsSuccessMsg(null), 6000);
+    } catch (err) {
+      console.error("Error executing batch round promotion:", err);
+      alert("Failed to execute round promotion. Please check console.");
+    } finally {
+      setIsExecutingPromotion(false);
+    }
+  };
+
+  const handleExportShortlistCSV = () => {
+    const targetTeams = promotionRoster.filter(t => selectedPromoteRegIds.includes(t.id));
+    if (targetTeams.length === 0) {
+      alert("No teams selected for export. Select teams first.");
+      return;
+    }
+
+    const headers = [
+      "Rank",
+      "Team Name",
+      "Team Lead Name",
+      "Student ID / Roll No",
+      "Email Address",
+      "Phone Number",
+      "Team Size",
+      "Current Round",
+      "Target Promoted Round",
+      "Quiz Score",
+      "Quiz Max Score",
+      "Quiz Percentage",
+      "Jury Score",
+      "Submission Status",
+      "Promotion Status"
+    ];
+
+    const rows = targetTeams.map((t, idx) => [
+      idx + 1,
+      `"${(t.groupName || t.teamLeadName || "Team").replace(/"/g, '""')}"`,
+      `"${(t.teamLeadName || t.name || "").replace(/"/g, '""')}"`,
+      `"${(t.teamLeadStudentId || t.studentId || "N/A").replace(/"/g, '""')}"`,
+      `"${(t.teamLeadEmail || t.email || "").replace(/"/g, '""')}"`,
+      `"${(t.phoneNumber || t.teamLeadPhone || "").replace(/"/g, '""')}"`,
+      t.teamSize || (Array.isArray(t.members) ? t.members.length + 1 : 1),
+      t.currentTeamRound,
+      promoteToRound,
+      t.quizScore !== null ? t.quizScore : "N/A",
+      t.quizMaxScore || 50,
+      t.quizPercentage !== null ? `${t.quizPercentage}%` : "N/A",
+      t.juryScore !== null ? `${t.juryScore}/100` : "N/A",
+      `"${(t.submissionStatus || "Draft").replace(/"/g, '""')}"`,
+      "Qualified"
+    ]);
+
+    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${(eventAccessEvent?.title || "event").replace(/[^a-zA-Z0-9]/g, "_")}_Round_${promoteToRound}_Shortlist.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSaveLiveEventRounds = async () => {
+    if (!eventAccessEvent?.id) return;
+    setSavingLiveRounds(true);
+    try {
+      const evRef = doc(db, "events", eventAccessEvent.id);
+      await updateDoc(evRef, {
+        rounds: liveRoundsList,
+        currentRound: liveCurrentRound,
+        totalRounds: liveTotalRounds,
+        allowRoundManagement: true,
+        updatedAt: Date.now()
+      });
+
+      setEventAccessEvent((prev: any) => ({
+        ...prev,
+        rounds: liveRoundsList,
+        currentRound: liveCurrentRound,
+        totalRounds: liveTotalRounds,
+        allowRoundManagement: true
+      }));
+
+      setEvents(prev => prev.map(ev => ev.id === eventAccessEvent.id ? {
+        ...ev,
+        rounds: liveRoundsList,
+        currentRound: liveCurrentRound,
+        totalRounds: liveTotalRounds,
+        allowRoundManagement: true
+      } : ev));
+
+      setRoundsSuccessMsg(`Successfully updated competition round stages & active stage (Round ${liveCurrentRound})!`);
+      setTimeout(() => setRoundsSuccessMsg(null), 5000);
+    } catch (err) {
+      console.error("Error updating live event rounds:", err);
+      alert("Failed to save event rounds.");
+    } finally {
+      setSavingLiveRounds(false);
     }
   };
 
@@ -787,7 +1224,18 @@ const EventManagementPage: React.FC = () => {
   };
 
   const handleOpenEventAccess = async (eventObj: any) => {
-    setEventAccessEvent(eventObj);
+    let fullEvent = eventObj;
+    if (eventObj?.id) {
+      try {
+        const evDoc = await getDoc(doc(db, "events", eventObj.id));
+        if (evDoc.exists()) {
+          fullEvent = { id: evDoc.id, ...evDoc.data() };
+        }
+      } catch (err) {
+        console.warn("Could not fetch full event document:", err);
+      }
+    }
+    setEventAccessEvent(fullEvent);
     setIsEventAccessModalOpen(true);
     setLoadingEventAccessRegs(true);
     setEventAccessSearchQuery("");
@@ -1051,11 +1499,32 @@ const EventManagementPage: React.FC = () => {
   const [formStatus, setFormStatus] = useState<"Draft" | "Active" | "Opened">("Draft");
 
   // Give Event Access States
+  const [formAllowRegistrations, setFormAllowRegistrations] = useState<boolean>(true);
   const [formAllowLoginAccess, setFormAllowLoginAccess] = useState<boolean>(true);
   const [formAllowSubmissions, setFormAllowSubmissions] = useState<boolean>(true);
   const [formAllowQuizAccess, setFormAllowQuizAccess] = useState<boolean>(true);
   const [formAllowProblemStatements, setFormAllowProblemStatements] = useState<boolean>(true);
   const [formAllowCertificates, setFormAllowCertificates] = useState<boolean>(false);
+  const [formAllowRoundManagement, setFormAllowRoundManagement] = useState<boolean>(true);
+
+  // Round Management States
+  const [formTotalRounds, setFormTotalRounds] = useState<number>(3);
+  const [formCurrentRound, setFormCurrentRound] = useState<number>(1);
+  const [formRounds, setFormRounds] = useState<Array<{
+    roundNumber: number;
+    name: string;
+    type: string;
+    description: string;
+    startDate?: string;
+    endDate?: string;
+    startTime?: string;
+    endTime?: string;
+    status: "Active" | "Upcoming" | "Completed";
+  }>>([
+    { roundNumber: 1, name: "Round 1: Screening & Idea Submission", type: "Screening", description: "Initial abstract, problem track selection, and idea deck evaluation.", startDate: "", endDate: "", startTime: "", endTime: "", status: "Active" },
+    { roundNumber: 2, name: "Round 2: Prototype & Online Assessment", type: "Assessment", description: "Working code submission, online MCQ screening, or MVP demonstration.", startDate: "", endDate: "", startTime: "", endTime: "", status: "Upcoming" },
+    { roundNumber: 3, name: "Round 3: Grand Finale & Jury Pitch", type: "Finals", description: "Live onstage presentation, demo execution, and final jury evaluation.", startDate: "", endDate: "", startTime: "", endTime: "", status: "Upcoming" }
+  ]);
 
   const getSpeakerSectionTitle = () => {
     if (formCategory === "Hackathon" || formCategory === "Tech Event") return "Jury Information";
@@ -1185,11 +1654,16 @@ const EventManagementPage: React.FC = () => {
       bulkRegCsvFilename: formCategory !== "Hackathon" ? bulkRegCsvFilename : "",
       bulkRegCsvData: formCategory !== "Hackathon" ? bulkRegCsvData : [],
       isPastEvent: formIsPastEvent,
+      allowRegistrations: formAllowRegistrations,
       allowLoginAccess: formAllowLoginAccess,
       allowSubmissions: formAllowSubmissions,
       allowQuizAccess: formAllowQuizAccess,
       allowProblemStatements: formAllowProblemStatements,
       allowCertificates: formAllowCertificates,
+      allowRoundManagement: formAllowRoundManagement,
+      totalRounds: formTotalRounds,
+      currentRound: formCurrentRound,
+      rounds: formRounds,
       createdAt: Date.now()
     };
 
@@ -1333,11 +1807,20 @@ const EventManagementPage: React.FC = () => {
       setBulkRegCsvData([]);
       setFormIsPastEvent(false);
       setFormHasAgenda(true);
+      setFormAllowRegistrations(true);
       setFormAllowLoginAccess(true);
       setFormAllowSubmissions(true);
       setFormAllowQuizAccess(true);
       setFormAllowProblemStatements(true);
       setFormAllowCertificates(false);
+      setFormAllowRoundManagement(true);
+      setFormTotalRounds(3);
+      setFormCurrentRound(1);
+      setFormRounds([
+        { roundNumber: 1, name: "Round 1: Screening & Idea Submission", type: "Screening", description: "Initial abstract, problem track selection, and idea deck evaluation.", status: "Active" },
+        { roundNumber: 2, name: "Round 2: Prototype & Online Assessment", type: "Assessment", description: "Working code submission, online MCQ screening, or MVP demonstration.", status: "Upcoming" },
+        { roundNumber: 3, name: "Round 3: Grand Finale & Jury Pitch", type: "Finals", description: "Live onstage presentation, demo execution, and final jury evaluation.", status: "Upcoming" }
+      ]);
       setFormAgendaItems([
         { time: "09:00 AM - 10:30 AM", title: "Morning Keynote: The Future of Compute", description: "Opening session detailing next-gen silicon compute." },
         { time: "11:30 AM - 01:00 PM", title: "Workshop: Transformer Efficiency", description: "Hands-on FlashAttention, quantization, and sparse computation models." },
@@ -1440,11 +1923,25 @@ const EventManagementPage: React.FC = () => {
         setBulkRegCsvData(data.bulkRegCsvData || []);
         setFormIsPastEvent(data.isPastEvent || false);
         setFormHasAgenda(data.hasAgenda !== false);
+        setFormAllowRegistrations(data.allowRegistrations !== undefined ? data.allowRegistrations : true);
         setFormAllowLoginAccess(data.allowLoginAccess !== undefined ? data.allowLoginAccess : true);
         setFormAllowSubmissions(data.allowSubmissions !== undefined ? data.allowSubmissions : true);
         setFormAllowQuizAccess(data.allowQuizAccess !== undefined ? data.allowQuizAccess : true);
         setFormAllowProblemStatements(data.allowProblemStatements !== undefined ? data.allowProblemStatements : true);
         setFormAllowCertificates(data.allowCertificates !== undefined ? data.allowCertificates : false);
+        setFormAllowRoundManagement(data.allowRoundManagement !== undefined ? data.allowRoundManagement : true);
+        setFormTotalRounds(data.totalRounds || (data.rounds ? data.rounds.length : 3));
+        setFormCurrentRound(data.currentRound || 1);
+
+        if (data.rounds && Array.isArray(data.rounds) && data.rounds.length > 0) {
+          setFormRounds(data.rounds);
+        } else {
+          setFormRounds([
+            { roundNumber: 1, name: "Round 1: Screening & Idea Submission", type: "Screening", description: "Initial abstract, problem track selection, and idea deck evaluation.", status: "Active" },
+            { roundNumber: 2, name: "Round 2: Prototype & Online Assessment", type: "Assessment", description: "Working code submission, online MCQ screening, or MVP demonstration.", status: "Upcoming" },
+            { roundNumber: 3, name: "Round 3: Grand Finale & Jury Pitch", type: "Finals", description: "Live onstage presentation, demo execution, and final jury evaluation.", status: "Upcoming" }
+          ]);
+        }
 
         if (data.agendaItems && Array.isArray(data.agendaItems)) {
           setFormAgendaItems(data.agendaItems);
@@ -2143,6 +2640,293 @@ const EventManagementPage: React.FC = () => {
                     )}
 
                   </div>
+
+                  {/* Round Management Card */}
+                  {formAllowRoundManagement && (
+                    <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                        <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
+                            <Layers className="h-4 w-4" />
+                          </div>
+                          Round Management
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Round</span>
+                          <select
+                            value={formCurrentRound}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setFormCurrentRound(val);
+                              setFormRounds(prev => prev.map((r, idx) => ({
+                                ...r,
+                                status: idx + 1 < val ? "Completed" : idx + 1 === val ? "Active" : "Upcoming"
+                              })));
+                            }}
+                            className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
+                          >
+                            {formRounds.map((r, idx) => (
+                              <option key={idx} value={idx + 1}>
+                                Round {idx + 1}: {r.name.replace(/^Round \d+:\s*/, '')}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Total Competition Rounds</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={formRounds.length}
+                            onChange={(e) => {
+                              const count = Math.max(1, Math.min(10, Number(e.target.value) || 1));
+                              setFormTotalRounds(count);
+                              if (count > formRounds.length) {
+                                const diff = count - formRounds.length;
+                                const newItems = Array.from({ length: diff }, (_, i) => {
+                                  const num = formRounds.length + i + 1;
+                                  return {
+                                    roundNumber: num,
+                                    name: `Round ${num}: Stage Evaluation`,
+                                    type: "Evaluation",
+                                    description: `Evaluation and judging criteria for Round ${num}.`,
+                                    startDate: "",
+                                    endDate: "",
+                                    startTime: "",
+                                    endTime: "",
+                                    status: (num === formCurrentRound ? "Active" : num < formCurrentRound ? "Completed" : "Upcoming") as "Active" | "Upcoming" | "Completed"
+                                  };
+                                });
+                                setFormRounds(prev => [...prev, ...newItems]);
+                              } else if (count < formRounds.length) {
+                                setFormRounds(prev => prev.slice(0, count));
+                                if (formCurrentRound > count) setFormCurrentRound(count);
+                              }
+                            }}
+                            className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-indigo-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Current Active Stage</label>
+                          <div className="w-full px-4 py-2.5 border border-indigo-100 bg-indigo-50/40 rounded-2xl flex items-center justify-between text-xs font-bold text-indigo-900">
+                            <span>Stage {formCurrentRound} of {formRounds.length}</span>
+                            <span className="text-[10px] bg-indigo-600 text-white font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
+                              In Progress
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* List of Configurable Rounds */}
+                      <div className="space-y-3 pt-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Configure Round Stages</span>
+                          <span className="text-[10px] font-bold text-indigo-600">{formRounds.length} Stage{formRounds.length > 1 ? "s" : ""} Defined</span>
+                        </div>
+
+                        <div className="space-y-3">
+                          {formRounds.map((round, idx) => (
+                            <div
+                              key={idx}
+                              className={`p-4 border rounded-2xl space-y-3 transition-all ${
+                                idx + 1 === formCurrentRound
+                                  ? "border-indigo-200 bg-indigo-50/25 ring-2 ring-indigo-500/10 shadow-xs"
+                                  : "border-slate-100 bg-slate-50/20"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-6 h-6 rounded-full flex items-center justify-center font-black text-xs ${
+                                    idx + 1 === formCurrentRound
+                                      ? "bg-indigo-600 text-white shadow-sm"
+                                      : idx + 1 < formCurrentRound
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-slate-200 text-slate-600"
+                                  }`}>
+                                    {idx + 1}
+                                  </span>
+                                  <span className="text-xs font-black text-slate-800">
+                                    Round {idx + 1}
+                                  </span>
+                                  {idx + 1 === formCurrentRound && (
+                                    <span className="text-[9px] font-extrabold bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                      Current Active Round
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={round.status}
+                                    onChange={(e) => {
+                                      const newStatus = e.target.value as "Active" | "Upcoming" | "Completed";
+                                      setFormRounds(prev => prev.map((r, i) => i === idx ? { ...r, status: newStatus } : r));
+                                      if (newStatus === "Active") setFormCurrentRound(idx + 1);
+                                    }}
+                                    className={`text-[11px] font-bold px-2.5 py-1 rounded-xl border focus:outline-none cursor-pointer ${
+                                      round.status === "Active"
+                                        ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-extrabold"
+                                        : round.status === "Completed"
+                                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                        : "bg-slate-100 border-slate-200 text-slate-600"
+                                    }`}
+                                  >
+                                    <option value="Active">Active</option>
+                                    <option value="Upcoming">Upcoming</option>
+                                    <option value="Completed">Completed</option>
+                                  </select>
+
+                                  {formRounds.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setFormRounds(prev => prev.filter((_, i) => i !== idx));
+                                        if (formCurrentRound > formRounds.length - 1) {
+                                          setFormCurrentRound(Math.max(1, formRounds.length - 1));
+                                        }
+                                      }}
+                                      className="text-red-500 hover:text-red-700 font-bold text-[10px] hover:bg-red-50 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div className="md:col-span-2">
+                                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Round Title / Stage Name</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Round 1: Screening & Idea Submission"
+                                    value={round.name}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormRounds(prev => prev.map((r, i) => i === idx ? { ...r, name: val } : r));
+                                    }}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 font-bold text-xs text-slate-800 bg-white"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Stage Type</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Screening, Quiz, Hackathon, Finals"
+                                    value={round.type}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormRounds(prev => prev.map((r, i) => i === idx ? { ...r, type: val } : r));
+                                    }}
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 font-medium text-xs text-slate-800 bg-white"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Round Description & Deliverables</label>
+                                <input
+                                  type="text"
+                                  placeholder="Explain what participants need to deliver or accomplish in this round..."
+                                  value={round.description}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setFormRounds(prev => prev.map((r, i) => i === idx ? { ...r, description: val } : r));
+                                  }}
+                                  className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 font-medium text-xs text-slate-800 bg-white"
+                                />
+                              </div>
+
+                              {/* Round Schedule & Dates */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-1">
+                                <div>
+                                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                    Round Start Date
+                                  </label>
+                                  <DatePicker
+                                    value={round.startDate || ""}
+                                    onChange={(val) => {
+                                      setFormRounds(prev => prev.map((r, i) => i === idx ? { ...r, startDate: val } : r));
+                                    }}
+                                    placeholder="Start date"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                    Round End Date
+                                  </label>
+                                  <DatePicker
+                                    value={round.endDate || ""}
+                                    onChange={(val) => {
+                                      setFormRounds(prev => prev.map((r, i) => i === idx ? { ...r, endDate: val } : r));
+                                    }}
+                                    placeholder="End date"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                    Start Time
+                                  </label>
+                                  <TimePicker
+                                    value={round.startTime || ""}
+                                    onChange={(val) => {
+                                      setFormRounds(prev => prev.map((r, i) => i === idx ? { ...r, startTime: val } : r));
+                                    }}
+                                    placeholder="09:00 AM"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                    End Time
+                                  </label>
+                                  <TimePicker
+                                    value={round.endTime || ""}
+                                    onChange={(val) => {
+                                      setFormRounds(prev => prev.map((r, i) => i === idx ? { ...r, endTime: val } : r));
+                                    }}
+                                    placeholder="05:00 PM"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newNum = formRounds.length + 1;
+                            setFormRounds(prev => [
+                              ...prev,
+                              {
+                                roundNumber: newNum,
+                                name: `Round ${newNum}: Stage Evaluation`,
+                                type: "Evaluation",
+                                description: `Evaluation and judging criteria for Round ${newNum}.`,
+                                startDate: "",
+                                endDate: "",
+                                startTime: "",
+                                endTime: "",
+                                status: "Upcoming"
+                              }
+                            ]);
+                            setFormTotalRounds(newNum);
+                          }}
+                          className="w-full py-2.5 border-2 border-dashed border-indigo-200 hover:border-indigo-500 hover:bg-indigo-50/50 rounded-2xl text-indigo-600 font-bold text-xs flex items-center justify-center gap-2 mt-2 transition-all cursor-pointer"
+                        >
+                          <Plus className="h-4 w-4" /> Add Next Round
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* WhatsApp Integration Card */}
                   <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
@@ -2905,6 +3689,32 @@ const EventManagementPage: React.FC = () => {
                   </p>
 
                   <div className="space-y-3 pt-1">
+                    {/* Toggle: Allow Registrations */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5 text-left pr-3">
+                        <div className="flex items-center gap-1.5">
+                          <UserPlus className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">Allow Registrations</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                          Enable or disable public and team registrations for this event
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormAllowRegistrations(!formAllowRegistrations)}
+                        className={`w-10 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 cursor-pointer ${
+                          formAllowRegistrations ? "bg-[#2563EB]" : "bg-slate-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                            formAllowRegistrations ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
                     {/* Toggle 1: Participant Portal Login Access */}
                     <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
                       <div className="space-y-0.5 text-left pr-3">
@@ -3004,6 +3814,32 @@ const EventManagementPage: React.FC = () => {
                         <div
                           className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
                             formAllowProblemStatements ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Toggle: Round Management */}
+                    <div className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                      <div className="space-y-0.5 text-left pr-3">
+                        <div className="flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span className="text-xs font-bold text-slate-800">Round Management</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium block leading-tight">
+                          Enable multi-round stages, qualifier tracking & stage progression
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormAllowRoundManagement(!formAllowRoundManagement)}
+                        className={`w-10 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 cursor-pointer ${
+                          formAllowRoundManagement ? "bg-[#2563EB]" : "bg-slate-200"
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${
+                            formAllowRoundManagement ? "translate-x-5" : "translate-x-0"
                           }`}
                         />
                       </button>
@@ -3332,8 +4168,8 @@ const EventManagementPage: React.FC = () => {
             {/* 🌟 HERO BANNER HEADER */}
             <div className="relative bg-gradient-to-r from-[#1E3A8A] via-[#2563EB] to-[#1D4ED8] text-white p-6 sm:p-8 shrink-0 overflow-hidden shadow-md">
               {/* Background Glow Blobs */}
-              <div className="absolute top-0 right-1/4 w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
-              <div className="absolute -bottom-10 left-10 w-72 h-72 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="absolute top-0 right-1/4 w-96 h-96 bg-[radial-gradient(circle,rgba(255,255,255,0.12)_0%,transparent_70%)] pointer-events-none transform-gpu" />
+              <div className="absolute -bottom-10 left-10 w-72 h-72 bg-[radial-gradient(circle,rgba(129,140,248,0.2)_0%,transparent_70%)] pointer-events-none transform-gpu" />
 
               <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
 
@@ -3998,8 +4834,8 @@ const EventManagementPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Full Page Main Body */}
-          <div className="w-full max-w-[1500px] mx-auto p-4 sm:p-8 flex-1 overflow-y-auto space-y-6">
+          {/* Full Page Main Body with Hardware Accelerated Smooth Kinetic Scrolling */}
+          <div className="w-full max-w-[1500px] mx-auto p-4 sm:p-8 flex-1 overflow-y-auto space-y-6 transform-gpu will-change-scroll">
 
             {/* Feedback notification toast if login access is provisioned */}
             {loginAccessSuccessMsg && (
@@ -4033,152 +4869,203 @@ const EventManagementPage: React.FC = () => {
               </div>
             )}
 
-            {/* TOP 3 ACTION CARDS SECTION (Give Problem Statements, Submissions, Quiz Management) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {/* Feedback notification toast if round management is updated */}
+            {roundsSuccessMsg && (
+              <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-bold flex items-center justify-between shadow-sm animate-in slide-in-from-top-2">
+                <div className="flex items-center gap-2.5">
+                  <Layers className="h-5 w-5 text-indigo-600 shrink-0" />
+                  <span>{roundsSuccessMsg}</span>
+                </div>
+                <button
+                  onClick={() => setRoundsSuccessMsg(null)}
+                  className="text-indigo-700 hover:text-indigo-900 font-extrabold text-xs cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
+            {/* TOP 4 ACTION CARDS SECTION (Give Problem Statements, Submissions, Quiz Management, Round Management) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
 
               {/* CARD 1: Give Problem Statements */}
               <div
                 onClick={handleOpenMultiProblemModal}
-                className="bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 p-6 sm:p-7 rounded-3xl text-white shadow-xl relative overflow-hidden border border-blue-500/30 cursor-pointer hover:border-blue-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-blue-500/10"
+                className="bg-gradient-to-br from-white via-blue-50/70 to-indigo-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-blue-500/5 relative overflow-hidden border border-blue-200/80 hover:border-blue-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/15 transform-gpu"
               >
-                <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_70%)] pointer-events-none" />
 
-                <div className="relative z-10 space-y-4 text-left">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-blue-500/25 text-blue-200 border border-blue-400/40 backdrop-blur-md">
-                      HACKATHON TRACK & PROBLEM STATEMENTS
+                <div className="relative z-10 space-y-3.5 text-left">
+                  {/* Top Tags */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-100/80 text-blue-700 border border-blue-200/80">
+                      PROBLEM STATEMENTS
                     </span>
-                    {(eventAccessEvent?.problemStatements?.length > 0 || eventAccessEvent?.problemStatementTitle) && (
-                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        {eventAccessEvent?.problemStatements?.length || 1} PUBLISHED
+                    {(eventAccessEvent?.problemStatements?.length > 0 || eventAccessEvent?.problemStatementTitle) ? (
+                      <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        {eventAccessEvent?.problemStatements?.length || 1} ACTIVE
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                        READY TO ADD
                       </span>
                     )}
                   </div>
 
-                  <div className="space-y-2">
-                    <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
-                      <Sparkles className="w-6 h-6 text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
-                      <span>Give Problem Statements</span>
+                  {/* Title & Icon */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Sparkles className="w-5 h-5 text-white" />
+                    </div>
+                    <h3 className="text-lg font-black tracking-tight text-slate-900 line-clamp-1">
+                      Problem Statements
                     </h3>
-                    <p className="text-xs sm:text-sm text-blue-100/90 font-medium leading-relaxed line-clamp-2">
-                      {eventAccessEvent?.problemStatements?.length > 0
-                        ? `Active: ${eventAccessEvent.problemStatements.map((p: any) => p.code || p.title).join(", ")}`
-                        : eventAccessEvent?.problemStatementTitle
-                          ? `Active: ${eventAccessEvent.problemStatementTitle}`
-                          : "Create, manage, and broadcast multiple hackathon problem statements to participant portals."
-                      }
-                    </p>
                   </div>
+
+                  {/* Description */}
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed line-clamp-2 min-h-[34px]">
+                    {eventAccessEvent?.problemStatements?.length > 0
+                      ? `Active: ${eventAccessEvent.problemStatements.map((p: any) => p.code || p.title).slice(0, 2).join(", ")}${eventAccessEvent.problemStatements.length > 2 ? "..." : ""}`
+                      : eventAccessEvent?.problemStatementTitle
+                        ? `Active: ${eventAccessEvent.problemStatementTitle}`
+                        : "Create, manage, and broadcast challenge tracks & problem statements."}
+                  </p>
                 </div>
 
-                <div className="relative z-10 pt-5 flex items-center justify-end">
+                {/* Bottom Section: Stat Pills + Full Width Button */}
+                <div className="relative z-10 pt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-blue-700 border border-blue-200 shadow-xs text-[11px] font-black text-center truncate">
+                      Active: {eventAccessEvent?.problemStatements?.length || (eventAccessEvent?.problemStatementTitle ? 1 : 0)}
+                    </div>
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-slate-700 border border-slate-200 shadow-xs text-[11px] font-black text-center truncate">
+                      {eventAccessEvent?.problemStatementTrack || "Multi-Track"}
+                    </div>
+                  </div>
+
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleOpenMultiProblemModal();
                     }}
-                    className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30"
+                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30"
                   >
-                    <FileCode className="w-4 h-4" />
-                    <span>{eventAccessEvent?.problemStatementTitle || eventAccessEvent?.problemStatements?.length ? "Edit / Manage Problem Statements" : "+ Give Problem Statements"}</span>
+                    <FileCode className="w-4 h-4 shrink-0" />
+                    <span className="truncate">
+                      {eventAccessEvent?.problemStatementTitle || eventAccessEvent?.problemStatements?.length
+                        ? "Manage Statements"
+                        : "+ Give Problem Statements"}
+                    </span>
                   </button>
                 </div>
               </div>
 
-              {/* CARD 2: Submissions (Beside Give Problem Statements) */}
+              {/* CARD 2: Submissions */}
               <div
-                onClick={() => setIsSubmissionsModalOpen(true)}
-                className="bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 p-6 sm:p-7 rounded-3xl text-white shadow-xl relative overflow-hidden border border-indigo-500/30 cursor-pointer hover:border-indigo-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-indigo-500/10"
+                onClick={() => navigate(`/faculty/registrations?eventId=${eventAccessEvent?.id || ""}`)}
+                className="bg-gradient-to-br from-white via-sky-50/70 to-blue-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-sky-500/5 relative overflow-hidden border border-sky-200/80 hover:border-sky-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-sky-500/15 transform-gpu"
               >
-                <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.18),transparent_70%)] pointer-events-none" />
 
-                <div className="relative z-10 space-y-4 text-left">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 backdrop-blur-md">
-                      LIVE SUBMISSIONS MONITOR
+                <div className="relative z-10 space-y-3.5 text-left">
+                  {/* Top Tags */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-sky-100/80 text-sky-700 border border-sky-200/80">
+                      SUBMISSIONS MONITOR
                     </span>
-                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length} / {eventAccessRegistrations.length} SUBMITTED
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length} / {eventAccessRegistrations.length}
                     </span>
                   </div>
 
-                  <div className="space-y-2">
-                    <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
-                      <FileText className="w-6 h-6 text-indigo-400 group-hover:scale-110 transition-transform shrink-0" />
-                      <span>Submissions</span>
+                  {/* Title & Icon */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <div className="w-10 h-10 rounded-2xl bg-sky-600 text-white shadow-md shadow-sky-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FileText className="w-5 h-5 text-white" />
+                    </div>
+                    <h3 className="text-lg font-black tracking-tight text-slate-900 line-clamp-1">
+                      Submissions
                     </h3>
-                    <p className="text-xs sm:text-sm text-indigo-100/90 font-medium leading-relaxed line-clamp-2">
-                      Monitor team progress, selected problem statements, SRS specifications, PPT pitch decks, and repo links.
-                    </p>
                   </div>
+
+                  {/* Description */}
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed line-clamp-2 min-h-[34px]">
+                    Monitor team deliverables, SRS specifications, PPT pitch decks, and GitHub repos.
+                  </p>
                 </div>
 
-                <div className="relative z-10 pt-5 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-                  {/* Quick Stat Pills */}
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[11px] font-black">
+                {/* Bottom Section: Stat Pills + Full Width Button */}
+                <div className="relative z-10 pt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-emerald-700 border border-emerald-200 shadow-xs text-[11px] font-black text-center truncate">
                       Submitted: {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length}
-                    </span>
-                    <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[11px] font-black">
+                    </div>
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-amber-700 border border-amber-200 shadow-xs text-[11px] font-black text-center truncate">
                       Drafts: {eventAccessRegistrations.filter(r => r.submissionStatus === "Draft" || (r.problemStatement && r.submissionStatus !== "Submitted")).length}
-                    </span>
+                    </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setIsSubmissionsModalOpen(true);
+                      navigate(`/faculty/registrations?eventId=${eventAccessEvent?.id || ""}`);
                     }}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2 cursor-pointer border border-indigo-400/30 shrink-0"
+                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-sky-500/25 flex items-center justify-center gap-2 cursor-pointer border border-sky-400/30"
                   >
-                    <Eye className="w-4 h-4" />
-                    <span>Monitor Submissions</span>
+                    <Eye className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Monitor Submissions</span>
                   </button>
                 </div>
               </div>
 
-              {/* CARD 3: Quiz Management (Start and Manage Card) */}
+              {/* CARD 3: Quiz Management */}
               <div
                 onClick={() => navigate(`/faculty/quizzes?eventId=${eventAccessEvent?.id || ""}`)}
-                className="bg-gradient-to-br from-slate-900 via-purple-950 to-pink-950 p-6 sm:p-7 rounded-3xl text-white shadow-xl relative overflow-hidden border border-purple-500/30 cursor-pointer hover:border-purple-400/70 transition-all duration-300 group flex flex-col justify-between hover:shadow-2xl hover:shadow-purple-500/10"
+                className="bg-gradient-to-br from-white via-indigo-50/70 to-blue-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-indigo-500/5 relative overflow-hidden border border-indigo-200/80 hover:border-indigo-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/15 transform-gpu"
               >
-                <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-fuchsia-500/15 rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.18),transparent_70%)] pointer-events-none" />
 
-                <div className="relative z-10 space-y-4 text-left">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-purple-500/25 text-purple-200 border border-purple-400/40 backdrop-blur-md">
-                      EVENT QUIZ & TEST ENGINE
+                <div className="relative z-10 space-y-3.5 text-left">
+                  {/* Top Tags */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-100/80 text-indigo-700 border border-indigo-200/80">
+                      QUIZ & TEST ENGINE
                     </span>
-                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/25 text-emerald-200 border border-emerald-400/40 flex items-center gap-1.5 backdrop-blur-md">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      LIVE TEST READY
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      LIVE READY
                     </span>
                   </div>
 
-                  <div className="space-y-2">
-                    <h3 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
-                      <HelpCircle className="w-6 h-6 text-fuchsia-400 group-hover:scale-110 transition-transform shrink-0" />
-                      <span>Quiz Management</span>
+                  {/* Title & Icon */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <HelpCircle className="w-5 h-5 text-white" />
+                    </div>
+                    <h3 className="text-lg font-black tracking-tight text-slate-900 line-clamp-1">
+                      Quiz Management
                     </h3>
-                    <p className="text-xs sm:text-sm text-purple-100/90 font-medium leading-relaxed line-clamp-2">
-                      Start interactive test sessions, configure AI/custom questions, set countdown timer, and view live participant rankings.
-                    </p>
                   </div>
+
+                  {/* Description */}
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed line-clamp-2 min-h-[34px]">
+                    Start interactive tests, configure AI/custom questions, and view live leaderboards.
+                  </p>
                 </div>
 
-                <div className="relative z-10 pt-5 flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-                  {/* Quick Stat Pills */}
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-1 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-400/30 text-[11px] font-black">
+                {/* Bottom Section: Stat Pills + Full Width Button */}
+                <div className="relative z-10 pt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-indigo-700 border border-indigo-200 shadow-xs text-[11px] font-black text-center truncate">
                       AI Questions
-                    </span>
-                    <span className="px-2.5 py-1 rounded-xl bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30 text-[11px] font-black">
+                    </div>
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-blue-700 border border-blue-200 shadow-xs text-[11px] font-black text-center truncate">
                       Live Monitor
-                    </span>
+                    </div>
                   </div>
 
                   <button
@@ -4187,10 +5074,71 @@ const EventManagementPage: React.FC = () => {
                       e.stopPropagation();
                       navigate(`/faculty/quizzes?eventId=${eventAccessEvent?.id || ""}`);
                     }}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 active:scale-95 text-white font-black text-xs transition-all shadow-lg shadow-purple-500/30 flex items-center justify-center gap-2 cursor-pointer border border-purple-400/30 shrink-0"
+                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-700 hover:from-indigo-500 hover:to-blue-600 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 cursor-pointer border border-indigo-400/30"
                   >
-                    <HelpCircle className="w-4 h-4" />
-                    <span>Start & Manage Quiz</span>
+                    <HelpCircle className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Start & Manage Quiz</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD 4: Round Promotion & Stages */}
+              <div
+                onClick={handleOpenEventRoundsModal}
+                className="bg-gradient-to-br from-white via-cyan-50/70 to-blue-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-cyan-500/5 relative overflow-hidden border border-cyan-200/80 hover:border-cyan-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-cyan-500/15 transform-gpu"
+              >
+                <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(6,182,212,0.18),transparent_70%)] pointer-events-none" />
+
+                <div className="relative z-10 space-y-3.5 text-left">
+                  {/* Top Tags */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-cyan-100/80 text-cyan-700 border border-cyan-200/80 flex items-center gap-1">
+                      <Trophy className="w-3 h-3 text-amber-500" />
+                      ROUND PROMOTION ENGINE
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      STAGE {eventAccessEvent?.currentRound || 1} ACTIVE
+                    </span>
+                  </div>
+
+                  {/* Title & Icon */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white shadow-md shadow-cyan-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Trophy className="w-5 h-5 text-white" />
+                    </div>
+                    <h3 className="text-lg font-black tracking-tight text-slate-900 line-clamp-1">
+                      Round Promotion & Stages
+                    </h3>
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed line-clamp-2 min-h-[34px]">
+                    Promote participants to next rounds via Quiz & Submission scores, and configure stage deadlines.
+                  </p>
+                </div>
+
+                {/* Bottom Section: Stat Pills + Full Width Button */}
+                <div className="relative z-10 pt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-cyan-700 border border-cyan-200 shadow-xs text-[11px] font-black text-center truncate">
+                      Stage {eventAccessEvent?.currentRound || 1} Active
+                    </div>
+                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-emerald-700 border border-emerald-200 shadow-xs text-[11px] font-black text-center truncate">
+                      Promoted: {eventAccessRegistrations.filter(r => (r.currentRound || 1) > 1 || r.roundStatus === "Qualified").length} Teams
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenEventRoundsModal();
+                    }}
+                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer border border-cyan-400/30"
+                  >
+                    <Trophy className="w-4 h-4 shrink-0 text-amber-300" />
+                    <span className="truncate">Promote Participants & Stages</span>
                   </button>
                 </div>
               </div>
@@ -4855,6 +5803,1161 @@ const EventManagementPage: React.FC = () => {
                   <span>Save & Publish All ({problemList.length}) Statements</span>
                 </button>
               </div>
+            </div>
+
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 🏆 LIVE ROUND MANAGEMENT & PARTICIPANT PROMOTION MODAL */}
+      {isEventRoundsModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200 text-slate-900">
+          <div className="bg-slate-50 rounded-3xl w-full max-w-6xl my-auto shadow-2xl border border-slate-200/80 overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200">
+            
+            {/* Modal Header */}
+            <div className="w-full bg-[#1E3A8A] text-white px-6 sm:px-8 py-5 flex items-center justify-between shadow-md shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20 shadow-inner">
+                  <Trophy className="w-6 h-6 text-amber-300" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-cyan-500/30 text-cyan-200 border border-cyan-400/30">
+                      PARTICIPANT PROMOTION & ROUNDS
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/30 text-emerald-200 border border-emerald-400/30">
+                      STAGE {liveCurrentRound} OF {liveRoundsList.length} ACTIVE
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-black text-white mt-0.5 tracking-tight">
+                    Competition Rounds & Participant Promotion Engine
+                  </h3>
+                  <p className="text-xs text-blue-200 font-medium truncate max-w-lg">
+                    {eventAccessEvent?.title || "Active Event"} • {eventAccessRegistrations.length} Registered Team(s)
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsEventRoundsModalOpen(false)}
+                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Tab Switcher */}
+            <div className="bg-white border-b border-slate-200 px-6 sm:px-8 py-3 flex items-center justify-between gap-4 shrink-0 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRoundModalTab("promotion")}
+                  className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                    roundModalTab === "promotion"
+                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  <Trophy className="w-4 h-4 text-amber-300" />
+                  <span>Participant Promotion Engine</span>
+                  {loadingPromotionMetrics ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  ) : (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      roundModalTab === "promotion" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                    }`}>
+                      {promotionRoster.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRoundModalTab("stages")}
+                  className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                    roundModalTab === "stages"
+                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  <Layers className="w-4 h-4 text-cyan-300" />
+                  <span>Round Stages & Schedule</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    roundModalTab === "stages" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                  }`}>
+                    {liveRoundsList.length} Stages
+                  </span>
+                </button>
+              </div>
+
+              {roundsSuccessMsg && (
+                <div className="px-4 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span>{roundsSuccessMsg}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 sm:p-8 overflow-y-auto flex-1 space-y-6">
+
+              {/* ========================================================================= */}
+              {/* TAB 1: 🏆 PARTICIPANT PROMOTION ENGINE */}
+              {/* ========================================================================= */}
+              {roundModalTab === "promotion" && (
+                <div className="space-y-6">
+                  
+                  {/* STEP 1: Stage Transition Selector Card */}
+                  <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 rounded-3xl border border-indigo-500/30 shadow-lg space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300 block">
+                          STEP 1: SELECT ROUND ADVANCEMENT PATHWAY
+                        </span>
+                        <h4 className="text-lg font-black text-white mt-0.5 tracking-tight flex items-center gap-2">
+                          <span>Promote Qualified Teams</span>
+                          <span className="text-indigo-400">Round {promoteFromRound} ➔ Round {promoteToRound}</span>
+                        </h4>
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-white/10 p-2 rounded-2xl border border-white/15">
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-indigo-200 px-1 mb-0.5">From Round</label>
+                          <select
+                            value={promoteFromRound}
+                            onChange={(e) => {
+                              const fromNum = Number(e.target.value);
+                              setPromoteFromRound(fromNum);
+                              if (promoteToRound <= fromNum) {
+                                setPromoteToRound(Math.min(liveRoundsList.length, fromNum + 1));
+                              }
+                            }}
+                            className="px-3 py-1.5 bg-slate-900 border border-indigo-400/40 rounded-xl text-xs font-black text-white focus:outline-none cursor-pointer"
+                          >
+                            {liveRoundsList.map((r) => (
+                              <option key={r.roundNumber} value={r.roundNumber}>
+                                Round {r.roundNumber}: {getCleanRoundTitle(r.name, r.roundNumber)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="text-indigo-300 font-black text-base pt-3">➔</div>
+
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-indigo-200 px-1 mb-0.5">Target Next Round</label>
+                          <select
+                            value={promoteToRound}
+                            onChange={(e) => setPromoteToRound(Number(e.target.value))}
+                            className="px-3 py-1.5 bg-slate-900 border border-emerald-400/40 rounded-xl text-xs font-black text-emerald-300 focus:outline-none cursor-pointer"
+                          >
+                            {liveRoundsList.map((r) => (
+                              <option key={r.roundNumber} value={r.roundNumber} disabled={r.roundNumber <= promoteFromRound}>
+                                Round {r.roundNumber}: {getCleanRoundTitle(r.name, r.roundNumber)} {r.roundNumber <= promoteFromRound ? "(Source)" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Counts Bar */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs">
+                      <div className="p-3 bg-white/5 rounded-2xl border border-white/10 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-300 flex items-center justify-center font-black text-xs">
+                          {promotionRoster.filter(t => t.currentTeamRound === promoteFromRound && !t.isEliminated).length}
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-300 uppercase block">Active In Round {promoteFromRound}</span>
+                          <span className="font-extrabold text-white">Eligible for Assessment</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-white/5 rounded-2xl border border-white/10 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-black text-xs">
+                          {selectedPromoteRegIds.length}
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-300 uppercase block">Selected to Promote</span>
+                          <span className="font-extrabold text-emerald-300">Ready for Round {promoteToRound}</span>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-white/5 rounded-2xl border border-white/10 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center font-black text-xs">
+                          {promotionRoster.filter(t => t.currentTeamRound >= promoteToRound && t.roundStatus === "Qualified").length}
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-300 uppercase block">Already Qualified</span>
+                          <span className="font-extrabold text-purple-300">In Round {promoteToRound}+</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* STEP 2: Promotion Criteria & Evaluation Source Selector */}
+                  <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block">
+                        STEP 2: SELECT PROMOTION CRITERIA & SCORING SOURCE
+                      </span>
+                      <h4 className="text-base font-black text-slate-900 tracking-tight mt-0.5">
+                        Choose How Participants are Shortlisted
+                      </h4>
+                    </div>
+
+                    {/* Mode Buttons */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                      {/* Option 1: Quiz Score */}
+                      <button
+                        type="button"
+                        onClick={() => setPromotionMode("quiz")}
+                        className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
+                          promotionMode === "quiz"
+                            ? "bg-purple-50/80 border-purple-500 shadow-md ring-4 ring-purple-500/10"
+                            : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black">
+                            <HelpCircle className="w-5 h-5" />
+                          </div>
+                          {promotionMode === "quiz" && (
+                            <span className="px-2 py-0.5 bg-purple-600 text-white rounded-full text-[9px] font-black uppercase tracking-wider">
+                              ACTIVE MODE
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <h5 className="font-black text-sm text-slate-900">1. Online Quiz Score</h5>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                            Filter by test cutoff marks, percentage, or Top N quiz scorers.
+                          </p>
+                        </div>
+                      </button>
+
+                      {/* Option 2: Jury Score */}
+                      <button
+                        type="button"
+                        onClick={() => setPromotionMode("jury")}
+                        className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
+                          promotionMode === "jury"
+                            ? "bg-indigo-50/80 border-indigo-500 shadow-md ring-4 ring-indigo-500/10"
+                            : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black">
+                            <Award className="w-5 h-5" />
+                          </div>
+                          {promotionMode === "jury" && (
+                            <span className="px-2 py-0.5 bg-indigo-600 text-white rounded-full text-[9px] font-black uppercase tracking-wider">
+                              ACTIVE MODE
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <h5 className="font-black text-sm text-slate-900">2. Jury Submission Score</h5>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                            Filter by evaluator scorecards out of 100 or Top N ranked projects.
+                          </p>
+                        </div>
+                      </button>
+
+                      {/* Option 3: Manual Selection */}
+                      <button
+                        type="button"
+                        onClick={() => setPromotionMode("manual")}
+                        className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
+                          promotionMode === "manual"
+                            ? "bg-blue-50/80 border-blue-500 shadow-md ring-4 ring-blue-500/10"
+                            : "bg-slate-50 border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-black">
+                            <CheckSquare className="w-5 h-5" />
+                          </div>
+                          {promotionMode === "manual" && (
+                            <span className="px-2 py-0.5 bg-blue-600 text-white rounded-full text-[9px] font-black uppercase tracking-wider">
+                              ACTIVE MODE
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <h5 className="font-black text-sm text-slate-900">3. Custom / Manual Check</h5>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                            Select individual teams manually or use quick bulk filters.
+                          </p>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Mode Specific Controls Form */}
+                    {promotionMode === "quiz" && (
+                      <div className="bg-purple-50/60 p-4 sm:p-5 rounded-2xl border border-purple-200 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="space-y-1 sm:w-1/3">
+                            <label className="block text-[10px] font-black uppercase text-purple-900 tracking-wider">
+                              Select Target Assessment Quiz
+                            </label>
+                            <select
+                              value={selectedPromotionQuizId}
+                              onChange={(e) => setSelectedPromotionQuizId(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-purple-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                            >
+                              <option value="all">All Event Quizzes Combined</option>
+                              {eventQuizzesList.map((q) => (
+                                <option key={q.id} value={q.id}>
+                                  {q.title} ({q.totalMarks || 50} Marks)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1 sm:w-1/3">
+                            <label className="block text-[10px] font-black uppercase text-purple-900 tracking-wider">
+                              Qualification Rule
+                            </label>
+                            <select
+                              value={quizCutoffType}
+                              onChange={(e) => setQuizCutoffType(e.target.value as any)}
+                              className="w-full px-3 py-2 bg-white border border-purple-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                            >
+                              <option value="score">Minimum Cutoff Marks (≥ Score)</option>
+                              <option value="percentage">Minimum Percentage (≥ %)</option>
+                              <option value="topN">Top N Ranked Scorers</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1 sm:w-1/3">
+                            <label className="block text-[10px] font-black uppercase text-purple-900 tracking-wider">
+                              {quizCutoffType === "score" ? "Cutoff Marks (Score ≥)" : quizCutoffType === "percentage" ? "Cutoff Percentage (≥ %)" : "Top N Count (Ranks 1 to N)"}
+                            </label>
+                            {quizCutoffType === "score" ? (
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={quizCutoffScore}
+                                onChange={(e) => setQuizCutoffScore(Number(e.target.value))}
+                                className="w-full px-3 py-2 bg-white border border-purple-300 rounded-xl text-xs font-black text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                placeholder="e.g. 25"
+                              />
+                            ) : quizCutoffType === "percentage" ? (
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={quizCutoffPercentage}
+                                onChange={(e) => setQuizCutoffPercentage(Number(e.target.value))}
+                                className="w-full px-3 py-2 bg-white border border-purple-300 rounded-xl text-xs font-black text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                placeholder="e.g. 60"
+                              />
+                            ) : (
+                              <input
+                                type="number"
+                                min={1}
+                                max={promotionRoster.length || 100}
+                                value={quizTopNCount}
+                                onChange={(e) => setQuizTopNCount(Number(e.target.value))}
+                                className="w-full px-3 py-2 bg-white border border-purple-300 rounded-xl text-xs font-black text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                placeholder="e.g. 15"
+                              />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-purple-200/60 text-xs font-bold text-purple-900">
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles className="w-4 h-4 text-purple-600" />
+                            <span>Auto-selected {eligibleTeamIds.length} team(s) meeting Quiz threshold.</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPromoteRegIds(eligibleTeamIds)}
+                            className="px-3 py-1 bg-purple-600 text-white rounded-xl text-xs font-black hover:bg-purple-700 cursor-pointer transition-all shadow-xs"
+                          >
+                            Apply Quiz Auto-Select
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {promotionMode === "jury" && (
+                      <div className="bg-indigo-50/60 p-4 sm:p-5 rounded-2xl border border-indigo-200 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="space-y-1 sm:w-1/2">
+                            <label className="block text-[10px] font-black uppercase text-indigo-900 tracking-wider">
+                              Jury Scorecard Qualification Rule
+                            </label>
+                            <select
+                              value={juryCutoffType}
+                              onChange={(e) => setJuryCutoffType(e.target.value as any)}
+                              className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                            >
+                              <option value="score">Minimum Evaluation Total Marks (Score ≥ X / 100)</option>
+                              <option value="topN">Top N Ranked Evaluated Projects</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1 sm:w-1/2">
+                            <label className="block text-[10px] font-black uppercase text-indigo-900 tracking-wider">
+                              {juryCutoffType === "score" ? "Cutoff Score Out of 100 (≥)" : "Top N Finalists Count"}
+                            </label>
+                            {juryCutoffType === "score" ? (
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={juryCutoffScore}
+                                onChange={(e) => setJuryCutoffScore(Number(e.target.value))}
+                                className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-xl text-xs font-black text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                placeholder="e.g. 70"
+                              />
+                            ) : (
+                              <input
+                                type="number"
+                                min={1}
+                                max={promotionRoster.length || 100}
+                                value={juryTopNCount}
+                                onChange={(e) => setJuryTopNCount(Number(e.target.value))}
+                                className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-xl text-xs font-black text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                placeholder="e.g. 10"
+                              />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-indigo-200/60 text-xs font-bold text-indigo-900">
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles className="w-4 h-4 text-indigo-600" />
+                            <span>Auto-selected {eligibleTeamIds.length} team(s) evaluated by Jury.</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPromoteRegIds(eligibleTeamIds)}
+                            className="px-3 py-1 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 cursor-pointer transition-all shadow-xs"
+                          >
+                            Apply Jury Auto-Select
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {promotionMode === "manual" && (
+                      <div className="bg-blue-50/60 p-4 rounded-2xl border border-blue-200 flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-blue-900">
+                        <span className="flex items-center gap-1.5">
+                          <CheckSquare className="w-4 h-4 text-blue-600" />
+                          <span>Custom selection: check or uncheck individual teams in the table below.</span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPromoteRegIds(promotionRoster.filter(t => t.currentTeamRound === promoteFromRound).map(t => t.id))}
+                            className="px-3 py-1 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 cursor-pointer"
+                          >
+                            Select All In Round {promoteFromRound}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPromoteRegIds([])}
+                            className="px-3 py-1 bg-white border border-slate-300 text-slate-700 rounded-xl text-xs font-black hover:bg-slate-100 cursor-pointer"
+                          >
+                            Clear Selection
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* STEP 3: Roster Search & Filter Matrix */}
+                  <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden space-y-4 p-5 sm:p-6">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                      {/* Search */}
+                      <div className="relative w-full lg:w-80">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search team, student ID, email..."
+                          value={promotionSearchQuery}
+                          onChange={(e) => setPromotionSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      {/* Filter Tabs */}
+                      <div className="flex items-center gap-2 overflow-x-auto w-full lg:w-auto">
+                        {[
+                          { id: "all", label: "All Teams", count: promotionRoster.length },
+                          { id: "selected", label: "Selected", count: selectedPromoteRegIds.length },
+                          { id: "qualified", label: `In Round ${promoteToRound}+`, count: promotionRoster.filter(t => t.currentTeamRound >= promoteToRound).length },
+                          { id: "pending", label: `In Round ${promoteFromRound}`, count: promotionRoster.filter(t => t.currentTeamRound === promoteFromRound && !t.isEliminated).length },
+                          { id: "eliminated", label: "Eliminated", count: promotionRoster.filter(t => t.isEliminated).length }
+                        ].map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setPromotionStatusFilter(tab.id as any)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                              promotionStatusFilter === tab.id
+                                ? "bg-slate-900 text-white shadow-xs"
+                                : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            <span className="px-1.5 py-0.2 rounded-md bg-white/20 text-[10px]">
+                              {tab.count}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Export Shortlist Button */}
+                      <button
+                        type="button"
+                        onClick={handleExportShortlistCSV}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold rounded-2xl text-xs flex items-center gap-2 transition-all cursor-pointer border border-slate-200 shrink-0"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Export Shortlist CSV</span>
+                      </button>
+                    </div>
+
+                    {/* Matrix Table */}
+                    <div className="border border-slate-200/80 rounded-2xl overflow-hidden">
+                      <div className="overflow-x-auto">
+                        {(() => {
+                          const filteredRoster = promotionRoster.filter((team) => {
+                            const q = promotionSearchQuery.toLowerCase().trim();
+                            const matchQuery = !q ||
+                              (team.groupName || "").toLowerCase().includes(q) ||
+                              (team.teamLeadName || team.name || "").toLowerCase().includes(q) ||
+                              (team.teamLeadStudentId || team.studentId || "").toLowerCase().includes(q) ||
+                              (team.teamLeadEmail || team.email || "").toLowerCase().includes(q);
+
+                            if (!matchQuery) return false;
+
+                            if (promotionStatusFilter === "selected") return selectedPromoteRegIds.includes(team.id);
+                            if (promotionStatusFilter === "qualified") return team.currentTeamRound >= promoteToRound;
+                            if (promotionStatusFilter === "pending") return team.currentTeamRound === promoteFromRound && !team.isEliminated;
+                            if (promotionStatusFilter === "eliminated") return team.isEliminated;
+                            return true;
+                          });
+
+                          if (filteredRoster.length === 0) {
+                            return (
+                              <div className="py-16 text-center text-slate-400 space-y-2 bg-slate-50/50">
+                                <Users className="w-8 h-8 mx-auto text-slate-300" />
+                                <p className="text-xs font-bold text-slate-600">No teams match your filter or search query.</p>
+                              </div>
+                            );
+                          }
+
+                          const allFilteredSelected = filteredRoster.every((t) => selectedPromoteRegIds.includes(t.id));
+
+                          return (
+                            <table className="w-full text-left text-xs border-collapse min-w-[900px]">
+                              <thead>
+                                <tr className="bg-slate-900 text-white text-[11px] font-black uppercase tracking-wider">
+                                  <th className="py-4 px-4 w-12 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={allFilteredSelected && filteredRoster.length > 0}
+                                      onChange={() => {
+                                        if (allFilteredSelected) {
+                                          const filteredIds = new Set(filteredRoster.map(t => t.id));
+                                          setSelectedPromoteRegIds(prev => prev.filter(id => !filteredIds.has(id)));
+                                        } else {
+                                          const newIds = new Set([...selectedPromoteRegIds, ...filteredRoster.map(t => t.id)]);
+                                          setSelectedPromoteRegIds(Array.from(newIds));
+                                        }
+                                      }}
+                                      className="w-4 h-4 rounded text-blue-600 cursor-pointer"
+                                    />
+                                  </th>
+                                  <th className="py-4 px-3 w-12 text-center">#</th>
+                                  <th className="py-4 px-4">Team & Leader Details</th>
+                                  <th className="py-4 px-3 text-center">Deliverables</th>
+                                  <th className="py-4 px-3 text-center">Online Quiz</th>
+                                  <th className="py-4 px-3 text-center">Jury Score</th>
+                                  <th className="py-4 px-3 text-center">Stage & Status</th>
+                                  <th className="py-4 px-4 text-right">Quick Action</th>
+                                </tr>
+                              </thead>
+
+                              <tbody className="divide-y divide-slate-100 font-sans">
+                                {filteredRoster.map((team, idx) => {
+                                  const isSelected = selectedPromoteRegIds.includes(team.id);
+                                  const isGroup = team.groupName && team.groupName !== "Individual RSVP";
+                                  const displayTeamName = isGroup ? team.groupName : (team.teamLeadName || team.name || "Participant");
+                                  const isFinalSubmitted = team.submissionStatus === "Submitted" || !!team.submittedAt;
+
+                                  return (
+                                    <tr
+                                      key={team.id || idx}
+                                      className={`transition-colors ${
+                                        isSelected
+                                          ? "bg-indigo-50/50 hover:bg-indigo-50"
+                                          : team.isEliminated
+                                          ? "bg-slate-50/60 opacity-60 hover:opacity-100"
+                                          : "hover:bg-slate-50"
+                                      }`}
+                                    >
+                                      {/* Checkbox */}
+                                      <td className="py-4 px-4 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={() => {
+                                            if (isSelected) {
+                                              setSelectedPromoteRegIds(prev => prev.filter(id => id !== team.id));
+                                            } else {
+                                              setSelectedPromoteRegIds(prev => [...prev, team.id]);
+                                            }
+                                          }}
+                                          className="w-4 h-4 rounded text-blue-600 cursor-pointer"
+                                        />
+                                      </td>
+
+                                      {/* Rank */}
+                                      <td className="py-4 px-3 text-center font-mono font-bold text-slate-400 text-xs">
+                                        {idx + 1}
+                                      </td>
+
+                                      {/* Team Info */}
+                                      <td className="py-4 px-4">
+                                        <div className="flex items-center gap-3">
+                                          <div className={`w-9 h-9 rounded-2xl font-black text-xs flex items-center justify-center shrink-0 shadow-xs border ${
+                                            team.currentTeamRound >= promoteToRound
+                                              ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                              : "bg-indigo-100 text-indigo-700 border-indigo-200"
+                                          }`}>
+                                            {displayTeamName.charAt(0).toUpperCase()}
+                                          </div>
+                                          <div>
+                                            <span className="font-black text-slate-900 text-xs block truncate max-w-[200px]" title={displayTeamName}>
+                                              {displayTeamName}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
+                                              Lead: {team.teamLeadName || team.name} • {team.teamLeadStudentId || team.studentId || "ID: N/A"}
+                                            </span>
+                                            <span className="text-[10px] text-slate-500 font-medium truncate block max-w-[200px]">
+                                              {team.teamLeadEmail || team.email}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </td>
+
+                                      {/* Deliverables Status */}
+                                      <td className="py-4 px-3 text-center">
+                                        <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
+                                          isFinalSubmitted
+                                            ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                            : team.problemStatement || team.selectedProblemStatementId
+                                            ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                            : "bg-slate-100 text-slate-600 border border-slate-200"
+                                        }`}>
+                                          {isFinalSubmitted ? "✓ Submitted" : (team.problemStatement || team.selectedProblemStatementId) ? "• In Progress" : "Pending"}
+                                        </span>
+                                      </td>
+
+                                      {/* Quiz Score */}
+                                      <td className="py-4 px-3 text-center">
+                                        {team.quizScore !== null ? (
+                                          <span className="px-2.5 py-1 rounded-xl bg-purple-100 text-purple-900 border border-purple-200 text-[11px] font-black inline-flex items-center gap-1">
+                                            <span>{team.quizScore}/{team.quizMaxScore}</span>
+                                            <span className="text-[9px] text-purple-700">({team.quizPercentage}%)</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400 font-medium">No Quiz</span>
+                                        )}
+                                      </td>
+
+                                      {/* Jury Score */}
+                                      <td className="py-4 px-3 text-center">
+                                        {team.juryScore !== null ? (
+                                          <span className="px-2.5 py-1 rounded-xl bg-indigo-100 text-indigo-900 border border-indigo-200 text-[11px] font-black">
+                                            {team.juryScore} / 100
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-400 font-medium">Not Judged</span>
+                                        )}
+                                      </td>
+
+                                      {/* Stage & Status */}
+                                      <td className="py-4 px-3 text-center">
+                                        <div className="space-y-1">
+                                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider block ${
+                                            team.isEliminated
+                                              ? "bg-red-100 text-red-800 border border-red-200"
+                                              : team.currentTeamRound >= promoteToRound
+                                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                              : "bg-blue-100 text-blue-800 border border-blue-200"
+                                          }`}>
+                                            {team.isEliminated
+                                              ? `Eliminated (R${team.eliminatedInRound || team.currentTeamRound})`
+                                              : team.currentTeamRound >= promoteToRound
+                                              ? `Qualified (R${team.currentTeamRound})`
+                                              : `Round ${team.currentTeamRound}`}
+                                          </span>
+                                        </div>
+                                      </td>
+
+                                      {/* Quick Action Button */}
+                                      <td className="py-4 px-4 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (isSelected) {
+                                              setSelectedPromoteRegIds(prev => prev.filter(id => id !== team.id));
+                                            } else {
+                                              setSelectedPromoteRegIds(prev => [...prev, team.id]);
+                                            }
+                                          }}
+                                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                                            isSelected
+                                              ? "bg-emerald-600 text-white shadow-xs"
+                                              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                                          }`}
+                                        >
+                                          {isSelected ? "Selected ✓" : `Promote to R${promoteToRound}`}
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* BOTTOM ACTION BAR FOR PROMOTION */}
+                  <div className="p-5 bg-white rounded-3xl border border-slate-200/90 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="space-y-2 text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-xs font-black text-slate-900">
+                          {selectedPromoteRegIds.length} Team(s) Selected for Promotion from Round {promoteFromRound} to Round {promoteToRound}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-4 flex-wrap text-xs text-slate-600 font-bold">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={advanceEventRoundOnPromote}
+                            onChange={(e) => setAdvanceEventRoundOnPromote(e.target.checked)}
+                            className="w-4 h-4 rounded text-blue-600"
+                          />
+                          <span>Advance Event Stage to Round {promoteToRound} automatically</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer select-none text-red-600">
+                          <input
+                            type="checkbox"
+                            checked={markUnselectedAsEliminated}
+                            onChange={(e) => setMarkUnselectedAsEliminated(e.target.checked)}
+                            className="w-4 h-4 rounded text-red-600"
+                          />
+                          <span>Mark unselected teams in Round {promoteFromRound} as Eliminated</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsEventRoundsModalOpen(false)}
+                        className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-xs transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleExecuteBatchPromotion}
+                        disabled={isExecutingPromotion || selectedPromoteRegIds.length === 0}
+                        className="px-7 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-black text-xs rounded-2xl shadow-lg shadow-emerald-500/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 border border-emerald-400/30"
+                      >
+                        {isExecutingPromotion ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                        ) : (
+                          <Trophy className="w-4 h-4 text-amber-300" />
+                        )}
+                        <span>Promote Selected ({selectedPromoteRegIds.length}) to Round {promoteToRound}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* TAB 2: ⚙️ STAGE DATES & SCHEDULE BREAKDOWN */}
+              {/* ========================================================================= */}
+              {roundModalTab === "stages" && (
+                <div className="space-y-6">
+                  
+                  {/* Top Quick Controls Bar */}
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                          Current Active Round
+                        </label>
+                        <select
+                          value={liveCurrentRound}
+                          onChange={(e) => {
+                            const newRoundNum = Number(e.target.value);
+                            setLiveCurrentRound(newRoundNum);
+                            setLiveRoundsList((prev) =>
+                              prev.map((r) => ({
+                                ...r,
+                                status: r.roundNumber === newRoundNum ? "Active" : r.roundNumber < newRoundNum ? "Completed" : "Upcoming"
+                              }))
+                            );
+                          }}
+                          className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                        >
+                          {liveRoundsList.map((r) => (
+                            <option key={r.roundNumber} value={r.roundNumber}>
+                              Round {r.roundNumber}: {getCleanRoundTitle(r.name, r.roundNumber)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">
+                          Total Rounds
+                        </label>
+                        <span className="px-3.5 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-black text-slate-700 inline-block">
+                          {liveRoundsList.length} Stages Configured
+                        </span>
+                      </div>
+                    </div>
+
+                    {liveCurrentRound < liveRoundsList.length && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextRoundNum = liveCurrentRound + 1;
+                          setLiveCurrentRound(nextRoundNum);
+                          setLiveRoundsList((prev) =>
+                            prev.map((r) => ({
+                              ...r,
+                              status: r.roundNumber === nextRoundNum ? "Active" : r.roundNumber < nextRoundNum ? "Completed" : "Upcoming"
+                            }))
+                          );
+                        }}
+                        className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <span>Advance to Round {liveCurrentRound + 1}</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Rounds List */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-black uppercase tracking-wider text-slate-700">
+                        Configured Stage Breakdown & Deadlines
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextNum = liveRoundsList.length + 1;
+                          setLiveRoundsList((prev) => [
+                            ...prev,
+                            {
+                              roundNumber: nextNum,
+                              name: `Round ${nextNum}: Stage Title`,
+                              type: "Screening",
+                              description: "Stage requirements and deliverables evaluation.",
+                              startDate: "",
+                              endDate: "",
+                              startTime: "",
+                              endTime: "",
+                              status: "Upcoming"
+                            }
+                          ]);
+                          setLiveTotalRounds(nextNum);
+                        }}
+                        className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add New Round</span>
+                      </button>
+                    </div>
+
+                    {liveRoundsList.map((round, idx) => {
+                      const isActive = round.roundNumber === liveCurrentRound;
+                      return (
+                        <div
+                          key={round.roundNumber || idx}
+                          className={`p-5 rounded-3xl border transition-all space-y-4 ${
+                            isActive
+                              ? "bg-white border-blue-500/80 shadow-md ring-4 ring-blue-500/10"
+                              : "bg-white border-slate-200/80 shadow-xs hover:border-slate-300"
+                          }`}
+                        >
+                          {/* Top Round Bar */}
+                          <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3 flex-wrap">
+                            <div className="flex items-center gap-2.5">
+                              <span
+                                className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs ${
+                                  isActive
+                                    ? "bg-blue-600 text-white shadow-xs"
+                                    : "bg-slate-100 text-slate-700"
+                                }`}
+                              >
+                                {round.roundNumber}
+                              </span>
+                              <span className="font-black text-sm text-slate-800">
+                                Round {round.roundNumber}: {getCleanRoundTitle(round.name, round.roundNumber)}
+                              </span>
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                  round.status === "Active"
+                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                    : round.status === "Completed"
+                                    ? "bg-slate-100 text-slate-600 border border-slate-200"
+                                    : "bg-amber-100 text-amber-800 border border-amber-200"
+                                }`}
+                              >
+                                {round.status}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLiveCurrentRound(round.roundNumber);
+                                  setLiveRoundsList((prev) =>
+                                    prev.map((r) => ({
+                                      ...r,
+                                      status: r.roundNumber === round.roundNumber ? "Active" : r.roundNumber < round.roundNumber ? "Completed" : "Upcoming"
+                                    }))
+                                  );
+                                }}
+                                className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                                  isActive
+                                    ? "bg-blue-50 text-blue-600 border border-blue-200 pointer-events-none"
+                                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                                }`}
+                              >
+                                {isActive ? "Currently Active" : "Set as Active Round"}
+                              </button>
+
+                              {liveRoundsList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setLiveRoundsList((prev) => {
+                                      const filtered = prev.filter((_, rIdx) => rIdx !== idx);
+                                      return filtered.map((r, newIdx) => ({
+                                        ...r,
+                                        roundNumber: newIdx + 1
+                                      }));
+                                    });
+                                    setLiveTotalRounds((prev) => Math.max(1, prev - 1));
+                                    if (liveCurrentRound > liveRoundsList.length - 1) {
+                                      setLiveCurrentRound(Math.max(1, liveRoundsList.length - 1));
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                  title="Delete Round"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Inputs Row 1: Name, Type & Status */}
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                            <div className="sm:col-span-6 space-y-1">
+                              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                Round Title / Name
+                              </label>
+                              <input
+                                type="text"
+                                value={round.name}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setLiveRoundsList((prev) =>
+                                    prev.map((r, rIdx) => (rIdx === idx ? { ...r, name: val } : r))
+                                  );
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="e.g. Round 1: Screening & Idea Submission"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-3 space-y-1">
+                              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                Stage Type
+                              </label>
+                              <input
+                                type="text"
+                                value={round.type}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setLiveRoundsList((prev) =>
+                                    prev.map((r, rIdx) => (rIdx === idx ? { ...r, type: val } : r))
+                                  );
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="e.g. Screening / Quiz / Finals"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-3 space-y-1">
+                              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                Status
+                              </label>
+                              <select
+                                value={round.status}
+                                onChange={(e) => {
+                                  const val = e.target.value as "Active" | "Upcoming" | "Completed";
+                                  setLiveRoundsList((prev) =>
+                                    prev.map((r, rIdx) => (rIdx === idx ? { ...r, status: val } : r))
+                                  );
+                                }}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Upcoming">Upcoming</option>
+                                <option value="Completed">Completed</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Inputs Row 2: Start Date, End Date, Start Time, End Time */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-100">
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                Start Date
+                              </label>
+                              <DatePicker
+                                value={round.startDate || ""}
+                                onChange={(val) => {
+                                  setLiveRoundsList((prev) =>
+                                    prev.map((r, rIdx) => (rIdx === idx ? { ...r, startDate: val } : r))
+                                  );
+                                }}
+                                placeholder="Start date"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                Start Time
+                              </label>
+                              <TimePicker
+                                value={round.startTime || ""}
+                                onChange={(val) => {
+                                  setLiveRoundsList((prev) =>
+                                    prev.map((r, rIdx) => (rIdx === idx ? { ...r, startTime: val } : r))
+                                  );
+                                }}
+                                placeholder="Start time"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                End Date
+                              </label>
+                              <DatePicker
+                                value={round.endDate || ""}
+                                onChange={(val) => {
+                                  setLiveRoundsList((prev) =>
+                                    prev.map((r, rIdx) => (rIdx === idx ? { ...r, endDate: val } : r))
+                                  );
+                                }}
+                                placeholder="End date"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                End Time
+                              </label>
+                              <TimePicker
+                                value={round.endTime || ""}
+                                onChange={(val) => {
+                                  setLiveRoundsList((prev) =>
+                                    prev.map((r, rIdx) => (rIdx === idx ? { ...r, endTime: val } : r))
+                                  );
+                                }}
+                                placeholder="End time"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Inputs Row 3: Description */}
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                              Stage Description & Deliverables Note
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={round.description}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setLiveRoundsList((prev) =>
+                                  prev.map((r, rIdx) => (rIdx === idx ? { ...r, description: val } : r))
+                                );
+                              }}
+                              placeholder="Provide details on submissions, judging rubrics, or expected milestones for this stage..."
+                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Modal Footer for Stages */}
+                  <div className="p-4 bg-white border border-slate-200 rounded-2xl flex items-center justify-between gap-4 shrink-0">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>{liveRoundsList.length} Stages Configured • Stage {liveCurrentRound} Active</span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setIsEventRoundsModalOpen(false)}
+                        className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-2xl text-xs transition-all cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveLiveEventRounds}
+                        disabled={savingLiveRounds}
+                        className="px-7 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-95 text-white font-black text-xs rounded-2xl shadow-md shadow-cyan-500/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 border border-cyan-400/30"
+                      >
+                        {savingLiveRounds ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <ShieldCheck className="w-4 h-4 text-white" />}
+                        <span>Save & Update Event Rounds</span>
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
             </div>
 
           </div>

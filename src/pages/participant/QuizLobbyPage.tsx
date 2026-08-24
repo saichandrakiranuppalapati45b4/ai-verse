@@ -246,7 +246,7 @@ export const QuizLobbyPage: React.FC = () => {
         {/* ================= WAITING STATE BANNER ================= */}
         {!isLive && !isCompleted && (
           <div className="bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0A1128] border border-blue-900/50 rounded-3xl p-6 sm:p-8 text-white shadow-xl space-y-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/15 rounded-full blur-3xl -z-0" />
+            <div className="absolute top-0 right-0 w-64 h-64 bg-[radial-gradient(circle,rgba(37,99,235,0.2)_0%,transparent_70%)] pointer-events-none transform-gpu -z-0" />
             <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">

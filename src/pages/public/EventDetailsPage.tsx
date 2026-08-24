@@ -9,7 +9,8 @@ import {
   ChevronLeft,
   SlidersHorizontal,
   Bookmark,
-  IndianRupee
+  IndianRupee,
+  Layers
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import Button from "../../components/ui/Button";
@@ -64,6 +65,18 @@ interface DetailedEvent {
   agendaTitle3?: string;
   agendaDesc3?: string;
   agendaItems?: Array<{ time: string, title: string, description: string }>;
+  allowRegistrations?: boolean;
+  rounds?: Array<{
+    roundNumber: number;
+    name: string;
+    type: string;
+    description: string;
+    startDate?: string;
+    endDate?: string;
+    startTime?: string;
+    endTime?: string;
+    status: string;
+  }>;
 }
 
 const EventDetailsPage: React.FC = () => {
@@ -151,7 +164,9 @@ const EventDetailsPage: React.FC = () => {
             agendaTime3: data.agendaTime3 || "03:00 PM - 04:30 PM",
             agendaTitle3: data.agendaTitle3 || "Panel: Ethical Scaling",
             agendaDesc3: data.agendaDesc3 || "A roundtable discussion with industry leaders on the societal implications of massive model deployment.",
-            agendaItems: data.agendaItems || []
+            agendaItems: data.agendaItems || [],
+            allowRegistrations: data.allowRegistrations !== undefined ? data.allowRegistrations : true,
+            rounds: data.rounds || []
           });
         }
 
@@ -228,10 +243,10 @@ const EventDetailsPage: React.FC = () => {
 
       {/* ================= HERO BANNER ================= */}
       <section className="relative pt-24 pb-12 bg-gradient-to-tr from-slate-50 via-blue-50/20 to-sky-50/20 rounded-b-[40px] border-b border-slate-100 shadow-sm overflow-hidden">
-        {/* Background Decorative Blur */}
+        {/* Background Decorative Gradients */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
-          <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full bg-blue-100/30 blur-3xl"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full bg-sky-100/20 blur-3xl"></div>
+          <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full bg-[radial-gradient(circle,rgba(219,234,254,0.5)_0%,transparent_70%)] transform-gpu" />
+          <div className="absolute bottom-1/4 right-1/4 w-[350px] h-[350px] rounded-full bg-[radial-gradient(circle,rgba(224,242,254,0.5)_0%,transparent_70%)] transform-gpu" />
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -326,7 +341,7 @@ const EventDetailsPage: React.FC = () => {
                     <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
                       Event Completed
                     </Button>
-                  ) : event.status === "Active" ? (
+                  ) : event.allowRegistrations === false ? (
                     <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
                       Registration Closed
                     </Button>
@@ -437,6 +452,96 @@ const EventDetailsPage: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            {/* Competition Rounds & Timeline (if configured) */}
+            {event.rounds && event.rounds.length > 0 && (
+              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] space-y-6 text-left">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                    <Layers className="h-4.5 w-4.5 text-indigo-600" />
+                    Competition Rounds & Schedule
+                  </h2>
+                  <span className="text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-100 px-3 py-1 rounded-full uppercase tracking-wider">
+                    {event.rounds.length} Stages
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {event.rounds.map((rnd, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-4 rounded-2xl border transition-all ${
+                        rnd.status === "Active"
+                          ? "border-indigo-200 bg-indigo-50/25 ring-2 ring-indigo-500/10 shadow-xs"
+                          : rnd.status === "Completed"
+                          ? "bg-slate-50/50 border-slate-200 opacity-85"
+                          : "bg-white border-slate-100 shadow-xs"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center font-black text-xs ${
+                            rnd.status === "Active"
+                              ? "bg-indigo-600 text-white shadow-sm"
+                              : rnd.status === "Completed"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-200 text-slate-600"
+                          }`}>
+                            {rnd.roundNumber || idx + 1}
+                          </span>
+                          <h4 className="text-sm font-black text-slate-850">{rnd.name}</h4>
+                          {rnd.type && (
+                            <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/60 uppercase">
+                              {rnd.type}
+                            </span>
+                          )}
+                        </div>
+
+                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
+                          rnd.status === "Active"
+                            ? "bg-indigo-600 text-white shadow-xs"
+                            : rnd.status === "Completed"
+                            ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                            : "bg-slate-100 text-slate-500 border border-slate-200"
+                        }`}>
+                          {rnd.status}
+                        </span>
+                      </div>
+
+                      {/* Round Dates & Time display */}
+                      {(rnd.startDate || rnd.endDate || rnd.startTime || rnd.endTime) && (
+                        <div className="flex flex-wrap items-center gap-2.5 py-1 text-xs text-slate-500 font-semibold">
+                          {(rnd.startDate || rnd.endDate) && (
+                            <div className="flex items-center gap-1.5 text-indigo-700 font-bold bg-indigo-50/80 px-2.5 py-1 rounded-lg border border-indigo-100/80 text-[11px]">
+                              <Calendar className="h-3.5 w-3.5 text-indigo-600" />
+                              <span>
+                                {rnd.startDate}
+                                {rnd.endDate && rnd.endDate !== rnd.startDate ? ` - ${rnd.endDate}` : ""}
+                              </span>
+                            </div>
+                          )}
+                          {(rnd.startTime || rnd.endTime) && (
+                            <div className="flex items-center gap-1.5 text-slate-600 bg-slate-100/80 px-2.5 py-1 rounded-lg border border-slate-200/60 text-[11px]">
+                              <Clock className="h-3.5 w-3.5 text-slate-500" />
+                              <span>
+                                {rnd.startTime}
+                                {rnd.endTime && rnd.endTime !== rnd.startTime ? ` - ${rnd.endTime}` : ""}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {rnd.description && (
+                        <p className="text-xs text-slate-500 font-normal leading-relaxed mt-1">
+                          {rnd.description}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
           </div>
 

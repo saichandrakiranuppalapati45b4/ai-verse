@@ -840,7 +840,7 @@ export const ProjectSubmissionPage: React.FC<ProjectSubmissionPageProps> = ({
             <div className="bg-white p-7 sm:p-8 rounded-3xl border border-slate-200/80 shadow-sm space-y-6 text-left relative overflow-hidden">
               
               {/* Subtle Ambient Glow */}
-              <div className="absolute top-0 right-0 w-80 h-80 bg-gradient-to-br from-blue-500/5 to-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute top-0 right-0 w-80 h-80 bg-[radial-gradient(circle,rgba(59,130,246,0.06)_0%,transparent_70%)] pointer-events-none transform-gpu" />
 
               {/* Header Bar */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5 relative z-10">

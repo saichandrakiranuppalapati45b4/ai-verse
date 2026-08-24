@@ -168,10 +168,10 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
           const loadedTrack = targetReg.eventTitle || "test hackthon";
 
           let leaderInfo = {
-            name: targetReg.teamLeadName || "kiran",
-            email: targetReg.teamLeadEmail || cleanEmail || "saichandrakiranuppalapati@gmail.com",
-            rollNo: targetReg.teamLeadStudentId || "24pa1a4545",
-            phone: targetReg.phoneNumber || targetReg.teamLeadPhone || "+91 98765 43210"
+            name: targetReg.teamLeadName || "Team Lead",
+            email: targetReg.teamLeadEmail || cleanEmail || "",
+            rollNo: targetReg.teamLeadStudentId || "",
+            phone: targetReg.phoneNumber || targetReg.teamLeadPhone || ""
           };
 
           let loadedMembers: TeamMember[] = [];

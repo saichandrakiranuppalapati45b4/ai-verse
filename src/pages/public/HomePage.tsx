@@ -163,12 +163,12 @@ const HomePage: React.FC = () => {
         {/* Animated Background Gradients */}
         <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
           <motion.div 
-            className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-blue-100/35 blur-3xl"
+            className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-[radial-gradient(circle,rgba(219,234,254,0.6)_0%,transparent_70%)] pointer-events-none transform-gpu"
             animate={{ x: [0, 40, -20, 0], y: [0, -40, 20, 0] }}
             transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
           />
           <motion.div 
-            className="absolute top-1/3 right-10 w-[400px] h-[400px] rounded-full bg-sky-100/40 blur-3xl"
+            className="absolute top-1/3 right-10 w-[400px] h-[400px] rounded-full bg-[radial-gradient(circle,rgba(224,242,254,0.7)_0%,transparent_70%)] pointer-events-none transform-gpu"
             animate={{ x: [0, -30, 40, 0], y: [0, 30, -20, 0] }}
             transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
           />

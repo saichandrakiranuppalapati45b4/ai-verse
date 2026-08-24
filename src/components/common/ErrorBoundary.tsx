@@ -50,8 +50,8 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="min-h-screen w-full bg-[#080d1a] text-slate-100 flex items-center justify-center p-4 sm:p-6 font-sans select-none relative overflow-hidden">
           {/* Ambient Glows */}
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-1/4 left-1/3 w-[400px] h-[400px] bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-[radial-gradient(circle,rgba(99,102,241,0.15)_0%,transparent_70%)] pointer-events-none transform-gpu" />
+          <div className="absolute bottom-1/4 left-1/3 w-[400px] h-[400px] bg-[radial-gradient(circle,rgba(168,85,247,0.15)_0%,transparent_70%)] pointer-events-none transform-gpu" />
 
           <div className="relative max-w-xl w-full bg-slate-900/80 backdrop-blur-2xl border border-slate-800/80 rounded-3xl p-6 sm:p-8 shadow-2xl shadow-black/50 text-center space-y-6">
             {/* Header Icon */}

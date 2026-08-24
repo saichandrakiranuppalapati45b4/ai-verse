@@ -128,7 +128,7 @@ const ContactPage: React.FC = () => {
             {/* Premium Decorative Map Graphic Box */}
             <div className="bg-slate-900 text-white rounded-3xl p-6 relative overflow-hidden aspect-[4/3] flex flex-col justify-between border border-slate-800 shadow-inner">
               <div className="absolute inset-0 opacity-10 bg-[linear-gradient(to_right,#808080_1px,transparent_1px),linear-gradient(to_bottom,#808080_1px,transparent_1px)] bg-[size:16px_16px]"></div>
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-blue-500/20 blur-2xl pointer-events-none"></div>
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.25)_0%,transparent_70%)] pointer-events-none transform-gpu" />
               
               <div className="relative z-10 flex justify-between items-start">
                 <span className="text-[10px] font-mono tracking-widest text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">

@@ -27,7 +27,8 @@ import {
   Edit2,
   Eye,
   Users,
-  ChevronDown
+  ChevronDown,
+  ShieldCheck
 } from "lucide-react";
 import Papa from "papaparse";
 import { db, app } from "../../config/firebase";
@@ -1450,7 +1451,7 @@ const UserManagementPage: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {paginatedUsers.length > 0 ? (
                 paginatedUsers.map((user, index) => {
-                  const isNearBottom = paginatedUsers.length <= 3 || index >= Math.max(0, paginatedUsers.length - 2);
+                  const isNearBottom = paginatedUsers.length >= 4 && index >= paginatedUsers.length - 2;
 
                   return (
                   <tr key={user.id} className={`hover:bg-slate-50/50 transition-colors group relative ${activeMenuId === user.id ? "z-30" : "z-auto"}`}>
@@ -1520,13 +1521,19 @@ const UserManagementPage: React.FC = () => {
                           )}
 
                           {/* Dropdown Menu Trigger */}
-                          <div className="relative">
+                          <div className="relative inline-block text-left">
                             <button
-                              onClick={() => {
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setActiveMenuId(activeMenuId === user.id ? null : user.id);
                                 setShowRoleSubMenu(false);
                               }}
-                              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                              className={`p-1.5 rounded-xl transition-all border ${
+                                activeMenuId === user.id
+                                  ? "bg-slate-100 text-slate-800 border-slate-200 shadow-inner"
+                                  : "text-slate-400 hover:text-slate-700 hover:bg-slate-100 border-transparent hover:border-slate-200"
+                              }`}
                             >
                               <MoreVertical className="h-4 w-4" />
                             </button>
@@ -1535,19 +1542,23 @@ const UserManagementPage: React.FC = () => {
                             {activeMenuId === user.id && (
                               <>
                                 <div 
-                                  className="fixed inset-0 z-40"
-                                  onClick={() => setActiveMenuId(null)}
+                                  className="fixed inset-0 z-40 cursor-default"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveMenuId(null);
+                                    setShowRoleSubMenu(false);
+                                  }}
                                 />
-                                <div className={`absolute right-0 ${isNearBottom ? "bottom-full mb-2 origin-bottom-right" : "top-full mt-2 origin-top-right"} w-52 bg-white border border-slate-100 rounded-2xl shadow-2xl py-2 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in duration-100`}>
+                                <div className={`absolute right-0 ${isNearBottom ? "bottom-full mb-2 origin-bottom-right" : "top-full mt-1.5 origin-top-right"} w-56 bg-white border border-slate-200/90 rounded-2xl shadow-[0_12px_36px_rgba(0,0,0,0.12)] p-1.5 z-50 text-left font-sans ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-100`}>
                                   {showRoleSubMenu ? (
                                     <>
-                                      <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-50 mb-1 flex justify-between items-center">
+                                      <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 mb-1 flex justify-between items-center">
                                         Select Role
                                         <button onClick={() => setShowRoleSubMenu(false)} className="hover:text-slate-600 p-0.5 rounded transition-colors hover:bg-slate-100">
                                           <ChevronLeft className="h-3 w-3" />
                                         </button>
                                       </div>
-                                      <div className="max-h-60 overflow-y-auto">
+                                      <div className="max-h-60 overflow-y-auto space-y-0.5">
                                         {(() => {
                                           const options = [...availableRoles];
                                           const displayRole = getDisplayRole(user.role, availableRoles);
@@ -1559,7 +1570,7 @@ const UserManagementPage: React.FC = () => {
                                           <button
                                             key={role}
                                             onClick={() => handleRoleChange(user.id, role as any)}
-                                            className={`w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-slate-50 text-blue-600 font-bold' : ''}`}
+                                            className={`w-full px-3 py-2 text-xs font-semibold rounded-xl transition-colors hover:bg-slate-50 text-slate-700 flex items-center gap-2 ${getDisplayRole(user.role, availableRoles) === role ? 'bg-blue-50 text-blue-600 font-bold' : ''}`}
                                           >
                                             {role}
                                           </button>
@@ -1581,62 +1592,68 @@ const UserManagementPage: React.FC = () => {
                                           setFormLinkedin(user.linkedin || "");
                                           setFormGithub(user.github || "");
                                         }}
-                                        className="w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center gap-2"
+                                        className="w-full px-3 py-2 text-xs font-semibold rounded-xl hover:bg-slate-50 text-slate-700 flex items-center gap-2.5 transition-colors"
                                       >
-                                        <Edit2 className="h-3.5 w-3.5" />
+                                        <Edit2 className="h-3.5 w-3.5 text-slate-400" />
                                         Edit Profile
                                       </button>
                                       <button
                                         onClick={() => setShowRoleSubMenu(true)}
-                                        className="w-full px-4 py-1.5 text-xs font-medium hover:bg-slate-50 text-slate-700 flex items-center justify-between"
+                                        className="w-full px-3 py-2 text-xs font-semibold rounded-xl hover:bg-slate-50 text-slate-700 flex items-center justify-between transition-colors"
                                       >
-                                        Change Role
+                                        <span className="flex items-center gap-2.5">
+                                          <ShieldCheck className="h-3.5 w-3.5 text-slate-400" />
+                                          Change Role
+                                        </span>
                                         <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
                                       </button>
-                                      <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
-                                        Show in About Page
-                                      </div>
-                                      <div className="px-4 py-1.5 flex items-center justify-between text-xs font-medium text-slate-700">
-                                        <span>Show Profile</span>
+                                      
+                                      <div className="h-px bg-slate-100 my-1 mx-1" />
+
+                                      <div className="px-3 py-1.5 flex items-center justify-between text-xs font-semibold text-slate-700">
+                                        <span className="flex items-center gap-2 text-slate-600">
+                                          <Eye className="h-3.5 w-3.5 text-slate-400" />
+                                          About Page
+                                        </span>
                                         <select
                                           value={user.showInAbout === "Yes" ? "Yes" : "No"}
                                           onChange={(e) => {
                                             e.stopPropagation();
                                             handleToggleShowInAbout(user.id, e.target.value);
                                           }}
-                                          className="px-2 py-0.5 text-xs border border-slate-200 rounded-lg bg-slate-50 font-bold focus:outline-none focus:border-blue-500 cursor-pointer"
+                                          className="px-2 py-0.5 text-xs border border-slate-200 rounded-lg bg-slate-50 font-bold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
                                         >
-                                          <option value="Yes">Yes</option>
-                                          <option value="No">No</option>
+                                          <option value="Yes">Show</option>
+                                          <option value="No">Hide</option>
                                         </select>
                                       </div>
-                                      <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider border-y border-slate-50 my-1">
-                                        Quick Action
-                                      </div>
-                                  {user.status === "Active" ? (
-                                    <button
-                                      onClick={() => handleStatusChange(user.id, "Deactivated")}
-                                      className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-50 text-red-600 flex items-center gap-2"
-                                    >
-                                      <UserX className="h-3.5 w-3.5" />
-                                      Deactivate
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => handleStatusChange(user.id, "Active")}
-                                      className="w-full px-4 py-1.5 text-xs font-medium hover:bg-emerald-50 text-emerald-600 flex items-center gap-2"
-                                    >
-                                      <UserCheck className="h-3.5 w-3.5" />
-                                      Activate
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => handleDeleteUser(user.id)}
-                                    className="w-full px-4 py-1.5 text-xs font-medium hover:bg-red-100 text-red-700 border-t border-slate-50/80 mt-1 flex items-center gap-2"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                    Remove Member
-                                  </button>
+
+                                      <div className="h-px bg-slate-100 my-1 mx-1" />
+
+                                      {user.status === "Active" ? (
+                                        <button
+                                          onClick={() => handleStatusChange(user.id, "Deactivated")}
+                                          className="w-full px-3 py-2 text-xs font-semibold rounded-xl hover:bg-amber-50 text-amber-700 flex items-center gap-2.5 transition-colors"
+                                        >
+                                          <UserX className="h-3.5 w-3.5 text-amber-500" />
+                                          Deactivate
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleStatusChange(user.id, "Active")}
+                                          className="w-full px-3 py-2 text-xs font-semibold rounded-xl hover:bg-emerald-50 text-emerald-700 flex items-center gap-2.5 transition-colors"
+                                        >
+                                          <UserCheck className="h-3.5 w-3.5 text-emerald-500" />
+                                          Activate
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => handleDeleteUser(user.id)}
+                                        className="w-full px-3 py-2 text-xs font-semibold rounded-xl hover:bg-red-50 text-red-600 flex items-center gap-2.5 transition-colors"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                        Remove Member
+                                      </button>
                                     </>
                                   )}
                                 </div>

@@ -50,6 +50,10 @@ interface RegistrationItem {
   utrNumber?: string;
   paymentStatus?: string;
   totalFeePaid?: number;
+  foodPreference?: string;
+  foodOption?: string;
+  needsFood?: boolean;
+  isVishnuStudent?: boolean;
   createdAt: number;
 }
 
@@ -98,6 +102,8 @@ const RegistrationsManagementPage: React.FC = () => {
       "Branch",
       "Section",
       "Year",
+      "Food Preference",
+      "Total Fee Paid",
       "Team Size",
       "Status",
       "Registration Date"
@@ -109,6 +115,8 @@ const RegistrationsManagementPage: React.FC = () => {
       const regType = reg.groupName && reg.groupName !== "Individual RSVP" ? "Group" : "Individual";
       const regDate = new Date(reg.createdAt).toLocaleDateString("en-US");
       const status = reg.status || "Confirmed";
+      const foodPref = reg.foodPreference || (reg.needsFood === false ? "No Food (Free)" : "Standard Entry");
+      const totalFee = reg.totalFeePaid || 0;
 
       if (reg.members && reg.members.length > 0) {
         reg.members.forEach((m) => {
@@ -122,6 +130,8 @@ const RegistrationsManagementPage: React.FC = () => {
             `"${((m as any).branch || reg.branch || "").replace(/"/g, '""')}"`,
             `"${((m as any).section || reg.section || "").replace(/"/g, '""')}"`,
             `"${((m as any).year || reg.year || "").replace(/"/g, '""')}"`,
+            `"${foodPref.replace(/"/g, '""')}"`,
+            `"₹${totalFee}"`,
             reg.teamSize || 1,
             `"${status}"`,
             `"${regDate}"`
@@ -139,6 +149,8 @@ const RegistrationsManagementPage: React.FC = () => {
           `"${(reg.branch || "").replace(/"/g, '""')}"`,
           `"${(reg.section || "").replace(/"/g, '""')}"`,
           `"${(reg.year || "").replace(/"/g, '""')}"`,
+          `"${foodPref.replace(/"/g, '""')}"`,
+          `"₹${totalFee}"`,
           reg.teamSize || 1,
           `"${status}"`,
           `"${regDate}"`
@@ -1184,6 +1196,18 @@ ${reg.members && reg.members.length > 0 ? `<p><b>Team Members:</b><br>${reg.memb
                       </div>
                     )}
                   </div>
+
+                  {/* Food / Hospitality Preference */}
+                  {selectedReg.foodPreference && (
+                    <div className="space-y-1 sm:col-span-2 md:col-span-3 pt-2 border-t border-slate-200/50 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dining / Food Preference:</span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          {selectedReg.foodPreference}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Registration Date */}
                   <div className="space-y-1 sm:col-span-2 md:col-span-3 pt-2 border-t border-slate-200/50 flex flex-wrap items-center justify-between gap-2 text-slate-500">

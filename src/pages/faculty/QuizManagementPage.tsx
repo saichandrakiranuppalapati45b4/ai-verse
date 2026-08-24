@@ -14,6 +14,8 @@ import {
 } from "firebase/firestore";
 import type { Quiz, QuizQuestion, QuizSubmission, QuizSession } from "../../types/quiz";
 import { resetParticipantQuizSession, resetAllQuizSubmissions, deleteQuizCascading } from "../../services/quizService";
+import { extractTextFromPdf, parseQuestionsFromText } from "../../utils/pdfExtractor";
+import { extractQuizQuestionsWithGemini } from "../../utils/geminiQuizExtractor";
 import SEO from "../../components/layout/SEO";
 import {
   HelpCircle,
@@ -36,7 +38,10 @@ import {
   AlertCircle,
   Play,
   Square,
-  RotateCcw
+  RotateCcw,
+  Upload,
+  FileUp,
+  Sparkles
 } from "lucide-react";
 
 interface EventOption {
@@ -56,30 +61,43 @@ export const QuizManagementPage: React.FC = () => {
   const [activeSessions, setActiveSessions] = useState<QuizSession[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedQuizId, setSelectedQuizId] = useState<string>("");
-  const [selectedEventFilter, setSelectedEventFilter] = useState<string>(eventIdParam || "all");
+  const [selectedEventId, setSelectedEventId] = useState<string>(eventIdParam || "");
 
-  // Keep selectedEventFilter in sync if URL eventIdParam changes
+  // Sync selectedEventId if URL eventIdParam changes
   useEffect(() => {
     if (eventIdParam) {
-      setSelectedEventFilter(eventIdParam);
+      setSelectedEventId(eventIdParam);
     }
   }, [eventIdParam]);
 
-  // Compute currently active scoped event if filtered
-  const activeEvent = React.useMemo(() => {
-    if (selectedEventFilter === "all") return null;
-    return events.find((e) => e.id === selectedEventFilter) || null;
-  }, [events, selectedEventFilter]);
+  // When events load, ensure a valid event is selected if none specified
+  useEffect(() => {
+    if (events.length > 0) {
+      if (!selectedEventId || !events.some((e) => e.id === selectedEventId)) {
+        const initialId = eventIdParam && events.some((e) => e.id === eventIdParam) ? eventIdParam : events[0].id;
+        setSelectedEventId(initialId);
+        if (!eventIdParam) {
+          setSearchParams({ eventId: initialId }, { replace: true });
+        }
+      }
+    }
+  }, [events, eventIdParam, selectedEventId, setSearchParams]);
 
-  // Filter quizzes strictly by active scoped event
+  // Compute currently active scoped event
+  const activeEvent = React.useMemo(() => {
+    if (!events.length) return null;
+    return events.find((e) => e.id === selectedEventId) || events[0] || null;
+  }, [events, selectedEventId]);
+
+  // Filter quizzes strictly by active scoped event (one event's quizzes are never mixed with another)
   const filteredQuizzes = React.useMemo(() => {
-    if (selectedEventFilter === "all") return quizzes;
+    if (!activeEvent) return [];
     return quizzes.filter((q) => {
-      if (q.eventId && q.eventId === selectedEventFilter) return true;
-      if (activeEvent && q.eventTitle && q.eventTitle.toLowerCase().trim() === activeEvent.title.toLowerCase().trim()) return true;
+      if (q.eventId && q.eventId === activeEvent.id) return true;
+      if (q.eventTitle && activeEvent.title && q.eventTitle.toLowerCase().trim() === activeEvent.title.toLowerCase().trim()) return true;
       return false;
     });
-  }, [quizzes, selectedEventFilter, activeEvent]);
+  }, [quizzes, activeEvent]);
 
   // Automatically update selectedQuizId when filteredQuizzes list changes
   useEffect(() => {
@@ -102,6 +120,16 @@ export const QuizManagementPage: React.FC = () => {
   const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
   const [newCategoryName, setNewCategoryName] = useState<string>("");
   const [selectedCategoryView, setSelectedCategoryView] = useState<string>("");
+
+  // Bulk PDF Import States
+  const [showPdfBulkModal, setShowPdfBulkModal] = useState<boolean>(false);
+  const [pdfFileName, setPdfFileName] = useState<string>("");
+  const [pdfRawText, setPdfRawText] = useState<string>("");
+  const [pdfTargetCategory, setPdfTargetCategory] = useState<string>("");
+  const [isParsingPdf, setIsParsingPdf] = useState<boolean>(false);
+  const [isAiScanning, setIsAiScanning] = useState<boolean>(false);
+  const [aiScanSuccess, setAiScanSuccess] = useState<boolean>(false);
+  const [parsedBulkQuestions, setParsedBulkQuestions] = useState<QuizQuestion[]>([]);
 
   // Active Tab for list mode
   const [activeTab, setActiveTab] = useState<"quizzes" | "live_monitor" | "submissions">("quizzes");
@@ -191,8 +219,9 @@ export const QuizManagementPage: React.FC = () => {
       eventTitle: targetEvent ? targetEvent.title : "",
       track: targetEvent?.category ? `${targetEvent.category} Track` : "General Track",
       durationMinutes: 30,
-      totalMarks: 50,
-      passingMarks: 20,
+      pointsPerQuestion: 2,
+      totalMarks: 0,
+      passingMarks: 0,
       status: "active",
       instructions: [
         "Each question has 4 options with single correct answer.",
@@ -206,7 +235,14 @@ export const QuizManagementPage: React.FC = () => {
   };
 
   const handleOpenEditModal = (quiz: Quiz) => {
-    setEditingQuiz(JSON.parse(JSON.stringify(quiz)));
+    const derivedPoints = Number(quiz.pointsPerQuestion) || (quiz.questions?.[0]?.points) || 2;
+    const qCount = quiz.questions?.length || quiz.questionsCount || 0;
+    const calcTotal = Number(quiz.totalMarks) || (qCount * derivedPoints);
+    setEditingQuiz({
+      ...JSON.parse(JSON.stringify(quiz)),
+      pointsPerQuestion: derivedPoints,
+      totalMarks: calcTotal
+    });
     const cats = Array.from(new Set(quiz.questions?.map(q => q.category).filter(Boolean) as string[]));
     setCustomCategories(cats);
     
@@ -241,21 +277,30 @@ export const QuizManagementPage: React.FC = () => {
     try {
       setSaving(true);
       const quizId = editingQuiz.id || `quiz_${Date.now()}`;
+      const targetEvent = events.find(e => e.id === editingQuiz.eventId) || activeEvent || (events.length > 0 ? events[0] : null);
+
+      const ptsPerQ = Number(editingQuiz.pointsPerQuestion) || 2;
+      const qCount = editingQuiz.questions?.length || 0;
+      const calcTotalMarks = qCount * ptsPerQ;
 
       const payload: Quiz = {
         id: quizId,
         title: editingQuiz.title.trim(),
         description: editingQuiz.description || "",
-        eventId: editingQuiz.eventId || "",
-        eventTitle: editingQuiz.eventTitle || "",
-        track: editingQuiz.track || "General Track",
+        eventId: targetEvent ? targetEvent.id : (editingQuiz.eventId || ""),
+        eventTitle: targetEvent ? targetEvent.title : (editingQuiz.eventTitle || ""),
+        track: editingQuiz.track || (targetEvent?.category ? `${targetEvent.category} Track` : "General Track"),
         durationMinutes: Number(editingQuiz.durationMinutes) || 30,
-        totalMarks: Number(editingQuiz.totalMarks) || (editingQuiz.questions?.length ? editingQuiz.questions.length * 2 : 50),
-        passingMarks: Number(editingQuiz.passingMarks) || 20,
+        pointsPerQuestion: ptsPerQ,
+        totalMarks: calcTotalMarks,
+        passingMarks: Number(editingQuiz.passingMarks) || Math.round(calcTotalMarks * 0.4),
         instructions: editingQuiz.instructions || [],
         status: editingQuiz.status || "active",
-        questionsCount: editingQuiz.questions?.length || 0,
-        questions: editingQuiz.questions || [],
+        questionsCount: qCount,
+        questions: (editingQuiz.questions || []).map((q) => ({
+          ...q,
+          points: ptsPerQ
+        })),
         createdAt: editingQuiz.createdAt || Date.now(),
         updatedAt: Date.now()
       };
@@ -472,11 +517,12 @@ export const QuizManagementPage: React.FC = () => {
       }
 
       const nextNum = totalQuestions + 1;
+      const pts = Number(editingQuiz.pointsPerQuestion) || 2;
       const newQ: QuizQuestion = {
         id: `q_${Date.now()}_${nextNum}`,
         questionNumber: nextNum,
         text: "",
-        points: 2,
+        points: pts,
         category: selectedCategoryView,
         options: [
           { id: "opt_a", text: "" },
@@ -489,7 +535,8 @@ export const QuizManagementPage: React.FC = () => {
       const newQuestions = [...questionsList, newQ];
       setEditingQuiz({
         ...editingQuiz,
-        questions: newQuestions
+        questions: newQuestions,
+        totalMarks: newQuestions.length * pts
       });
       setCurrentQuestionIndex(newQuestions.length - 1);
     };
@@ -497,11 +544,144 @@ export const QuizManagementPage: React.FC = () => {
     const deleteQuestion = (idx: number) => {
       if (confirm("Are you sure you want to delete this question?")) {
         const next = questionsList.filter((_, i) => i !== idx);
-        setEditingQuiz({ ...editingQuiz, questions: next });
+        const pts = Number(editingQuiz.pointsPerQuestion) || 2;
+        setEditingQuiz({
+          ...editingQuiz,
+          questions: next,
+          totalMarks: next.length * pts
+        });
         if (currentQuestionIndex >= next.length) {
           setCurrentQuestionIndex(Math.max(0, next.length - 1));
         }
       }
+    };
+
+    const handleBulkParseAndPreview = (text: string, category: string) => {
+      const parsed = parseQuestionsFromText(text, category || selectedCategoryView || "General");
+      setParsedBulkQuestions(parsed);
+    };
+
+    const handleTriggerAiScan = async (textToScan?: string, targetCat?: string) => {
+      const content = (textToScan ?? pdfRawText).trim();
+      if (!content) return;
+      setIsAiScanning(true);
+      setAiScanSuccess(false);
+
+      try {
+        const cat = (targetCat ?? pdfTargetCategory ?? selectedCategoryView ?? "General").trim();
+        const { questions: aiQuestions, usedAI } = await extractQuizQuestionsWithGemini(content, cat);
+        if (aiQuestions && aiQuestions.length > 0) {
+          setParsedBulkQuestions(aiQuestions);
+          setAiScanSuccess(usedAI);
+        } else {
+          handleBulkParseAndPreview(content, cat);
+        }
+      } catch (err) {
+        console.error("AI Scan failed, falling back:", err);
+        handleBulkParseAndPreview(content, targetCat || pdfTargetCategory || selectedCategoryView || "General");
+      } finally {
+        setIsAiScanning(false);
+      }
+    };
+
+    const handleTogglePreviewAnswer = (qIdx: number, optId: string) => {
+      const updated = [...parsedBulkQuestions];
+      if (updated[qIdx]) {
+        updated[qIdx] = {
+          ...updated[qIdx],
+          correctOptionId: optId
+        };
+        setParsedBulkQuestions(updated);
+      }
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setPdfFileName(file.name);
+      setIsParsingPdf(true);
+      setAiScanSuccess(false);
+
+      try {
+        let cleanText = "";
+        if (file.name.toLowerCase().endsWith(".pdf")) {
+          cleanText = await extractTextFromPdf(file);
+        } else {
+          cleanText = await file.text();
+        }
+
+        setPdfRawText(cleanText);
+        
+        // Immediate AI-enhanced scanning & answer marking
+        await handleTriggerAiScan(cleanText, pdfTargetCategory || selectedCategoryView || "General");
+      } catch (err) {
+        console.error("Failed to read file:", err);
+        alert("Could not extract text from this file. You can paste the questions text directly.");
+      } finally {
+        setIsParsingPdf(false);
+      }
+    };
+
+    const handleApplyBulkImport = () => {
+      if (parsedBulkQuestions.length === 0) {
+        alert("No valid questions detected. Please verify your questions format or paste valid questions text.");
+        return;
+      }
+
+      const targetCat = (pdfTargetCategory || selectedCategoryView || "General").trim();
+      const existingCats = [...customCategories];
+      if (targetCat && !existingCats.includes(targetCat)) {
+        setCustomCategories([...existingCats, targetCat]);
+      }
+
+      const startNum = questionsList.length + 1;
+      const pts = Number(editingQuiz.pointsPerQuestion) || 2;
+      const formattedImported = parsedBulkQuestions.map((q, idx) => ({
+        ...q,
+        questionNumber: startNum + idx,
+        category: q.category || targetCat,
+        points: pts
+      }));
+
+      const merged = [...questionsList, ...formattedImported];
+      setEditingQuiz({
+        ...editingQuiz,
+        questions: merged,
+        totalMarks: merged.length * pts
+      });
+
+      setSelectedCategoryView(targetCat);
+      setCurrentQuestionIndex(questionsList.length);
+      setShowPdfBulkModal(false);
+      setPdfFileName("");
+      setPdfRawText("");
+      setParsedBulkQuestions([]);
+      alert(`Successfully added ${formattedImported.length} question(s) into category "${targetCat}"!`);
+    };
+
+    const loadSampleQuestions = () => {
+      const sample = `1. What is the core mechanism behind Transformer models in AI?
+A) Self-Attention mechanism
+B) Convolutional pooling
+C) Recurrent memory cell
+D) Decision tree splitting
+Answer: A
+
+2. Which metric is commonly used to evaluate classification models with imbalanced datasets?
+A) F1-Score
+B) Mean Squared Error (MSE)
+C) R-Squared
+D) Latency
+Answer: A
+
+3. In React 19, which hook is used for asynchronous state transitions?
+A) useTransition
+B) useEffect
+C) useReducer
+D) useLayoutEffect
+Answer: A`;
+      setPdfRawText(sample);
+      handleBulkParseAndPreview(sample, pdfTargetCategory || selectedCategoryView || "General");
     };
 
     return (
@@ -591,28 +771,16 @@ export const QuizManagementPage: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    {/* Question Text & Metadata */}
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <div className="flex-1 space-y-1.5">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Question Text</label>
-                        <textarea
-                          value={currentQuestion.text}
-                          onChange={(e) => updateCurrentQuestion({ text: e.target.value })}
-                          rows={2}
-                          className="w-full text-base sm:text-lg font-bold text-[#0F172A] leading-relaxed p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="Enter your question here..."
-                        />
-                      </div>
-                      
-                      <div className="w-full sm:w-1/4 space-y-1.5">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Points</label>
-                        <input
-                          type="number"
-                          value={currentQuestion.points || 2}
-                          onChange={(e) => updateCurrentQuestion({ points: Number(e.target.value) })}
-                          className="w-full text-xs font-bold text-[#0F172A] p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
+                    {/* Question Text */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Question Text</label>
+                      <textarea
+                        value={currentQuestion.text}
+                        onChange={(e) => updateCurrentQuestion({ text: e.target.value })}
+                        rows={2}
+                        className="w-full text-base sm:text-lg font-bold text-[#0F172A] leading-relaxed p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter your question here..."
+                      />
                     </div>
 
                     {/* Options List */}
@@ -814,15 +982,30 @@ export const QuizManagementPage: React.FC = () => {
                 })()}
 
                 {selectedCategoryView && (
-                  <button
-                    type="button"
-                    onClick={addQuestion}
-                    className="w-full h-10 mt-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center cursor-pointer bg-slate-50 border-2 border-dashed border-slate-300 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50"
-                    title="Add Question"
-                  >
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Add New Question
-                  </button>
+                  <div className="space-y-2 mt-4">
+                    <button
+                      type="button"
+                      onClick={addQuestion}
+                      className="w-full h-10 rounded-xl text-xs font-bold transition-all flex items-center justify-center cursor-pointer bg-slate-50 border-2 border-dashed border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 active:scale-[0.99]"
+                      title="Add Question"
+                    >
+                      <Plus className="w-4 h-4 mr-1.5" />
+                      <span>Add New Question</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPdfTargetCategory(selectedCategoryView || customCategories[0] || "General");
+                        setShowPdfBulkModal(true);
+                      }}
+                      className="w-full h-10 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 text-blue-700 border border-blue-200/90 shadow-2xs active:scale-[0.99]"
+                      title="Add Bulk using PDF"
+                    >
+                      <Upload className="w-4 h-4 text-blue-600" />
+                      <span>Add Bulk using PDF</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -856,24 +1039,25 @@ export const QuizManagementPage: React.FC = () => {
 
         {/* ================= GLOBAL SETTINGS MODAL ================= */}
         {showSettingsModal && (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 space-y-6 shadow-2xl">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                <h3 className="text-xl font-extrabold text-[#0F172A] flex items-center gap-2">
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+            <div className="bg-white border border-slate-200 rounded-3xl max-w-xl w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden text-left">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h3 className="text-lg font-black text-[#0F172A] flex items-center gap-2">
                   <FileText className="w-5 h-5 text-blue-600" />
-                  Assessment Settings
+                  <span>Assessment Settings</span>
                 </h3>
                 <button
                   onClick={() => setShowSettingsModal(false)}
-                  className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
+                  className="p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 rounded-xl transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="space-y-5">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+              <div className="space-y-3.5 text-left">
+                {/* Quiz Title */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
                     <span>Quiz Title</span>
                     <span className="text-red-500">*</span>
                   </label>
@@ -882,15 +1066,16 @@ export const QuizManagementPage: React.FC = () => {
                     value={editingQuiz.title || ""}
                     onChange={(e) => setEditingQuiz({ ...editingQuiz, title: e.target.value })}
                     placeholder="e.g. AI Verse 2026 Core Technical Assessment"
-                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-slate-800 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-2xs"
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-slate-800 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-2xs"
                   />
                 </div>
 
-                <div className="space-y-1.5 bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                  <label className="text-xs font-bold text-blue-950 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-blue-600" />
+                {/* Associated Event */}
+                <div className="space-y-1 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                  <label className="text-[11px] font-bold text-blue-950 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-blue-600" />
                     <span>Associated Event</span>
-                    <span className="text-[10px] text-blue-500 font-medium">(Links this quiz to an active event)</span>
+                    <span className="text-[10px] text-blue-500 font-medium">(Links quiz to active event)</span>
                   </label>
                   <select
                     value={editingQuiz.eventId || ""}
@@ -904,9 +1089,9 @@ export const QuizManagementPage: React.FC = () => {
                         track: selectedEv?.category ? `${selectedEv.category} Track` : editingQuiz.track
                       });
                     }}
-                    className="w-full px-4 py-2.5 rounded-xl border border-blue-200 bg-white text-slate-800 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer mt-2"
+                    className="w-full px-3 py-1.5 rounded-lg border border-blue-200 bg-white text-slate-800 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer mt-1"
                   >
-                    <option value="">-- Select an Event (Optional) --</option>
+                    <option value="">-- Select Associated Event --</option>
                     {events.map((ev) => (
                       <option key={ev.id} value={ev.id}>
                         {ev.title} {ev.category ? `(${ev.category})` : ""}
@@ -915,33 +1100,92 @@ export const QuizManagementPage: React.FC = () => {
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700">Description</label>
+                {/* Points & Total Marks Configuration (Below Associated Event) */}
+                <div className="bg-gradient-to-r from-amber-50/70 via-amber-50/40 to-blue-50/60 p-3.5 rounded-2xl border border-amber-200/90 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-amber-600" />
+                      <span>Scoring & Question Weightage</span>
+                    </label>
+                    <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                      {editingQuiz.questions?.length || 0} Question{(editingQuiz.questions?.length || 0) === 1 ? "" : "s"} Configured
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-700 block">
+                        Points per Question
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={editingQuiz.pointsPerQuestion || 2}
+                        onChange={(e) => {
+                          const pts = Math.max(1, Number(e.target.value) || 1);
+                          const qCount = editingQuiz.questions?.length || 0;
+                          const calcTotal = qCount * pts;
+                          const updatedQuestions = editingQuiz.questions?.map((q) => ({
+                            ...q,
+                            points: pts
+                          })) || [];
+                          setEditingQuiz({
+                            ...editingQuiz,
+                            pointsPerQuestion: pts,
+                            totalMarks: calcTotal,
+                            questions: updatedQuestions
+                          });
+                        }}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-900 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="e.g. 2"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-slate-700 block">
+                        Calculated Total Marks
+                      </label>
+                      <div className="w-full px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900 text-xs font-black flex items-center justify-between shadow-2xs">
+                        <span>{((editingQuiz.questions?.length || 0) * (editingQuiz.pointsPerQuestion || 2))} Marks</span>
+                        <span className="text-[10px] text-emerald-700 font-bold">
+                          ({editingQuiz.questions?.length || 0} Qs × {editingQuiz.pointsPerQuestion || 2} pts)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700">Description</label>
                   <textarea
                     value={editingQuiz.description || ""}
                     onChange={(e) => setEditingQuiz({ ...editingQuiz, description: e.target.value })}
                     rows={2}
-                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-slate-800 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="Brief description or instructions for participants..."
+                    className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-slate-800 text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none resize-none"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700">Duration (Minutes)</label>
+                {/* Duration & Status */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700">Duration (Minutes)</label>
                     <input
                       type="number"
                       min={1}
                       value={editingQuiz.durationMinutes || 30}
                       onChange={(e) => setEditingQuiz({ ...editingQuiz, durationMinutes: Number(e.target.value) })}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold"
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-700">Status</label>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700">Status</label>
                     <select
                       value={editingQuiz.status || "active"}
                       onChange={(e) => setEditingQuiz({ ...editingQuiz, status: e.target.value as any })}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-bold cursor-pointer"
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
                     >
                       <option value="active">Active / Published</option>
                       <option value="draft">Draft (Hidden)</option>
@@ -951,10 +1195,13 @@ export const QuizManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-6 border-t border-slate-100 flex justify-end">
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-400">
+                  Total Marks: <strong className="text-slate-800 font-black">{((editingQuiz.questions?.length || 0) * (editingQuiz.pointsPerQuestion || 2))}</strong>
+                </span>
                 <button
                   onClick={() => setShowSettingsModal(false)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl transition-all cursor-pointer"
+                  className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs px-6 py-2 rounded-xl transition-all cursor-pointer shadow-md shadow-blue-500/20"
                 >
                   Done
                 </button>
@@ -1006,6 +1253,255 @@ export const QuizManagementPage: React.FC = () => {
                   Save
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= ADD BULK USING PDF MODAL ================= */}
+        {showPdfBulkModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl overflow-hidden border border-slate-200 flex flex-col animate-in zoom-in-95 duration-200 text-left font-sans">
+              
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-gradient-to-r from-blue-50/50 to-indigo-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-[#0F172A] text-base tracking-tight">
+                      Add Bulk Questions using PDF / Document
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-semibold">
+                      Upload a question paper PDF, text document, or paste multiple MCQs.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPdfBulkModal(false)}
+                  className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                
+                {/* Target Category Selector */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                      Target Category
+                    </label>
+                    <input
+                      type="text"
+                      value={pdfTargetCategory}
+                      onChange={(e) => {
+                        setPdfTargetCategory(e.target.value);
+                        if (pdfRawText) handleBulkParseAndPreview(pdfRawText, e.target.value);
+                      }}
+                      placeholder="e.g. q1, Core AI, Frontend"
+                      className="w-full text-xs font-bold text-slate-800 p-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                      Existing Categories
+                    </label>
+                    <select
+                      value={pdfTargetCategory}
+                      onChange={(e) => {
+                        setPdfTargetCategory(e.target.value);
+                        if (pdfRawText) handleBulkParseAndPreview(pdfRawText, e.target.value);
+                      }}
+                      className="w-full text-xs font-bold text-slate-800 p-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="">-- Choose or type custom above --</option>
+                      {customCategories.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Upload Box */}
+                <div className="border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/40 rounded-2xl p-5 text-center transition-colors relative group">
+                  <input
+                    type="file"
+                    accept=".pdf,.txt,.json,.csv,.md"
+                    onChange={handleFileUpload}
+                    disabled={isParsingPdf || isAiScanning}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10 disabled:cursor-not-allowed"
+                  />
+                  <div className="flex flex-col items-center justify-center space-y-2">
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      {isParsingPdf || isAiScanning ? <Loader2 className="w-5 h-5 animate-spin text-purple-600" /> : <FileUp className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <p className="text-xs font-extrabold text-blue-900">
+                        {isAiScanning ? (
+                          <span className="text-purple-700 font-black animate-pulse">✨ Google Gemini AI Scanning & Marking Answers...</span>
+                        ) : isParsingPdf ? (
+                          "Extracting PDF text streams..."
+                        ) : pdfFileName ? (
+                          <span className="text-emerald-700 font-black">✓ Loaded: {pdfFileName}</span>
+                        ) : (
+                          "Click to upload or drag & drop PDF / Text File"
+                        )}
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                        Supports .pdf, .txt, .json, .csv with Gemini AI auto-detection & answer marking
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Textarea for pasting questions / editing */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                      Or Paste / Review Questions Text
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleTriggerAiScan()}
+                        disabled={isAiScanning || isParsingPdf || !pdfRawText.trim()}
+                        className="flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-2xs transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+                        title="Scan text and mark answers with Google AI Studio (Gemini)"
+                      >
+                        {isAiScanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        <span>AI Scan & Mark Answers</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={loadSampleQuestions}
+                        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                      >
+                        Load Sample
+                      </button>
+                    </div>
+                  </div>
+
+                  <textarea
+                    rows={6}
+                    value={pdfRawText}
+                    onChange={(e) => {
+                      setPdfRawText(e.target.value);
+                      handleBulkParseAndPreview(e.target.value, pdfTargetCategory);
+                    }}
+                    placeholder={`1. What is the primary purpose of...\nA) Option 1\nB) Option 2\nC) Option 3\nD) Option 4\nAnswer: A\n\n2. Next Question...`}
+                    className="w-full text-xs font-mono font-medium p-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white resize-y leading-relaxed"
+                  />
+                </div>
+
+                {/* Live Detection Summary & Preview */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                      Detected Questions ({parsedBulkQuestions.length})
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {isAiScanning && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1 animate-pulse">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Gemini AI Processing...</span>
+                        </span>
+                      )}
+                      {!isAiScanning && aiScanSuccess && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-purple-600" />
+                          <span>Gemini AI Verified ✓</span>
+                        </span>
+                      )}
+                      {parsedBulkQuestions.length > 0 && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {parsedBulkQuestions.length} Questions Ready ✓
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {parsedBulkQuestions.length === 0 ? (
+                    <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-400 font-medium">
+                      No questions detected yet. Upload a file, paste questions, or click "Load Sample Format".
+                    </div>
+                  ) : (
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                      {parsedBulkQuestions.map((q, idx) => (
+                        <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-slate-900">
+                              Q{idx + 1}. {q.text}
+                            </span>
+                            <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                              Ans: {(q.correctOptionId || "").replace("opt_", "").toUpperCase() || "A"}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-600 font-medium">
+                            {q.options.map((opt) => {
+                              const isCorrect = opt.id === q.correctOptionId;
+                              return (
+                                <button
+                                  type="button"
+                                  key={opt.id}
+                                  onClick={() => handleTogglePreviewAnswer(idx, opt.id)}
+                                  className={`px-2.5 py-1.5 rounded-lg text-left truncate transition-all cursor-pointer flex items-center justify-between gap-1.5 ${
+                                    isCorrect
+                                      ? "bg-emerald-100/90 text-emerald-950 font-bold border border-emerald-300 ring-2 ring-emerald-400/40 shadow-2xs"
+                                      : "bg-white border border-slate-200/80 hover:bg-slate-100 text-slate-700"
+                                  }`}
+                                  title={`Click to set option ${opt.id.replace("opt_", "").toUpperCase()} as correct`}
+                                >
+                                  <span className="truncate">
+                                    <span className="font-extrabold mr-1">{opt.id.replace("opt_", "").toUpperCase()})</span>
+                                    {opt.text || "(empty)"}
+                                  </span>
+                                  {isCorrect && <Check className="w-3.5 h-3.5 text-emerald-700 shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 sm:px-6 border-t border-slate-100 flex items-center justify-between gap-3 bg-slate-50">
+                <div className="text-[11px] font-bold text-slate-500">
+                  {parsedBulkQuestions.length} questions will be added to "{pdfTargetCategory || selectedCategoryView || "General"}"
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPdfBulkModal(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyBulkImport}
+                    disabled={parsedBulkQuestions.length === 0}
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white font-black text-xs px-6 py-2.5 rounded-xl transition-all shadow-md shadow-blue-500/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Import All ({parsedBulkQuestions.length}) Questions</span>
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         )}
@@ -1091,18 +1587,18 @@ export const QuizManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Event Scoping / Selector Toolbar */}
+        {/* Event Scoping Indicator Banner */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
           <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs ${activeEvent ? 'bg-purple-100 text-purple-700' : 'bg-blue-50 text-blue-600'}`}>
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs bg-purple-100 text-purple-700 shadow-2xs">
               <Calendar className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                {activeEvent ? "Event Scoped Quiz Workspace" : "All Events Workspace"}
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-purple-600">
+                EVENT SCOPED QUIZ WORKSPACE
               </div>
               <div className="text-sm font-black text-slate-800 flex items-center gap-2">
-                <span>{activeEvent ? activeEvent.title : "Showing Quizzes for All Events"}</span>
+                <span>{activeEvent ? activeEvent.title : "Assessment Workspace"}</span>
                 {activeEvent?.category && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
                     {activeEvent.category}
@@ -1112,44 +1608,11 @@ export const QuizManagementPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <label className="text-xs font-bold text-slate-500 whitespace-nowrap">Filter Event:</label>
-            <select
-              value={selectedEventFilter}
-              onChange={(e) => {
-                const newFilter = e.target.value;
-                setSelectedEventFilter(newFilter);
-                if (newFilter !== "all") {
-                  setSearchParams({ eventId: newFilter });
-                } else {
-                  setSearchParams({});
-                }
-              }}
-              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-xs font-bold focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
-            >
-              <option value="all">-- All Events ({quizzes.length} Total Quizzes) --</option>
-              {events.map((ev) => {
-                const count = quizzes.filter(q => q.eventId === ev.id || (q.eventTitle && q.eventTitle.toLowerCase().trim() === ev.title.toLowerCase().trim())).length;
-                return (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.title} ({count} {count === 1 ? "quiz" : "quizzes"})
-                  </option>
-                );
-              })}
-            </select>
-
-            {selectedEventFilter !== "all" && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedEventFilter("all");
-                  setSearchParams({});
-                }}
-                className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
-              >
-                View All
-              </button>
-            )}
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1.5 rounded-xl text-xs font-black bg-slate-50 text-slate-700 border border-slate-200/80 shadow-2xs flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{filteredQuizzes.length} {filteredQuizzes.length === 1 ? "Quiz" : "Quizzes"} Linked</span>
+            </span>
           </div>
         </div>
 
@@ -1234,7 +1697,7 @@ export const QuizManagementPage: React.FC = () => {
                     <p className="text-xs text-slate-500 font-medium line-clamp-2">{q.description || "No description provided."}</p>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded-2xl text-center text-xs border border-slate-100">
+                  <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl text-center text-xs border border-slate-100">
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 block uppercase">Duration</span>
                       <span className="font-extrabold text-[#0F172A]">{q.durationMinutes}m</span>
@@ -1242,10 +1705,6 @@ export const QuizManagementPage: React.FC = () => {
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 block uppercase">Questions</span>
                       <span className="font-extrabold text-[#0F172A]">{q.questions?.length || q.questionsCount || 0}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 block uppercase">Marks</span>
-                      <span className="font-extrabold text-[#0F172A]">{q.totalMarks}</span>
                     </div>
                   </div>
 
