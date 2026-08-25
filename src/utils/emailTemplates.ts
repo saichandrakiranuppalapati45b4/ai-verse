@@ -186,7 +186,7 @@ export function buildRegistrationConfirmationEmail(data: RegistrationEmailData):
           <tr>
             <td style="background-color: #f8fafc; padding: 24px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
               <p style="font-size: 12px; color: #64748b; margin: 0 0 6px 0;">
-                <strong>AI Verse Club</strong> • VIT-AP University
+                <strong>AI Verse Club</strong> • VIT-B
               </p>
               <p style="font-size: 11px; color: #94a3b8; margin: 0; line-height: 1.5;">
                 You are receiving this official registration receipt because you registered for ${eventTitle}.<br>
@@ -227,7 +227,7 @@ export function buildRegistrationConfirmationEmail(data: RegistrationEmailData):
     `Please present your digital entry pass at the event check-in desk.`,
     ``,
     `Regards,`,
-    `AI Verse Team • VIT-AP University`,
+    `AI Verse Team • VIT-B`,
   ].filter(Boolean).join("\n");
 
   return { subject, html, text };
@@ -309,7 +309,7 @@ export function buildTeamCredentialsEmail(data: CredentialsEmailData): {
           <tr>
             <td style="background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
               <p style="font-size: 11px; color: #94a3b8; margin: 0; line-height: 1.5;">
-                AI Verse Club • VIT-AP University<br>
+                AI Verse Club • VIT-B<br>
                 Dispatched automatically. Do not share your team password outside your registered team members.
               </p>
             </td>
