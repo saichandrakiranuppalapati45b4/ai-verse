@@ -25,6 +25,7 @@ import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs, doc, deleteDoc, updateDoc, increment } from "firebase/firestore";
 import { sendResendEmail } from "../../utils/resendEmailService";
+import { buildRegistrationConfirmationEmail } from "../../utils/emailTemplates";
 
 interface RegistrationItem {
   id: string;
@@ -381,52 +382,27 @@ const RegistrationsManagementPage: React.FC = () => {
         const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
         const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
         const ticketUrl = `${siteBaseUrl}/ticket/${reg.id}`;
-        
-        const teamMembers = reg.members && reg.members.length > 0 
-          ? reg.members.map(m => `  - ${m.name} (${m.studentId || m.email})`).join("\n")
-          : "";
 
-        const plainText = [
-          `Hi ${reg.teamLeadName},`,
-          ``,
-          `Your registration for ${reg.eventTitle} has been confirmed.`,
-          ``,
-          `Event: ${reg.eventTitle}`,
-          `Team: ${reg.groupName || "Individual"}`,
-          `Lead: ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})`,
-          `Participants: ${reg.teamSize || (reg.members.length + 1)}`,
-          reg.transactionId ? `Transaction ID: ${reg.transactionId}` : "",
-          `Status: Confirmed`,
-          teamMembers ? `\nTeam Members:\n${teamMembers}` : "",
-          ``,
-          `View your entry pass: ${ticketUrl}`,
-          ``,
-          `Thanks,`,
-          `AI Verse Team`,
-        ].filter(Boolean).join("\n");
+        const emailContent = buildRegistrationConfirmationEmail({
+          teamLeadName: reg.teamLeadName || (reg as any).name || "Participant",
+          eventTitle: reg.eventTitle || "AI Verse Event",
+          groupName: reg.groupName,
+          teamLeadStudentId: reg.teamLeadStudentId || (reg as any).studentId,
+          teamSize: reg.teamSize,
+          transactionId: reg.transactionId,
+          members: reg.members,
+          ticketUrl,
+        });
 
         const emailResult = await sendResendEmail({
           to: targetEmail,
-          subject: `${reg.eventTitle} - Registration Confirmed`,
-          text: plainText,
-          html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#333;line-height:1.5;max-width:560px;margin:0 auto;">
-<p>Hi ${reg.teamLeadName},</p>
-<p>Your registration for <b>${reg.eventTitle}</b> has been confirmed.</p>
-<p>
-<b>Event:</b> ${reg.eventTitle}<br>
-<b>Team:</b> ${reg.groupName || "Individual"}<br>
-<b>Lead:</b> ${reg.teamLeadName} (${reg.teamLeadStudentId || "N/A"})<br>
-<b>Participants:</b> ${reg.teamSize || (reg.members.length + 1)}${reg.transactionId ? `<br><b>Transaction ID:</b> ${reg.transactionId}` : ""}<br>
-<b>Status:</b> Confirmed
-</p>
-${reg.members && reg.members.length > 0 ? `<p><b>Team Members:</b><br>${reg.members.map(m => `${m.name} (${m.studentId || m.email})`).join("<br>")}</p>` : ""}
-<p>View your entry pass and QR code:<br><a href="${ticketUrl}">${ticketUrl}</a></p>
-<p>Thanks,<br>AI Verse Team</p>
-</div>`
+          subject: emailContent.subject,
+          text: emailContent.text,
+          html: emailContent.html,
         });
 
         if (emailResult.success) {
-          setConfirmSuccessMsg(`Registration confirmed & confirmation email sent to ${targetEmail}!`);
+          setConfirmSuccessMsg(`Registration confirmed & receipt email delivered to ${targetEmail}!`);
         } else {
           setConfirmSuccessMsg(`Registration confirmed in database. (Email notice: ${emailResult.error || "failed"})`);
         }

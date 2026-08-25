@@ -23,8 +23,8 @@ export default defineConfig({
               const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
-              const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
-              const replyToEmail = reply_to || "saichandrakiranuppalapati@gmail.com";
+              const senderEmail = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
+              const replyToEmail = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
 
               const emailPayload: any = {
                 from: senderEmail,
@@ -82,8 +82,8 @@ export default defineConfig({
               const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
-              const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
-              const replyToEmail = reply_to || "saichandrakiranuppalapati@gmail.com";
+              const senderEmail = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
+              const replyToEmail = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
 
               const emailPayload: any = {
                 from: senderEmail,

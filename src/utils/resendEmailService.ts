@@ -18,8 +18,8 @@ export const sendResendEmail = async ({
   subject,
   html,
   text,
-  from = "AI Verse <events@aiversevitb.dpdns.org>",
-  reply_to = "saichandrakiranuppalapati@gmail.com",
+  from = (import.meta.env.VITE_RESEND_FROM_EMAIL as string) || "AI Verse <events@aiversevitb.dpdns.org>",
+  reply_to = (import.meta.env.VITE_RESEND_REPLY_TO as string) || "aiverse@vishnu.edu.in",
 }: SendResendEmailParams): Promise<{ success: boolean; data?: any; error?: string }> => {
   const recipients = Array.isArray(to) ? to : [to];
 

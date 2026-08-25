@@ -59,6 +59,7 @@ import {
 import DatePicker from "../../components/ui/DatePicker";
 import TimePicker from "../../components/ui/TimePicker";
 import { sendResendEmail } from "../../utils/resendEmailService";
+import { buildTeamCredentialsEmail } from "../../utils/emailTemplates";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -1125,39 +1126,24 @@ const EventManagementPage: React.FC = () => {
 
         // Send Email via Resend to Team Lead
         if (targetEmail) {
+          const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+          const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
+          const loginUrl = `${siteBaseUrl}/login`;
+
+          const emailContent = buildTeamCredentialsEmail({
+            teamLeadName: reg.teamLeadName || reg.name || "Participant",
+            eventTitle: eventAccessEvent?.title || "AI Verse Event",
+            groupName: reg.groupName,
+            teamEmail,
+            password: commonPassword,
+            loginUrl,
+          });
+
           await sendResendEmail({
             to: targetEmail,
-            subject: `Official Team Login Access Credentials - ${eventAccessEvent?.title || "AI Verse Event"}`,
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
-                <div style="background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%); padding: 18px 24px; border-radius: 12px; color: #ffffff; text-align: center;">
-                  <h2 style="margin: 0; font-size: 18px; font-weight: bold; letter-spacing: 0.5px;">AI VERSE TEAM PORTAL</h2>
-                  <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;">Official Team Access Credentials</p>
-                </div>
-                
-                <div style="padding: 20px 0;">
-                  <p style="color: #0f172a; font-size: 14px;">Hello <strong>${reg.teamLeadName || reg.name || "Participant"}</strong>,</p>
-                  <p style="color: #334155; font-size: 14px;">Your team <strong>"${reg.groupName || reg.teamLeadName || "Registered Team"}"</strong> has been provisioned official login credentials for <strong>${eventAccessEvent?.title || "Event"}</strong>.</p>
-                  
-                  <div style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1; padding: 18px; border-radius: 12px; margin: 20px 0; font-family: monospace;">
-                    <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; margin-bottom: 10px;">🔑 YOUR TEAM LOGIN CREDENTIALS</div>
-                    <div style="margin-bottom: 8px; font-size: 13px;">
-                      <span style="color: #64748b;">Team Email:</span> 
-                      <strong style="color: #2563EB; font-size: 15px;">${teamEmail}</strong>
-                    </div>
-                    <div style="font-size: 13px;">
-                      <span style="color: #64748b;">Password:</span> 
-                      <strong style="color: #0f172a; font-size: 15px; background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${commonPassword}</strong>
-                    </div>
-                  </div>
-
-                  <p style="color: #334155; font-size: 14px;">Please use these credentials to log in to the team portal for event submission, schedules, and judging updates.</p>
-                </div>
-
-                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-                <p style="color: #94a3b8; font-size: 12px; text-align: center;">Dispatched automatically via AI Verse System & Resend API.</p>
-              </div>
-            `,
+            subject: emailContent.subject,
+            text: emailContent.text,
+            html: emailContent.html,
           });
         }
       }

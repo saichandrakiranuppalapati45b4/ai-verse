@@ -16,7 +16,7 @@ export default async function handler(req, res) {
 
   const recipients = Array.isArray(to) ? to : [to];
   const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
-  const replyToEmail = reply_to || "saichandrakiranuppalapati@gmail.com";
+  const replyToEmail = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
 
   const emailPayload = {
     from: senderEmail,
