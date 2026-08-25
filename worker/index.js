@@ -39,14 +39,17 @@ export default {
       }
 
       const recipients = Array.isArray(to) ? to : [to];
-      const senderEmail = from || env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
-      const replyToEmail = reply_to || env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
+      const rawSender = from || env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
+      const rawReplyTo = reply_to || env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
+
+      const senderEmail = typeof rawSender === "string" ? rawSender.replace(/^["']|["']$/g, "").trim() : "AI Verse <events@aiversevitb.dpdns.org>";
+      const replyToEmail = typeof rawReplyTo === "string" ? rawReplyTo.replace(/^["']|["']$/g, "").trim() : "aiverse@vishnu.edu.in";
 
       const emailPayload = {
         from: senderEmail,
         to: recipients,
         reply_to: replyToEmail,
-        subject,
+        subject: (subject || "").trim(),
         html,
       };
       if (text) {

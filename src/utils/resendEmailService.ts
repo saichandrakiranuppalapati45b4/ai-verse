@@ -13,21 +13,40 @@ export interface SendResendEmailParams {
   reply_to?: string | string[];
 }
 
+const sanitizeEmailField = (val?: string | string[], fallback: string = ""): string => {
+  if (!val) return fallback;
+  if (Array.isArray(val)) return val.map(v => v.replace(/^["']|["']$/g, "").trim()).join(", ");
+  const cleaned = val.replace(/^["']|["']$/g, "").trim();
+  return cleaned || fallback;
+};
+
 export const sendResendEmail = async ({
   to,
   subject,
   html,
   text,
-  from = (import.meta.env.VITE_RESEND_FROM_EMAIL as string) || "AI Verse <events@aiversevitb.dpdns.org>",
-  reply_to = (import.meta.env.VITE_RESEND_REPLY_TO as string) || "aiverse@vishnu.edu.in",
+  from,
+  reply_to,
 }: SendResendEmailParams): Promise<{ success: boolean; data?: any; error?: string }> => {
   const recipients = Array.isArray(to) ? to : [to];
+  const defaultFrom = (import.meta.env.VITE_RESEND_FROM_EMAIL as string) || "AI Verse <events@aiversevitb.dpdns.org>";
+  const defaultReplyTo = (import.meta.env.VITE_RESEND_REPLY_TO as string) || "aiverse@vishnu.edu.in";
+
+  const senderEmail = sanitizeEmailField(from, defaultFrom);
+  const replyToEmail = sanitizeEmailField(reply_to, defaultReplyTo);
 
   try {
     const response = await fetch("/api/send-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: recipients, subject, html, text, from, reply_to }),
+      body: JSON.stringify({ 
+        to: recipients, 
+        subject: (subject || "").trim(), 
+        html, 
+        text, 
+        from: senderEmail, 
+        reply_to: replyToEmail 
+      }),
     });
 
     // Read response as text first to avoid JSON parse crash on HTML/empty responses

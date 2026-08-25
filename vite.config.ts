@@ -23,14 +23,17 @@ export default defineConfig({
               const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
-              const senderEmail = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
-              const replyToEmail = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
+              const rawSender = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
+              const rawReplyTo = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
+
+              const senderEmail = typeof rawSender === "string" ? rawSender.replace(/^["']|["']$/g, "").trim() : "AI Verse <events@aiversevitb.dpdns.org>";
+              const replyToEmail = typeof rawReplyTo === "string" ? rawReplyTo.replace(/^["']|["']$/g, "").trim() : "aiverse@vishnu.edu.in";
 
               const emailPayload: any = {
                 from: senderEmail,
                 to: recipients,
                 reply_to: replyToEmail,
-                subject,
+                subject: (subject || "").trim(),
                 html,
               };
               if (text) {
@@ -82,14 +85,17 @@ export default defineConfig({
               const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
               const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               const recipients = Array.isArray(to) ? to : [to];
-              const senderEmail = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
-              const replyToEmail = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
+              const rawSender = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
+              const rawReplyTo = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
+
+              const senderEmail = typeof rawSender === "string" ? rawSender.replace(/^["']|["']$/g, "").trim() : "AI Verse <events@aiversevitb.dpdns.org>";
+              const replyToEmail = typeof rawReplyTo === "string" ? rawReplyTo.replace(/^["']|["']$/g, "").trim() : "aiverse@vishnu.edu.in";
 
               const emailPayload: any = {
                 from: senderEmail,
                 to: recipients,
                 reply_to: replyToEmail,
-                subject,
+                subject: (subject || "").trim(),
                 html,
               };
               if (text) {
