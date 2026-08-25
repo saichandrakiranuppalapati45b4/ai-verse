@@ -31,7 +31,7 @@ export async function onRequestPost(context) {
   }
 
   const recipients = Array.isArray(to) ? to : [to];
-  const senderEmail = from || env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
+  const senderEmail = from || env.RESEND_FROM_EMAIL || "AI Verse <onboarding@resend.dev>";
   const replyToEmail = reply_to || env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
 
   const emailPayload = {
