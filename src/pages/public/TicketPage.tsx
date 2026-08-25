@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { db } from "../../config/firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, onSnapshot } from "firebase/firestore";
 import SEO from "../../components/layout/SEO";
 import { 
   Download, 
@@ -230,41 +230,44 @@ const TicketPage: React.FC = () => {
   }, [isDragging, dragStartY, dragOffset, isTorn, isPrintingAnim]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!registrationId) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const regSnap = await getDoc(doc(db, "registrations", registrationId));
-        if (regSnap.exists()) {
-          const regData = regSnap.data() as RegistrationData;
-          setRegistration(regData);
+    if (!registrationId) {
+      setLoading(false);
+      return;
+    }
 
-          if (!regData.qrCodeData) {
-            try {
-              await updateDoc(doc(db, "registrations", registrationId), {
-                qrCodeData: registrationId
-              });
-            } catch (updateErr) {
-              console.error("Error writing qrCodeData to Firestore registrations:", updateErr);
-            }
+    const unsub = onSnapshot(doc(db, "registrations", registrationId), async (regSnap) => {
+      if (regSnap.exists()) {
+        const regData = regSnap.data() as RegistrationData;
+        setRegistration(regData);
+
+        if (!regData.qrCodeData) {
+          try {
+            await updateDoc(doc(db, "registrations", registrationId), {
+              qrCodeData: registrationId
+            });
+          } catch (updateErr) {
+            console.error("Error writing qrCodeData to Firestore registrations:", updateErr);
           }
+        }
 
-          if (regData.eventId) {
+        if (regData.eventId) {
+          try {
             const eventSnap = await getDoc(doc(db, "events", regData.eventId));
             if (eventSnap.exists()) {
               setEvent(eventSnap.data() as EventData);
             }
+          } catch (e) {
+            console.error("Error fetching event for ticket:", e);
           }
         }
-      } catch (err) {
-        console.error("Error loading registration ticket:", err);
-      } finally {
-        setLoading(false);
       }
-    };
-    fetchData();
+      setLoading(false);
+    }, (err) => {
+      console.error("Error subscribing to registration ticket:", err);
+      setLoading(false);
+    });
+
+    return () => unsub();
   }, [registrationId]);
 
   // Handle printing animation sequence on load or reprint
@@ -300,6 +303,13 @@ const TicketPage: React.FC = () => {
   const displayLeadName = registration?.teamLeadName || "Team Lead";
   const displayLeadEmail = registration?.teamLeadPersonalEmail || registration?.teamLeadCollegeEmail || registration?.teamLeadEmail || "leader@vishnu.edu.in";
   
+  // Status check: whether the team registration is confirmed by coordinators
+  const isConfirmed = 
+    registration?.status?.toLowerCase() === "confirmed" || 
+    registration?.status?.toLowerCase() === "approved" ||
+    registration?.paymentStatus?.toLowerCase() === "confirmed" ||
+    registration?.paymentStatus?.toLowerCase() === "approved";
+
   const allMembers = [
     { name: displayLeadName, email: displayLeadEmail, isLead: true },
     ...(registration?.members || []).map(m => ({ name: m.name || "Member", email: m.email || "", isLead: false }))
@@ -411,7 +421,7 @@ const TicketPage: React.FC = () => {
 
         ctx.fillStyle = "#059669";
         ctx.font = "800 10px sans-serif";
-        ctx.fillText("✓  PAYMENT CONFIRMED", w / 2, 148);
+        ctx.fillText(isConfirmed ? "✓  TEAM CONFIRMED" : "✓  PAYMENT CONFIRMED", w / 2, 148);
 
         // 4. Meta Table
         ctx.strokeStyle = "#F1F5F9";
@@ -441,7 +451,7 @@ const TicketPage: React.FC = () => {
         ctx.font = "800 11.5px sans-serif";
         ctx.fillText(`${formattedDateStr} • ${formattedTimeStr}`, 32, 252);
         ctx.fillStyle = "#059669";
-        ctx.fillText(isFree ? "Free Pass" : "Paid In Full", w / 2 + 15, 252);
+        ctx.fillText(isConfirmed ? "Team Confirmed" : (isFree ? "Free Pass" : "Paid In Full"), w / 2 + 15, 252);
 
         // Dashed Divider
         ctx.strokeStyle = "#CBD5E1";
@@ -764,14 +774,27 @@ const TicketPage: React.FC = () => {
 
       {/* ================= FLOATING CORNER NOTICE WIDGET (Corner of the page on Desktop) ================= */}
       <aside className="no-print hidden lg:block fixed top-20 right-5 xl:right-8 w-80 xl:w-[340px] z-30 text-left">
-        <div className="bg-white/95 backdrop-blur-md border border-amber-200/90 rounded-3xl p-5 shadow-xl shadow-amber-500/10 space-y-4 relative overflow-hidden transition-all">
+        <div className={`bg-white/95 backdrop-blur-md border rounded-3xl p-5 shadow-xl space-y-4 relative overflow-hidden transition-all ${
+          isConfirmed 
+            ? "border-emerald-200/90 shadow-emerald-500/10" 
+            : "border-amber-200/90 shadow-amber-500/10"
+        }`}>
           
           {/* Status Bar */}
-          <div className="flex items-center justify-between pb-2.5 border-b border-amber-100/90">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-black text-[10px] uppercase tracking-wider">
-              <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-              Under Review
-            </span>
+          <div className={`flex items-center justify-between pb-2.5 border-b ${
+            isConfirmed ? "border-emerald-100/90" : "border-amber-100/90"
+          }`}>
+            {isConfirmed ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 font-black text-[10px] uppercase tracking-wider">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                Team Confirmed
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-black text-[10px] uppercase tracking-wider">
+                <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                Under Review
+              </span>
+            )}
             <span className="text-[10px] font-bold text-slate-400 font-mono">
               ORDER #{orderNumber}
             </span>
@@ -780,28 +803,43 @@ const TicketPage: React.FC = () => {
           {/* Main Notice Banner */}
           <div className="space-y-2.5">
             <div className="flex items-start gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200 mt-0.5">
-                <ShieldCheck className="w-4.5 h-4.5 text-amber-700" />
+              <div className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 border mt-0.5 ${
+                isConfirmed 
+                  ? "bg-emerald-100 text-emerald-700 border-emerald-200" 
+                  : "bg-amber-100 text-amber-700 border-amber-200"
+              }`}>
+                <ShieldCheck className={`w-4.5 h-4.5 ${isConfirmed ? "text-emerald-700" : "text-amber-700"}`} />
               </div>
               <div>
                 <h3 className="text-sm font-black text-slate-900 tracking-tight leading-tight">
-                  Registration Completed
+                  {isConfirmed ? "Team Confirmed" : "Registration Completed"}
                 </h3>
-                <p className="text-[11px] text-amber-700 font-bold mt-0.5">
-                  Status: Currently Under Review
+                <p className={`text-[11px] font-bold mt-0.5 ${isConfirmed ? "text-emerald-700" : "text-amber-700"}`}>
+                  {isConfirmed ? "Status: Team Confirmed" : "Status: Currently Under Review"}
                 </p>
               </div>
             </div>
 
             {/* Highlighted Notice Text */}
-            <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/90 text-xs text-amber-950 font-medium leading-relaxed space-y-1.5">
-              <p>
-                Your registration was completed and is currently <strong>under review</strong>.
-              </p>
-              <p className="text-amber-900">
-                After your registration review is completed, you will receive an official <strong>confirmation email</strong>.
-              </p>
-            </div>
+            {isConfirmed ? (
+              <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/90 text-xs text-emerald-950 font-medium leading-relaxed space-y-1.5">
+                <p>
+                  🎉 Team <strong>"{displayGroupName}"</strong> is <strong>officially confirmed</strong> for {displayTitle}.
+                </p>
+                <p className="text-emerald-900 font-semibold">
+                  Access pass is active. Official confirmation and credentials have been verified.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/90 text-xs text-amber-950 font-medium leading-relaxed space-y-1.5">
+                <p>
+                  Your registration was completed and is currently <strong>under review</strong>.
+                </p>
+                <p className="text-amber-900">
+                  After your registration review is completed, you will receive an official <strong>confirmation email</strong>.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Step-by-Step Status Roadmap */}
@@ -826,26 +864,38 @@ const TicketPage: React.FC = () => {
 
               {/* Step 2 */}
               <div className="flex items-start gap-2.5">
-                <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5 animate-pulse">
-                  2
-                </div>
+                {isConfirmed ? (
+                  <div className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">
+                    ✓
+                  </div>
+                ) : (
+                  <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5 animate-pulse">
+                    2
+                  </div>
+                )}
                 <div className="leading-tight">
-                  <span className="font-extrabold text-amber-900 block text-[11.5px]">Coordinator Review</span>
+                  <span className={`font-extrabold block text-[11.5px] ${isConfirmed ? "text-emerald-900" : "text-amber-900"}`}>
+                    {isConfirmed ? "Team Confirmed" : "Coordinator Review"}
+                  </span>
                   <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
-                    Verifying transaction and participant roster.
+                    {isConfirmed ? "Roster & payment verified by coordinators." : "Verifying transaction and participant roster."}
                   </span>
                 </div>
               </div>
 
               {/* Step 3 */}
               <div className="flex items-start gap-2.5">
-                <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5">
-                  3
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 mt-0.5 ${
+                  isConfirmed ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"
+                }`}>
+                  {isConfirmed ? "✓" : "3"}
                 </div>
                 <div className="leading-tight">
-                  <span className="font-extrabold text-slate-850 block text-[11.5px]">Confirmation Email</span>
+                  <span className="font-extrabold text-slate-850 block text-[11.5px]">
+                    {isConfirmed ? "Confirmation Dispatched" : "Confirmation Email"}
+                  </span>
                   <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
-                    Official email will be delivered to:
+                    {isConfirmed ? "Official confirmation delivered to:" : "Official email will be delivered to:"}
                   </span>
                   <span className="font-mono font-bold text-blue-600 text-[10px] block mt-1 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 truncate max-w-[240px]">
                     {displayLeadEmail}
@@ -895,7 +945,7 @@ const TicketPage: React.FC = () => {
             ) : (
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-black uppercase tracking-wider shadow-2xs">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Official Entry Pass Verified</span>
+                <span>{isConfirmed ? "Team Registration Confirmed & Verified" : "Official Entry Pass Verified"}</span>
               </div>
             )}
             
@@ -1030,7 +1080,7 @@ const TicketPage: React.FC = () => {
                   <div className="pt-1">
                     <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[10.5px] border border-emerald-200/70 shadow-2xs">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      Payment Confirmed
+                      {isConfirmed ? "Team Confirmed" : "Payment Confirmed"}
                     </span>
                   </div>
                 </div>
@@ -1060,7 +1110,7 @@ const TicketPage: React.FC = () => {
                     <div>
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Status</span>
                       <span className="text-[11px] font-extrabold text-emerald-600 block mt-0.5">
-                        {isFree ? "Free Verified" : "Paid In Full"}
+                        {isConfirmed ? "Team Confirmed" : (isFree ? "Free Verified" : "Paid In Full")}
                       </span>
                     </div>
                   </div>
@@ -1187,17 +1237,34 @@ const TicketPage: React.FC = () => {
             </div>
 
             {/* Mobile-only Notice Card */}
-            <div className="lg:hidden bg-white border border-amber-200/90 rounded-3xl p-5 shadow-md text-left space-y-3 mt-4">
-              <div className="flex items-center justify-between pb-2 border-b border-amber-100">
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-black text-[10px] uppercase tracking-wider">
-                  <Clock className="w-3 h-3 text-amber-600" />
-                  Under Review
-                </span>
+            <div className={`lg:hidden bg-white border rounded-3xl p-5 shadow-md text-left space-y-3 mt-4 ${
+              isConfirmed ? "border-emerald-200/90" : "border-amber-200/90"
+            }`}>
+              <div className={`flex items-center justify-between pb-2 border-b ${
+                isConfirmed ? "border-emerald-100" : "border-amber-100"
+              }`}>
+                {isConfirmed ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 font-black text-[10px] uppercase tracking-wider">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    Team Confirmed
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-black text-[10px] uppercase tracking-wider">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    Under Review
+                  </span>
+                )}
                 <span className="text-[10px] font-bold text-slate-400 font-mono">ORDER #{orderNumber}</span>
               </div>
-              <p className="text-xs text-amber-950 font-medium leading-relaxed">
-                Your registration was completed and is currently <strong>under review</strong>. After your registration review is completed, you will receive an official <strong>confirmation email</strong>.
-              </p>
+              {isConfirmed ? (
+                <p className="text-xs text-emerald-950 font-medium leading-relaxed">
+                  🎉 Team <strong>"{displayGroupName}"</strong> is <strong>officially confirmed</strong> for {displayTitle}. Access pass is active.
+                </p>
+              ) : (
+                <p className="text-xs text-amber-950 font-medium leading-relaxed">
+                  Your registration was completed and is currently <strong>under review</strong>. After your registration review is completed, you will receive an official <strong>confirmation email</strong>.
+                </p>
+              )}
             </div>
 
             {/* WhatsApp Community Link */}
