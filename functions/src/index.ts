@@ -24,7 +24,7 @@ export const sendTeamAccessEmail = functions.https.onCall(async (data, context) 
   }
 
   const recipients = Array.isArray(to) ? to : [to];
-  const senderEmail = from || "AI Verse <noreply@aiversevitb.dpdns.org>";
+  const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
 
   try {
     const response = await fetch("https://api.resend.com/emails", {

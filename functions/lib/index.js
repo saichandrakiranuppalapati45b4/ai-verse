@@ -48,7 +48,7 @@ exports.sendTeamAccessEmail = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("invalid-argument", "Missing required fields: to, subject, html.");
     }
     const recipients = Array.isArray(to) ? to : [to];
-    const senderEmail = from || "AI Verse <onboarding@resend.dev>";
+    const senderEmail = from || "AI Verse <events@aiversevitb.dpdns.org>";
     try {
         const response = await fetch("https://api.resend.com/emails", {
             method: "POST",
