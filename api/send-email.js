@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   const recipients = Array.isArray(to) ? to : [to];
-  const senderEmail = from || process.env.RESEND_FROM_EMAIL || "AI Verse <onboarding@resend.dev>";
+  const senderEmail = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
   const replyToEmail = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
 
   const emailPayload = {
