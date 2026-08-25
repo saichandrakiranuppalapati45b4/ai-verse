@@ -336,7 +336,7 @@ export function buildTeamCredentialsEmail(data: CredentialsEmailData): {
     ``,
     `Use these credentials to log in to the submission portal.`,
     ``,
-    `AI Verse Club • VIT-AP University`,
+    `AI Verse Club • VIT-B`,
   ].filter(Boolean).join("\n");
 
   return { subject, html, text };
