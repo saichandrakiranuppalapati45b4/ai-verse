@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getAnalytics, isSupported, type Analytics } from "firebase/analytics";
 import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { initializeFirestore, getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { env, validateEnvironment } from "./env";
 
@@ -39,7 +39,16 @@ try {
 
   appInstance = getApps().length > 0 ? getApp() : initializeApp(safeConfig);
   authInstance = getAuth(appInstance);
-  dbInstance = getFirestore(appInstance);
+  
+  // Use initializeFirestore with experimentalForceLongPolling to prevent WebChannel streaming drops behind proxies/adblockers/firewalls
+  try {
+    dbInstance = initializeFirestore(appInstance, {
+      experimentalForceLongPolling: true,
+    });
+  } catch {
+    dbInstance = getFirestore(appInstance);
+  }
+
   storageInstance = getStorage(appInstance);
   isFirebaseInitialized = validation.isValid;
 } catch (error: any) {
@@ -57,7 +66,13 @@ try {
       appId: "1:457448123889:web:78c4c286d63f6227db2850",
     });
     authInstance = getAuth(appInstance);
-    dbInstance = getFirestore(appInstance);
+    try {
+      dbInstance = initializeFirestore(appInstance, {
+        experimentalForceLongPolling: true,
+      });
+    } catch {
+      dbInstance = getFirestore(appInstance);
+    }
     storageInstance = getStorage(appInstance);
   } catch (fallbackErr) {
     console.error("[Firebase Critical Fallback Error]:", fallbackErr);

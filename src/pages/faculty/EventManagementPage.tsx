@@ -331,6 +331,81 @@ const EventManagementPage: React.FC = () => {
   const [submissionsFilter, setSubmissionsFilter] = useState<"All" | "Submitted" | "Draft" | "Pending">("All");
   const [submissionsSearchQuery, setSubmissionsSearchQuery] = useState("");
 
+  const handleOpenSubmissionsModal = () => {
+    setSubmissionsFilter("All");
+    setSubmissionsSearchQuery("");
+    setIsSubmissionsModalOpen(true);
+  };
+
+  const handleExportSubmissionsCsv = () => {
+    if (eventAccessRegistrations.length === 0) {
+      alert("No registered teams to export.");
+      return;
+    }
+
+    const exportData = eventAccessRegistrations.map((reg, idx) => {
+      const isGroup = reg.groupName && reg.groupName !== "Individual RSVP";
+      const teamName = isGroup ? reg.groupName : (reg.teamLeadName || reg.name || "Individual Participant");
+      const isSubmitted = reg.submissionStatus === "Submitted" || !!reg.submittedAt;
+      const isDraft = reg.submissionStatus === "Draft" || (!!reg.problemStatement && !isSubmitted);
+      const status = isSubmitted ? "Submitted" : isDraft ? "Draft" : "Not Started";
+
+      return {
+        "S.No": idx + 1,
+        "Team / Project Name": teamName,
+        "Team Lead Name": reg.teamLeadName || reg.name || "",
+        "Roll Number": reg.teamLeadStudentId || reg.studentId || "",
+        "Email Address": reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email || "",
+        "Phone Number": reg.phoneNumber || "",
+        "Branch": reg.branch || "CSE",
+        "Section": reg.section || "",
+        "Team Size": reg.teamSize || (reg.members?.length || 1),
+        "Problem Statement ID": reg.selectedProblemStatementId || reg.problemStatementCode || "",
+        "Problem Statement Title": reg.selectedProblemStatement?.title || reg.problemStatement || "",
+        "Track": reg.selectedProblemStatement?.track || reg.problemStatementTrack || "General",
+        "Submission Status": status,
+        "Submitted Timestamp": reg.submittedAt ? new Date(reg.submittedAt).toLocaleString() : "",
+        "GitHub Repo": reg.githubUrl || "",
+        "Prototype Link": reg.prototypeUrl || "",
+        "Demo Video Link": reg.demoVideoUrl || "",
+        "SRS Document": reg.srsFileName || "",
+        "Presentation Deck": reg.presentationFileName || "",
+        "Key Features / Summary": reg.keyFeatures || ""
+      };
+    });
+
+    const csv = Papa.unparse(exportData);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${(eventAccessEvent?.title || "event").replace(/[^a-z0-9]/gi, "_")}_submissions_matrix.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleUnlockSingleTeamSubmission = async (regId: string, teamName: string) => {
+    if (!window.confirm(`Unlock submission for team "${teamName}"? This will allow them to update problem statements, re-upload documents, and resubmit.`)) {
+      return;
+    }
+    try {
+      const regRef = doc(db, "registrations", regId);
+      await updateDoc(regRef, {
+        isPsLocked: false,
+        problemStatementLocked: false,
+        submissionLocked: false,
+        submissionStatus: "Draft",
+        updatedAt: Date.now()
+      });
+      alert(`Successfully unlocked submission for "${teamName}".`);
+      setSelectedTeamSubmission((prev: any) => prev ? { ...prev, isPsLocked: false, problemStatementLocked: false, submissionLocked: false, submissionStatus: "Draft" } : null);
+    } catch (err) {
+      console.error("Error unlocking team submission:", err);
+      alert("Failed to unlock submission.");
+    }
+  };
+
   // Multi-Problem Statements State
   const [isMultiProblemModalOpen, setIsMultiProblemModalOpen] = useState(false);
   const [problemList, setProblemList] = useState<any[]>([]);
@@ -4964,7 +5039,7 @@ const EventManagementPage: React.FC = () => {
 
               {/* CARD 2: Submissions */}
               <div
-                onClick={() => navigate(`/faculty/registrations?eventId=${eventAccessEvent?.id || ""}`)}
+                onClick={handleOpenSubmissionsModal}
                 className="bg-gradient-to-br from-white via-sky-50/70 to-blue-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-sky-500/5 relative overflow-hidden border border-sky-200/80 hover:border-sky-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-sky-500/15 transform-gpu"
               >
                 <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.18),transparent_70%)] pointer-events-none" />
@@ -5012,7 +5087,7 @@ const EventManagementPage: React.FC = () => {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/faculty/registrations?eventId=${eventAccessEvent?.id || ""}`);
+                      handleOpenSubmissionsModal();
                     }}
                     className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-sky-500/25 flex items-center justify-center gap-2 cursor-pointer border border-sky-400/30"
                   >
@@ -7009,6 +7084,16 @@ const EventManagementPage: React.FC = () => {
 
               <button
                 type="button"
+                onClick={handleExportSubmissionsCsv}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 active:scale-95 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer border border-white/20 shadow-xs"
+                title="Export all submission records as CSV"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Export CSV</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setIsSubmissionsModalOpen(false)}
                 className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/25 active:scale-95 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer shadow-xs"
                 title="Close Full Page"
@@ -7541,9 +7626,28 @@ const EventManagementPage: React.FC = () => {
 
             {/* Problem Statement Card */}
             <div className="space-y-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Problem Statement & Requirements</span>
-              <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs text-slate-800 font-medium whitespace-pre-wrap leading-relaxed">
-                {selectedTeamSubmission.problemStatement || "No problem statement submitted yet."}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Problem Statement & Requirements</span>
+                {selectedTeamSubmission.selectedProblemStatement?.track && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                    {selectedTeamSubmission.selectedProblemStatement.track}
+                  </span>
+                )}
+              </div>
+              <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs text-slate-800 font-medium whitespace-pre-wrap leading-relaxed space-y-1.5">
+                {selectedTeamSubmission.selectedProblemStatement?.title ? (
+                  <>
+                    <p className="font-extrabold text-slate-900 text-sm">
+                      {selectedTeamSubmission.selectedProblemStatement.code ? `[${selectedTeamSubmission.selectedProblemStatement.code}] ` : ""}
+                      {selectedTeamSubmission.selectedProblemStatement.title}
+                    </p>
+                    <p className="text-slate-600 text-xs">
+                      {selectedTeamSubmission.selectedProblemStatement.description || selectedTeamSubmission.problemStatement}
+                    </p>
+                  </>
+                ) : (
+                  <p>{selectedTeamSubmission.problemStatement || "No problem statement submitted yet."}</p>
+                )}
               </div>
             </div>
 
@@ -7599,11 +7703,24 @@ const EventManagementPage: React.FC = () => {
             </div>
 
             {/* Footer */}
-            <div className="pt-3 border-t border-slate-100 flex justify-end">
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+              {(selectedTeamSubmission.isPsLocked || selectedTeamSubmission.submissionStatus === "Submitted" || selectedTeamSubmission.submissionLocked) ? (
+                <button
+                  type="button"
+                  onClick={() => handleUnlockSingleTeamSubmission(selectedTeamSubmission.id, selectedTeamSubmission.groupName || selectedTeamSubmission.teamLeadName || "Team")}
+                  className="px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs rounded-xl border border-amber-200 transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Lock className="w-4 h-4 text-amber-600" />
+                  <span>Unlock for Team</span>
+                </button>
+              ) : (
+                <span className="text-[11px] font-bold text-slate-400">Team can edit deliverables</span>
+              )}
+
               <button
                 type="button"
                 onClick={() => setSelectedTeamSubmission(null)}
-                className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl transition-colors cursor-pointer"
+                className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl transition-colors cursor-pointer shadow-xs"
               >
                 Done
               </button>
