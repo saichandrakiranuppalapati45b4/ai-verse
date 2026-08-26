@@ -10,7 +10,8 @@ import { initializeApp, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { createClient } from "@supabase/supabase-js";
 import { userService } from "../../services/userService";
-import { deleteQuizzesByEventId } from "../../services/quizService";
+import { deleteQuizzesByEventId, evaluateQuizAnswers } from "../../services/quizService";
+import { useModal } from "../../context/ModalContext";
 import {
   Calendar,
   Users,
@@ -59,7 +60,7 @@ import {
 import DatePicker from "../../components/ui/DatePicker";
 import TimePicker from "../../components/ui/TimePicker";
 import { sendResendEmail } from "../../utils/resendEmailService";
-import { buildTeamCredentialsEmail } from "../../utils/emailTemplates";
+import { buildTeamCredentialsEmail, buildRoundPromotionEmail } from "../../utils/emailTemplates";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -81,6 +82,7 @@ interface EventItem {
 
 const EventManagementPage: React.FC = () => {
   const navigate = useNavigate();
+  const { showConfirm, showAlert } = useModal();
   const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState<EventItem[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -387,9 +389,16 @@ const EventManagementPage: React.FC = () => {
   };
 
   const handleUnlockSingleTeamSubmission = async (regId: string, teamName: string) => {
-    if (!window.confirm(`Unlock submission for team "${teamName}"? This will allow them to update problem statements, re-upload documents, and resubmit.`)) {
-      return;
-    }
+    const confirmed = await showConfirm({
+      title: "Unlock Team Submission?",
+      message: `Unlock submission for team "${teamName}"?\n\nThis will allow them to update problem statements, re-upload documents, and resubmit.`,
+      confirmText: "Unlock Submission",
+      cancelText: "Cancel",
+      type: "warning",
+      icon: "alert"
+    });
+    if (!confirmed) return;
+
     try {
       const regRef = doc(db, "registrations", regId);
       await updateDoc(regRef, {
@@ -399,11 +408,20 @@ const EventManagementPage: React.FC = () => {
         submissionStatus: "Draft",
         updatedAt: Date.now()
       });
-      alert(`Successfully unlocked submission for "${teamName}".`);
+      await showAlert({
+        title: "Submission Unlocked",
+        message: `Successfully unlocked submission for "${teamName}".`,
+        type: "success",
+        icon: "check"
+      });
       setSelectedTeamSubmission((prev: any) => prev ? { ...prev, isPsLocked: false, problemStatementLocked: false, submissionLocked: false, submissionStatus: "Draft" } : null);
     } catch (err) {
       console.error("Error unlocking team submission:", err);
-      alert("Failed to unlock submission.");
+      await showAlert({
+        title: "Unlock Failed",
+        message: "Failed to unlock team submission. Please try again.",
+        type: "danger"
+      });
     }
   };
 
@@ -594,10 +612,23 @@ const EventManagementPage: React.FC = () => {
         setSelectedPromotionQuizId("all");
       }
 
-      // 2. Fetch Quiz Submissions
+      // 2. Fetch Quiz Submissions & auto-evaluate scores if missing
       const subSnap = await getDocs(collection(db, "quizSubmissions"));
       const subs: any[] = [];
-      subSnap.forEach((d) => subs.push({ id: d.id, ...d.data() }));
+      subSnap.forEach((d) => {
+        const sData = { id: d.id, ...d.data() } as any;
+        if ((sData.score === undefined || sData.score === null) && sData.answers && qList.length > 0) {
+          const qDef = qList.find((q) => q.id === sData.quizId) || qList[0];
+          if (qDef) {
+            const evaluated = evaluateQuizAnswers(qDef, sData.answers);
+            sData.score = evaluated.score;
+            sData.maxScore = evaluated.maxScore;
+            sData.percentage = evaluated.percentage;
+            sData.passed = evaluated.passed;
+          }
+        }
+        subs.push(sData);
+      });
       setAllQuizSubmissions(subs);
 
       // 3. Fetch Jury Evaluations
@@ -660,28 +691,67 @@ const EventManagementPage: React.FC = () => {
   const promotionRoster = useMemo(() => {
     return eventAccessRegistrations.map((reg) => {
       const regId = (reg.id || "").toLowerCase().trim();
-      const groupName = (reg.groupName || "").toLowerCase().trim();
+      const groupName = (reg.groupName || reg.teamName || "").toLowerCase().trim();
+      const cleanGroupName = groupName.replace(/[^a-z0-9]/g, "");
       const leadName = (reg.teamLeadName || reg.name || "").toLowerCase().trim();
       const leadEmail = (reg.teamLeadEmail || reg.email || "").toLowerCase().trim();
+      const teamEmail = (reg.teamEmail || "").toLowerCase().trim();
+      const personalEmail = (reg.teamLeadPersonalEmail || reg.personalEmail || "").toLowerCase().trim();
+      const collegeEmail = (reg.teamLeadCollegeEmail || reg.collegeEmail || "").toLowerCase().trim();
+      const studentId = (reg.teamLeadStudentId || reg.studentId || "").toLowerCase().trim();
+      
+      const generatedEmail = cleanGroupName ? `${cleanGroupName}@aiverse.in` : "";
       const memberEmails = Array.isArray(reg.members)
         ? reg.members.map((m: any) => (m.email || "").toLowerCase().trim()).filter(Boolean)
         : [];
 
-      // Find matching quiz submission
-      const targetSubs = selectedPromotionQuizId !== "all"
+      const allTeamEmails = Array.from(new Set([
+        leadEmail,
+        teamEmail,
+        generatedEmail,
+        personalEmail,
+        collegeEmail,
+        ...memberEmails
+      ].filter(Boolean)));
+
+      // Helper to match a quiz submission to this registration
+      const isSubmissionMatch = (sub: any): boolean => {
+        if (!sub) return false;
+        
+        // Match by registration / team doc ID
+        const sTeamId = (sub.teamId || sub.registrationId || sub.userId || "").toLowerCase().trim();
+        if (sTeamId && (sTeamId === regId || sTeamId === reg.id)) return true;
+
+        // Match by team / lead / member emails
+        const sUserEmail = (sub.userEmail || "").toLowerCase().trim();
+        if (sUserEmail && allTeamEmails.includes(sUserEmail)) return true;
+
+        // Match by team name (exact or alphanumeric)
+        const sTeamName = (sub.teamName || "").toLowerCase().trim();
+        if (sTeamName && groupName) {
+          if (sTeamName === groupName) return true;
+          if (cleanGroupName && sTeamName.replace(/[^a-z0-9]/g, "") === cleanGroupName) return true;
+        }
+
+        // Match by user / leader name
+        const sUserName = (sub.userName || "").toLowerCase().trim();
+        if (sUserName) {
+          if (leadName && (sUserName === leadName || sUserName.includes(leadName) || leadName.includes(sUserName))) return true;
+          if (groupName && (sUserName === groupName || (cleanGroupName && sUserName.replace(/[^a-z0-9]/g, "") === cleanGroupName))) return true;
+        }
+
+        // Match by student ID
+        if (studentId && sub.studentId && sub.studentId.toLowerCase().trim() === studentId) return true;
+
+        return false;
+      };
+
+      // Find matching quiz submission (priority: selected quiz, fallback: any quiz of event)
+      const primaryTargetSubs = selectedPromotionQuizId !== "all"
         ? allQuizSubmissions.filter((s) => s.quizId === selectedPromotionQuizId)
         : allQuizSubmissions;
 
-      const matchedQuiz = targetSubs.find((sub) => {
-        if (sub.teamId && (sub.teamId.toLowerCase().trim() === regId || sub.teamId === reg.id)) return true;
-        if (sub.teamName && groupName && sub.teamName.toLowerCase().trim() === groupName) return true;
-        if (sub.userEmail) {
-          const subEmail = sub.userEmail.toLowerCase().trim();
-          if (subEmail === leadEmail || memberEmails.includes(subEmail)) return true;
-        }
-        if (sub.userName && leadName && sub.userName.toLowerCase().trim() === leadName) return true;
-        return false;
-      });
+      const matchedQuiz = primaryTargetSubs.find(isSubmissionMatch) || allQuizSubmissions.find(isSubmissionMatch);
 
       // Find matching jury evaluation
       const matchedJury = allJuryEvaluations.find((j) => {
@@ -691,9 +761,20 @@ const EventManagementPage: React.FC = () => {
         return false;
       });
 
-      const quizScore = matchedQuiz ? Number(matchedQuiz.score) || 0 : null;
-      const quizMaxScore = matchedQuiz ? Number(matchedQuiz.maxScore) || 50 : 50;
-      const quizPct = matchedQuiz ? (matchedQuiz.percentage !== undefined ? Number(matchedQuiz.percentage) : Math.round(((quizScore || 0) / quizMaxScore) * 100)) : null;
+      const activeQuizDef = eventQuizzesList.find(q => q.id === (matchedQuiz?.quizId || selectedPromotionQuizId));
+      const fallbackMaxScore = activeQuizDef?.totalMarks ? Number(activeQuizDef.totalMarks) : 100;
+      const quizMaxScore = matchedQuiz 
+        ? (matchedQuiz.maxScore ? Number(matchedQuiz.maxScore) : fallbackMaxScore) 
+        : fallbackMaxScore;
+      const quizScore = matchedQuiz 
+        ? (matchedQuiz.score !== undefined && matchedQuiz.score !== null ? Number(matchedQuiz.score) : 0) 
+        : null;
+      const quizPct = matchedQuiz 
+        ? (matchedQuiz.percentage !== undefined && matchedQuiz.percentage !== null 
+            ? Number(matchedQuiz.percentage) 
+            : (quizMaxScore > 0 ? Math.round(((quizScore || 0) / quizMaxScore) * 100) : 0)) 
+        : null;
+      const quizPassed = matchedQuiz?.passed ?? (quizPct !== null ? quizPct >= (quizCutoffPercentage || 40) : false);
 
       const juryScore = matchedJury ? Number(matchedJury.totalScore) || 0 : null;
 
@@ -707,6 +788,7 @@ const EventManagementPage: React.FC = () => {
         quizScore,
         quizMaxScore,
         quizPercentage: quizPct,
+        quizPassed,
         quizSubmission: matchedQuiz || null,
         juryScore,
         juryEvaluation: matchedJury || null,
@@ -714,7 +796,7 @@ const EventManagementPage: React.FC = () => {
         isEliminated: roundStatus === "Eliminated" || (reg.eliminatedInRound && reg.eliminatedInRound <= promoteFromRound)
       };
     });
-  }, [eventAccessRegistrations, allQuizSubmissions, allJuryEvaluations, selectedPromotionQuizId, promoteFromRound, promoteToRound]);
+  }, [eventAccessRegistrations, allQuizSubmissions, allJuryEvaluations, selectedPromotionQuizId, eventQuizzesList, quizCutoffPercentage, promoteFromRound, promoteToRound]);
 
   // Auto-compute eligible teams based on selected criteria
   const eligibleTeamIds = useMemo(() => {
@@ -723,12 +805,12 @@ const EventManagementPage: React.FC = () => {
     if (promotionMode === "quiz") {
       if (quizCutoffType === "score") {
         return eligiblePool
-          .filter((t) => t.quizScore !== null && t.quizScore >= quizCutoffScore)
+          .filter((t) => t.quizScore !== null && Number(t.quizScore) >= Number(quizCutoffScore))
           .map((t) => t.id);
       }
       if (quizCutoffType === "percentage") {
         return eligiblePool
-          .filter((t) => t.quizPercentage !== null && t.quizPercentage >= quizCutoffPercentage)
+          .filter((t) => t.quizPercentage !== null && Number(t.quizPercentage) >= Number(quizCutoffPercentage))
           .map((t) => t.id);
       }
       if (quizCutoffType === "topN") {
@@ -741,7 +823,7 @@ const EventManagementPage: React.FC = () => {
     } else if (promotionMode === "jury") {
       if (juryCutoffType === "score") {
         return eligiblePool
-          .filter((t) => t.juryScore !== null && t.juryScore >= juryCutoffScore)
+          .filter((t) => t.juryScore !== null && Number(t.juryScore) >= Number(juryCutoffScore))
           .map((t) => t.id);
       }
       if (juryCutoffType === "topN") {
@@ -764,13 +846,50 @@ const EventManagementPage: React.FC = () => {
 
   const handleExecuteBatchPromotion = async () => {
     if (selectedPromoteRegIds.length === 0) {
-      alert("Please select at least one team to promote to the next round.");
+      await showAlert({
+        title: "No Eligible Teams Selected",
+        message: promotionMode === "quiz" 
+          ? `No teams currently meet the minimum quiz cutoff threshold (${quizCutoffType === "score" ? `${quizCutoffScore} marks` : `${quizCutoffPercentage}%`}). Only participants with score equal or greater than the cutoff can be selected to promote.`
+          : "Please select at least one team to promote to the next round.",
+        type: "warning",
+        icon: "alert"
+      });
       return;
     }
 
-    if (!confirm(`Are you sure you want to promote ${selectedPromoteRegIds.length} team(s) from Round ${promoteFromRound} to Round ${promoteToRound}?`)) {
-      return;
+    // Strict validation: In quiz mode, ensure every selected team has score >= cutoff
+    if (promotionMode === "quiz") {
+      const belowCutoffTeams = selectedPromoteRegIds
+        .map(id => promotionRoster.find(t => t.id === id))
+        .filter(t => {
+          if (!t) return true;
+          if (t.quizScore === null) return true;
+          if (quizCutoffType === "score") return Number(t.quizScore) < Number(quizCutoffScore);
+          if (quizCutoffType === "percentage") return Number(t.quizPercentage ?? 0) < Number(quizCutoffPercentage);
+          if (quizCutoffType === "topN") return !eligibleTeamIds.includes(t.id);
+          return false;
+        });
+
+      if (belowCutoffTeams.length > 0) {
+        await showAlert({
+          title: "Cannot Promote Teams Below Cutoff",
+          message: `${belowCutoffTeams.length} selected team(s) do not meet the minimum quiz cutoff (${quizCutoffType === "score" ? `${quizCutoffScore} marks` : `${quizCutoffPercentage}%`}). Only participants with score equal or greater than the cutoff can be promoted to Round ${promoteToRound}.`,
+          type: "danger",
+          icon: "alert"
+        });
+        return;
+      }
     }
+
+    const confirmed = await showConfirm({
+      title: `Promote Teams to Round ${promoteToRound}?`,
+      message: `Are you sure you want to promote ${selectedPromoteRegIds.length} qualified team(s) from Round ${promoteFromRound} to Round ${promoteToRound}?`,
+      confirmText: `Promote ${selectedPromoteRegIds.length} Qualified Team(s)`,
+      cancelText: "Cancel",
+      type: "primary",
+      icon: "play"
+    });
+    if (!confirmed) return;
 
     setIsExecutingPromotion(true);
     try {
@@ -813,6 +932,54 @@ const EventManagementPage: React.FC = () => {
       }
 
       await Promise.all([...promotePromises, ...eliminatePromises]);
+
+      // Dispatch Congratulation & Promotion Emails via Resend to Team Leads
+      const targetRoundDef = liveRoundsList.find(r => r.roundNumber === promoteToRound);
+      const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
+      const dashboardUrl = `${siteBaseUrl}/participant`;
+
+      let emailsSentCount = 0;
+      const emailPromises = selectedPromoteRegIds.map(async (regId) => {
+        try {
+          const teamInfo = promotionRoster.find((t) => t.id === regId);
+          if (!teamInfo) return;
+
+          const targetEmail = teamInfo.teamLeadPersonalEmail || teamInfo.personalEmail || teamInfo.teamLeadEmail || teamInfo.email;
+          if (!targetEmail) return;
+
+          const emailContent = buildRoundPromotionEmail({
+            teamLeadName: teamInfo.teamLeadName || teamInfo.name || "Participant",
+            eventTitle: eventAccessEvent?.title || "AI Verse Event",
+            groupName: teamInfo.groupName,
+            fromRound: promoteFromRound,
+            toRound: promoteToRound,
+            roundName: targetRoundDef?.name,
+            roundDescription: targetRoundDef?.description,
+            teamEmail: teamInfo.teamEmail,
+            dashboardUrl,
+            quizScore: teamInfo.quizScore,
+            quizMaxScore: teamInfo.quizMaxScore,
+            quizPercentage: teamInfo.quizPercentage,
+            juryScore: teamInfo.juryScore,
+          });
+
+          const emailRes = await sendResendEmail({
+            to: targetEmail,
+            subject: emailContent.subject,
+            text: emailContent.text,
+            html: emailContent.html,
+          });
+
+          if (emailRes.success) {
+            emailsSentCount++;
+          }
+        } catch (emailErr) {
+          console.warn("Failed to dispatch promotion email for regId:", regId, emailErr);
+        }
+      });
+
+      await Promise.allSettled(emailPromises);
 
       // Advance active event stage if requested
       if (advanceEventRoundOnPromote && eventAccessEvent?.id && promoteToRound > (eventAccessEvent.currentRound || 1)) {
@@ -857,8 +1024,8 @@ const EventManagementPage: React.FC = () => {
         })
       );
 
-      setRoundsSuccessMsg(`🎉 Successfully promoted ${selectedPromoteRegIds.length} team(s) to Round ${promoteToRound}!`);
-      setTimeout(() => setRoundsSuccessMsg(null), 6000);
+      setRoundsSuccessMsg(`🎉 Successfully promoted ${selectedPromoteRegIds.length} team(s) to Round ${promoteToRound} & dispatched congratulations emails!`);
+      setTimeout(() => setRoundsSuccessMsg(null), 7000);
     } catch (err) {
       console.error("Error executing batch round promotion:", err);
       alert("Failed to execute round promotion. Please check console.");
@@ -1164,10 +1331,21 @@ const EventManagementPage: React.FC = () => {
 
   const handleRevokeAllTeamsLoginAccess = async () => {
     if (!eventAccessRegistrations || eventAccessRegistrations.length === 0) {
-      alert("No registered teams available.");
+      await showAlert({
+        title: "No Teams Available",
+        message: "No registered teams available.",
+        type: "info"
+      });
       return;
     }
-    const confirmRevoke = window.confirm("Are you sure you want to revoke team portal login access for all teams? They will no longer be able to log in using their credentials.");
+    const confirmRevoke = await showConfirm({
+      title: "Revoke All Login Access?",
+      message: "Are you sure you want to revoke team portal login access for all teams? They will no longer be able to log in using their credentials.",
+      confirmText: "Revoke Access for All",
+      cancelText: "Cancel",
+      type: "danger",
+      icon: "alert"
+    });
     if (!confirmRevoke) return;
 
     setIsProvisioningLoginAccess(true);
@@ -1223,14 +1401,25 @@ const EventManagementPage: React.FC = () => {
       }, 5500);
     } catch (err) {
       console.error("Error revoking login access:", err);
-      alert("Failed to revoke login access.");
+      await showAlert({
+        title: "Revoke Error",
+        message: "Failed to revoke login access.",
+        type: "danger"
+      });
     } finally {
       setIsProvisioningLoginAccess(false);
     }
   };
 
   const handleRevokeSingleTeamAccess = async (regId: string, teamNameStr: string) => {
-    const confirmRevoke = window.confirm(`Are you sure you want to revoke login access for "${teamNameStr}"?`);
+    const confirmRevoke = await showConfirm({
+      title: "Revoke Login Access?",
+      message: `Are you sure you want to revoke login access for "${teamNameStr}"?`,
+      confirmText: "Revoke Access",
+      cancelText: "Cancel",
+      type: "danger",
+      icon: "alert"
+    });
     if (!confirmRevoke) return;
 
     try {
@@ -1896,23 +2085,41 @@ const EventManagementPage: React.FC = () => {
   };
 
   const handleDeleteEvent = async (id: string, title: string) => {
-    if (confirm(`Are you sure you want to delete the event "${title}"? This will permanently delete the event along with all its quizzes, submissions, sessions, and records.`)) {
-      try {
-        // 1. Cascading delete of all quizzes and submissions belonging to this event
-        try {
-          await deleteQuizzesByEventId(id, title);
-        } catch (quizErr) {
-          console.warn("Notice deleting associated quizzes for event:", quizErr);
-        }
+    const confirmed = await showConfirm({
+      title: "Delete Event?",
+      message: `Are you sure you want to delete the event "${title}"?\n\nThis will permanently delete the event along with all its quizzes, submissions, sessions, and records.`,
+      confirmText: "Delete Event",
+      cancelText: "Cancel",
+      type: "danger",
+      icon: "trash"
+    });
+    if (!confirmed) return;
 
-        // 2. Delete the event doc
-        const docRef = doc(db, "events", id);
-        await deleteDoc(docRef);
-        setEvents(prev => prev.filter(e => e.id !== id));
-      } catch (err) {
-        console.error("Error deleting event from Firestore:", err);
-        alert("Failed to delete event from database.");
+    try {
+      // 1. Cascading delete of all quizzes and submissions belonging to this event
+      try {
+        await deleteQuizzesByEventId(id, title);
+      } catch (quizErr) {
+        console.warn("Notice deleting associated quizzes for event:", quizErr);
       }
+
+      // 2. Delete the event doc
+      const docRef = doc(db, "events", id);
+      await deleteDoc(docRef);
+      setEvents(prev => prev.filter(e => e.id !== id));
+      await showAlert({
+        title: "Event Deleted",
+        message: `Event "${title}" has been deleted.`,
+        type: "success",
+        icon: "check"
+      });
+    } catch (err) {
+      console.error("Error deleting event from Firestore:", err);
+      await showAlert({
+        title: "Delete Failed",
+        message: "Failed to delete event from database.",
+        type: "danger"
+      });
     }
   };
 
@@ -5871,16 +6078,25 @@ const EventManagementPage: React.FC = () => {
         document.body
       )}
 
-      {/* 🏆 LIVE ROUND MANAGEMENT & PARTICIPANT PROMOTION MODAL */}
+      {/* 🏆 LIVE ROUND MANAGEMENT & PARTICIPANT PROMOTION ENGINE (FULL SCREEN) */}
       {isEventRoundsModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200 text-slate-900">
-          <div className="bg-slate-50 rounded-3xl w-full max-w-6xl my-auto shadow-2xl border border-slate-200/80 overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200">
-            
-            {/* Modal Header */}
-            <div className="w-full bg-[#1E3A8A] text-white px-6 sm:px-8 py-5 flex items-center justify-between shadow-md shrink-0">
+        <div className="fixed inset-0 z-[9999999] bg-slate-100 text-slate-900 flex flex-col w-screen h-screen overflow-hidden animate-in fade-in duration-200">
+          
+          {/* Sticky Full-Width Dark Blue Top Header Bar */}
+          <div className="w-full bg-[#1E3A8A] text-white px-6 sm:px-10 py-4 flex items-center justify-between shadow-xl shrink-0 z-50">
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => setIsEventRoundsModalOpen(false)}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer border border-white/15 active:scale-95"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                <span>Back to Event</span>
+              </button>
+
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20 shadow-inner">
-                  <Trophy className="w-6 h-6 text-amber-300" />
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20 shadow-inner">
+                  <Trophy className="w-5 h-5 text-amber-300" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -5891,79 +6107,85 @@ const EventManagementPage: React.FC = () => {
                       STAGE {liveCurrentRound} OF {liveRoundsList.length} ACTIVE
                     </span>
                   </div>
-                  <h3 className="text-xl font-black text-white mt-0.5 tracking-tight">
+                  <h3 className="text-lg sm:text-xl font-black text-white mt-0.5 tracking-tight">
                     Competition Rounds & Participant Promotion Engine
                   </h3>
-                  <p className="text-xs text-blue-200 font-medium truncate max-w-lg">
-                    {eventAccessEvent?.title || "Active Event"} • {eventAccessRegistrations.length} Registered Team(s)
-                  </p>
                 </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="text-right hidden md:block">
+                <div className="text-xs font-black text-white truncate max-w-xs">{eventAccessEvent?.title || "Active Event"}</div>
+                <div className="text-[11px] text-blue-200 font-semibold">{eventAccessRegistrations.length} Registered Team(s)</div>
               </div>
 
               <button
                 type="button"
                 onClick={() => setIsEventRoundsModalOpen(false)}
-                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer"
+                className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all border border-white/20 cursor-pointer active:scale-95"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
+          </div>
 
-            {/* Modal Tab Switcher */}
-            <div className="bg-white border-b border-slate-200 px-6 sm:px-8 py-3 flex items-center justify-between gap-4 shrink-0 flex-wrap">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRoundModalTab("promotion")}
-                  className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                    roundModalTab === "promotion"
-                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20"
-                      : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                  }`}
-                >
-                  <Trophy className="w-4 h-4 text-amber-300" />
-                  <span>Participant Promotion Engine</span>
-                  {loadingPromotionMetrics ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                  ) : (
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                      roundModalTab === "promotion" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
-                    }`}>
-                      {promotionRoster.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setRoundModalTab("stages")}
-                  className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                    roundModalTab === "stages"
-                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20"
-                      : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                  }`}
-                >
-                  <Layers className="w-4 h-4 text-cyan-300" />
-                  <span>Round Stages & Schedule</span>
+          {/* Full-Width Modal Tab Switcher */}
+          <div className="bg-white border-b border-slate-200 px-6 sm:px-10 py-3 flex items-center justify-between gap-4 shrink-0 flex-wrap shadow-xs">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setRoundModalTab("promotion")}
+                className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                  roundModalTab === "promotion"
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                <Trophy className="w-4 h-4 text-amber-300" />
+                <span>Participant Promotion Engine</span>
+                {loadingPromotionMetrics ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                ) : (
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                    roundModalTab === "stages" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                    roundModalTab === "promotion" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
                   }`}>
-                    {liveRoundsList.length} Stages
+                    {promotionRoster.length}
                   </span>
-                </button>
-              </div>
+                )}
+              </button>
 
-              {roundsSuccessMsg && (
-                <div className="px-4 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-2 animate-in fade-in">
-                  <Check className="w-4 h-4 text-emerald-600" />
-                  <span>{roundsSuccessMsg}</span>
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => setRoundModalTab("stages")}
+                className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                  roundModalTab === "stages"
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                }`}
+              >
+                <Layers className="w-4 h-4 text-cyan-300" />
+                <span>Round Stages & Schedule</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  roundModalTab === "stages" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                }`}>
+                  {liveRoundsList.length} Stages
+                </span>
+              </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 sm:p-8 overflow-y-auto flex-1 space-y-6">
+            {roundsSuccessMsg && (
+              <div className="px-4 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span>{roundsSuccessMsg}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Full Screen Scrollable Body */}
+          <div className="p-6 sm:p-10 overflow-y-auto flex-1 bg-slate-50">
+            <div className="max-w-7xl mx-auto space-y-6">
 
               {/* ========================================================================= */}
               {/* TAB 1: 🏆 PARTICIPANT PROMOTION ENGINE */}
@@ -6196,15 +6418,19 @@ const EventManagementPage: React.FC = () => {
 
                           <div className="space-y-1 sm:w-1/3">
                             <label className="block text-[10px] font-black uppercase text-purple-900 tracking-wider">
-                              {quizCutoffType === "score" ? "Cutoff Marks (Score ≥)" : quizCutoffType === "percentage" ? "Cutoff Percentage (≥ %)" : "Top N Count (Ranks 1 to N)"}
+                              {quizCutoffType === "score" 
+                                ? `Cutoff Marks (Score ≥ Out of ${eventQuizzesList.find(q => q.id === selectedPromotionQuizId)?.totalMarks || 100})` 
+                                : quizCutoffType === "percentage" 
+                                  ? "Cutoff Percentage (≥ %)" 
+                                  : "Top N Count (Ranks 1 to N)"}
                             </label>
                             {quizCutoffType === "score" ? (
                               <input
                                 type="number"
                                 min={0}
-                                max={100}
+                                max={eventQuizzesList.find(q => q.id === selectedPromotionQuizId)?.totalMarks || 100}
                                 value={quizCutoffScore}
-                                onChange={(e) => setQuizCutoffScore(Number(e.target.value))}
+                                onChange={(e) => setQuizCutoffScore(e.target.value === "" ? 0 : Number(e.target.value))}
                                 className="w-full px-3 py-2 bg-white border border-purple-300 rounded-xl text-xs font-black text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
                                 placeholder="e.g. 25"
                               />
@@ -6214,7 +6440,7 @@ const EventManagementPage: React.FC = () => {
                                 min={0}
                                 max={100}
                                 value={quizCutoffPercentage}
-                                onChange={(e) => setQuizCutoffPercentage(Number(e.target.value))}
+                                onChange={(e) => setQuizCutoffPercentage(e.target.value === "" ? 0 : Number(e.target.value))}
                                 className="w-full px-3 py-2 bg-white border border-purple-300 rounded-xl text-xs font-black text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
                                 placeholder="e.g. 60"
                               />
@@ -6433,8 +6659,22 @@ const EventManagementPage: React.FC = () => {
                                           const filteredIds = new Set(filteredRoster.map(t => t.id));
                                           setSelectedPromoteRegIds(prev => prev.filter(id => !filteredIds.has(id)));
                                         } else {
-                                          const newIds = new Set([...selectedPromoteRegIds, ...filteredRoster.map(t => t.id)]);
-                                          setSelectedPromoteRegIds(Array.from(newIds));
+                                          const qualifiedIds = filteredRoster
+                                            .filter(t => {
+                                              if (promotionMode === "quiz") {
+                                                if (t.quizScore === null) return false;
+                                                if (quizCutoffType === "score") return Number(t.quizScore) >= Number(quizCutoffScore);
+                                                if (quizCutoffType === "percentage") return Number(t.quizPercentage ?? 0) >= Number(quizCutoffPercentage);
+                                                if (quizCutoffType === "topN") return eligibleTeamIds.includes(t.id);
+                                                return false;
+                                              }
+                                              if (promotionMode === "jury") {
+                                                return eligibleTeamIds.includes(t.id);
+                                              }
+                                              return t.currentTeamRound === promoteFromRound && !t.isEliminated;
+                                            })
+                                            .map(t => t.id);
+                                          setSelectedPromoteRegIds(Array.from(new Set([...selectedPromoteRegIds, ...qualifiedIds])));
                                         }
                                       }}
                                       className="w-4 h-4 rounded text-blue-600 cursor-pointer"
@@ -6457,6 +6697,14 @@ const EventManagementPage: React.FC = () => {
                                   const displayTeamName = isGroup ? team.groupName : (team.teamLeadName || team.name || "Participant");
                                   const isFinalSubmitted = team.submissionStatus === "Submitted" || !!team.submittedAt;
 
+                                  const meetsQuizCutoff = (() => {
+                                    if (team.quizScore === null) return false;
+                                    if (quizCutoffType === "score") return Number(team.quizScore) >= Number(quizCutoffScore);
+                                    if (quizCutoffType === "percentage") return Number(team.quizPercentage ?? 0) >= Number(quizCutoffPercentage);
+                                    if (quizCutoffType === "topN") return eligibleTeamIds.includes(team.id);
+                                    return false;
+                                  })();
+
                                   return (
                                     <tr
                                       key={team.id || idx}
@@ -6473,14 +6721,27 @@ const EventManagementPage: React.FC = () => {
                                         <input
                                           type="checkbox"
                                           checked={isSelected}
+                                          disabled={promotionMode === "quiz" && !meetsQuizCutoff}
                                           onChange={() => {
                                             if (isSelected) {
                                               setSelectedPromoteRegIds(prev => prev.filter(id => id !== team.id));
                                             } else {
+                                              if (promotionMode === "quiz" && !meetsQuizCutoff) {
+                                                showAlert({
+                                                  title: "Cutoff Not Met",
+                                                  message: `Team "${displayTeamName}" scored ${team.quizScore !== null ? `${team.quizScore}/${team.quizMaxScore} (${team.quizPercentage}%)` : "No Quiz"}, which is below the cutoff threshold of ${quizCutoffType === "score" ? `${quizCutoffScore} marks` : `${quizCutoffPercentage}%`}. Only participants with score equal or greater than the cutoff can be selected for promotion.`,
+                                                  type: "warning",
+                                                  icon: "alert"
+                                                });
+                                                return;
+                                              }
                                               setSelectedPromoteRegIds(prev => [...prev, team.id]);
                                             }
                                           }}
-                                          className="w-4 h-4 rounded text-blue-600 cursor-pointer"
+                                          className={`w-4 h-4 rounded text-blue-600 ${
+                                            promotionMode === "quiz" && !meetsQuizCutoff ? "cursor-not-allowed opacity-30" : "cursor-pointer"
+                                          }`}
+                                          title={promotionMode === "quiz" && !meetsQuizCutoff ? `Score below cutoff (${quizCutoffType === "score" ? `${quizCutoffScore} marks` : `${quizCutoffPercentage}%`})` : undefined}
                                         />
                                       </td>
 
@@ -6529,12 +6790,28 @@ const EventManagementPage: React.FC = () => {
                                       {/* Quiz Score */}
                                       <td className="py-4 px-3 text-center">
                                         {team.quizScore !== null ? (
-                                          <span className="px-2.5 py-1 rounded-xl bg-purple-100 text-purple-900 border border-purple-200 text-[11px] font-black inline-flex items-center gap-1">
-                                            <span>{team.quizScore}/{team.quizMaxScore}</span>
-                                            <span className="text-[9px] text-purple-700">({team.quizPercentage}%)</span>
-                                          </span>
+                                          <div className="inline-flex flex-col items-center gap-1">
+                                            <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black inline-flex items-center gap-1.5 border shadow-2xs ${
+                                              meetsQuizCutoff
+                                                ? "bg-purple-50 text-purple-900 border-purple-200"
+                                                : "bg-rose-50 text-rose-900 border-rose-200"
+                                            }`}>
+                                              <HelpCircle className="w-3 h-3 text-purple-600" />
+                                              <span>{team.quizScore}/{team.quizMaxScore}</span>
+                                              <span className="text-[9px] text-purple-700 font-extrabold">({team.quizPercentage}%)</span>
+                                            </span>
+                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                                              meetsQuizCutoff
+                                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                                                : "bg-rose-50 text-rose-700 border border-rose-200/60"
+                                            }`}>
+                                              {meetsQuizCutoff ? "✓ Qualified" : "Below Cutoff"}
+                                            </span>
+                                          </div>
                                         ) : (
-                                          <span className="text-[10px] text-slate-400 font-medium">No Quiz</span>
+                                          <span className="text-[10px] text-slate-400 font-bold px-2 py-1 rounded-lg bg-slate-100 border border-slate-200">
+                                            No Quiz
+                                          </span>
                                         )}
                                       </td>
 
@@ -6570,23 +6847,32 @@ const EventManagementPage: React.FC = () => {
 
                                       {/* Quick Action Button */}
                                       <td className="py-4 px-4 text-right">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            if (isSelected) {
-                                              setSelectedPromoteRegIds(prev => prev.filter(id => id !== team.id));
-                                            } else {
-                                              setSelectedPromoteRegIds(prev => [...prev, team.id]);
-                                            }
-                                          }}
-                                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                                            isSelected
-                                              ? "bg-emerald-600 text-white shadow-xs"
-                                              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-                                          }`}
-                                        >
-                                          {isSelected ? "Selected ✓" : `Promote to R${promoteToRound}`}
-                                        </button>
+                                        {promotionMode === "quiz" && !meetsQuizCutoff ? (
+                                          <span
+                                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed inline-block"
+                                            title={`Score below required cutoff (${quizCutoffType === "score" ? `${quizCutoffScore} marks` : `${quizCutoffPercentage}%`})`}
+                                          >
+                                            Below Cutoff
+                                          </span>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (isSelected) {
+                                                setSelectedPromoteRegIds(prev => prev.filter(id => id !== team.id));
+                                              } else {
+                                                setSelectedPromoteRegIds(prev => [...prev, team.id]);
+                                              }
+                                            }}
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                                              isSelected
+                                                ? "bg-emerald-600 text-white shadow-xs"
+                                                : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                                            }`}
+                                          >
+                                            {isSelected ? "Selected ✓" : `Promote to R${promoteToRound}`}
+                                          </button>
+                                        )}
                                       </td>
                                     </tr>
                                   );

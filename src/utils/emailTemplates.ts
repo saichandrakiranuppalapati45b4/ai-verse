@@ -341,3 +341,235 @@ export function buildTeamCredentialsEmail(data: CredentialsEmailData): {
 
   return { subject, html, text };
 }
+
+export interface PromotionEmailData {
+  teamLeadName: string;
+  eventTitle: string;
+  groupName?: string;
+  fromRound: number;
+  toRound: number;
+  roundName?: string;
+  roundDescription?: string;
+  teamEmail?: string;
+  dashboardUrl?: string;
+  quizScore?: number | null;
+  quizMaxScore?: number | null;
+  quizPercentage?: number | null;
+  juryScore?: number | null;
+}
+
+/**
+ * Builds round advancement & promotion congratulations email
+ */
+export function buildRoundPromotionEmail(data: PromotionEmailData): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const {
+    teamLeadName,
+    eventTitle,
+    groupName,
+    fromRound,
+    toRound,
+    roundName,
+    roundDescription,
+    teamEmail,
+    dashboardUrl,
+    quizScore,
+    quizMaxScore,
+    quizPercentage,
+    juryScore,
+  } = data;
+
+  const displayTeam = groupName && groupName !== "Individual RSVP" ? groupName : (teamLeadName || "Participant");
+  const stageTitle = roundName || `Stage ${toRound}`;
+  const subject = `🎉 Congratulations! Team ${displayTeam} Promoted to Round ${toRound} | ${eventTitle}`;
+
+  const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${subject}</title>
+  <style type="text/css">
+    body { margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; }
+    table { border-collapse: collapse; }
+    .btn:hover { background-color: #047857 !important; }
+  </style>
+</head>
+<body style="margin: 0; padding: 32px 16px; background-color: #f1f5f9;">
+  <div style="display: none; max-height: 0px; overflow: hidden;">
+    Congratulations! Team ${displayTeam} has successfully qualified and been promoted to Round ${toRound} in ${eventTitle}.
+    &#847; &zwnj; &nbsp; &#8199; &shy;
+  </div>
+
+  <table width="100%" border="0" cellspacing="0" cellpadding="0">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #065f46 0%, #047857 50%, #0d9488 100%); padding: 40px 32px; text-align: center;">
+              <div style="font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #a7f3d0; text-transform: uppercase; margin-bottom: 8px;">
+                AI VERSE COMPETITION ROUNDS
+              </div>
+              <div style="font-size: 32px; margin-bottom: 4px;">🏆 🎉</div>
+              <h1 style="margin: 0; color: #ffffff; font-size: 26px; font-weight: 900; line-height: 1.2;">
+                Congratulations!
+              </h1>
+              <p style="margin: 8px 0 0 0; font-size: 15px; color: #d1fae5; font-weight: 700;">
+                You are Promoted to Round ${toRound}!
+              </p>
+              <div style="margin-top: 14px; display: inline-block; background-color: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 20px; padding: 5px 16px; color: #ffffff; font-size: 12px; font-weight: 800; letter-spacing: 0.5px;">
+                ✓ QUALIFIED FOR ROUND ${toRound}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Main Body -->
+          <tr>
+            <td style="padding: 36px 32px 28px 32px;">
+              <p style="font-size: 16px; line-height: 1.6; color: #0f172a; margin: 0 0 16px 0;">
+                Hello <strong>${teamLeadName}</strong>,
+              </p>
+              <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 24px 0;">
+                We are thrilled to inform you that your team <strong>"${displayTeam}"</strong> has successfully met the qualification criteria in <strong>Round ${fromRound}</strong> and has been officially <span style="color: #059669; font-weight: 800;">promoted to Round ${toRound} (${stageTitle})</span> of <strong>${eventTitle}</strong>!
+              </p>
+
+              <!-- Qualification Details Card -->
+              <table width="100%" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; margin-bottom: 24px; overflow: hidden;">
+                <tr>
+                  <td style="padding: 16px 20px; border-bottom: 1px solid #e2e8f0; background-color: #f0fdf4;">
+                    <div style="font-size: 11px; font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Active Round Stage
+                    </div>
+                    <div style="font-size: 18px; font-weight: 900; color: #065f46; margin-top: 2px;">
+                      Round ${toRound}: ${stageTitle}
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 20px; border-bottom: 1px solid #e2e8f0;">
+                    <table width="100%">
+                      <tr>
+                        <td width="50%">
+                          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Team Name</div>
+                          <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-top: 2px;">${displayTeam}</div>
+                          ${teamEmail ? `<div style="font-size: 11px; color: #2563eb; font-family: monospace; margin-top: 2px;">${teamEmail}</div>` : ""}
+                        </td>
+                        <td width="50%">
+                          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Event</div>
+                          <div style="font-size: 14px; font-weight: 800; color: #1e293b; margin-top: 2px;">${eventTitle}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                ${(quizScore !== null && quizScore !== undefined) || (juryScore !== null && juryScore !== undefined) ? `
+                <tr>
+                  <td style="padding: 14px 20px; border-bottom: 1px solid #e2e8f0;">
+                    <table width="100%">
+                      <tr>
+                        ${quizScore !== null && quizScore !== undefined ? `
+                        <td width="50%">
+                          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Assessment Score</div>
+                          <div style="font-size: 14px; font-weight: 800; color: #7c3aed; margin-top: 2px;">
+                            ${quizScore} / ${quizMaxScore || 100} (${quizPercentage || 0}%)
+                          </div>
+                        </td>` : ""}
+                        ${juryScore !== null && juryScore !== undefined ? `
+                        <td width="50%">
+                          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Jury Evaluation</div>
+                          <div style="font-size: 14px; font-weight: 800; color: #4338ca; margin-top: 2px;">
+                            ${juryScore} / 100
+                          </div>
+                        </td>` : ""}
+                      </tr>
+                    </table>
+                  </td>
+                </tr>` : ""}
+                ${roundDescription ? `
+                <tr>
+                  <td style="padding: 14px 20px;">
+                    <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">
+                      Stage Instructions & Deliverables
+                    </div>
+                    <div style="font-size: 13px; font-weight: 500; color: #334155; line-height: 1.5;">
+                      ${roundDescription}
+                    </div>
+                  </td>
+                </tr>` : ""}
+              </table>
+
+              <!-- Next Steps Notice -->
+              <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 18px; border-radius: 8px; margin-bottom: 28px;">
+                <div style="font-size: 13px; font-weight: 800; color: #1e40af; margin-bottom: 4px;">
+                  📌 Next Steps for Round ${toRound}:
+                </div>
+                <div style="font-size: 13px; color: #1e3a8a; line-height: 1.5;">
+                  Log in to your <strong>AI Verse Participant Dashboard</strong> to select or update your problem track, submit required deliverables, and view live schedules.
+                </div>
+              </div>
+
+              <!-- Call to Action Button -->
+              ${dashboardUrl ? `
+              <div style="text-align: center; margin: 32px 0 16px 0;">
+                <a href="${dashboardUrl}" target="_blank" style="display: inline-block; background-color: #059669; color: #ffffff; font-size: 15px; font-weight: 800; text-decoration: none; padding: 14px 36px; border-radius: 12px; box-shadow: 0 4px 14px rgba(5,150,105,0.3);">
+                  Open Participant Dashboard &rarr;
+                </a>
+              </div>` : ""}
+
+              <p style="font-size: 13px; color: #64748b; text-align: center; margin: 12px 0 0 0;">
+                Best of luck from the faculty coordinators and event jury!
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 24px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
+              <p style="font-size: 12px; color: #64748b; margin: 0 0 6px 0;">
+                <strong>AI Verse Club</strong> • VIT-B
+              </p>
+              <p style="font-size: 11px; color: #94a3b8; margin: 0; line-height: 1.5;">
+                This official promotion announcement was sent to you because your team registered for ${eventTitle}.<br>
+                For queries or support, reach out to your faculty coordinators.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    `🎉 CONGRATULATIONS! PROMOTED TO ROUND ${toRound}`,
+    `==============================================`,
+    ``,
+    `Hello ${teamLeadName},`,
+    ``,
+    `Great news! Team "${displayTeam}" has officially qualified and been promoted to Round ${toRound} (${stageTitle}) in ${eventTitle}!`,
+    ``,
+    `EVENT DETAILS:`,
+    `- Event: ${eventTitle}`,
+    `- Team: ${displayTeam}`,
+    `- Round: Round ${toRound} (${stageTitle})`,
+    quizScore !== null && quizScore !== undefined ? `- Score: ${quizScore}/${quizMaxScore || 100} (${quizPercentage || 0}%)` : "",
+    juryScore !== null && juryScore !== undefined ? `- Jury Score: ${juryScore}/100` : "",
+    roundDescription ? `- Description: ${roundDescription}` : "",
+    ``,
+    dashboardUrl ? `ACCESS YOUR DASHBOARD:\n${dashboardUrl}\n` : "",
+    `Please log in to your participant dashboard to proceed with the next round deliverables.`,
+    ``,
+    `Regards,`,
+    `AI Verse Club • VIT-B`,
+  ].filter(Boolean).join("\n");
+
+  return { subject, html, text };
+}
+

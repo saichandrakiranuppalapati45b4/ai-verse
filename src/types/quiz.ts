@@ -41,6 +41,12 @@ export interface Quiz {
   createdBy?: string;
 }
 
+export interface QuizViolationLog {
+  type: "fullscreen_exit" | "tab_switch" | "copy_attempt" | "paste_attempt" | "right_click" | "dev_tools" | "shortcut_attempt";
+  message: string;
+  timestamp: number;
+}
+
 export interface QuizSession {
   id: string; // deterministic format: `${quizId}_${userId}`
   quizId: string;
@@ -58,6 +64,8 @@ export interface QuizSession {
   submittedAt?: number;
   ipAddress?: string;
   userAgent?: string;
+  violationsCount?: number;
+  violationLogs?: QuizViolationLog[];
   createdAt: number;
   updatedAt: number;
 }
@@ -69,6 +77,8 @@ export interface QuizDraftAnswers {
   answers: Record<string, string>; // questionId -> selectedOptionId
   flaggedQuestions: string[]; // array of flagged question IDs
   currentQuestionIndex: number;
+  violationsCount?: number;
+  violationLogs?: QuizViolationLog[];
   lastAutosavedAt: number;
   clientTimestamp: number;
 }
@@ -92,9 +102,14 @@ export interface QuizSubmission {
   submittedAt: number;
   isAutoSubmitted: boolean;
   isFinal: boolean;
+  violationsCount?: number;
+  violationLogs?: QuizViolationLog[];
   score?: number;
   maxScore?: number;
   percentage?: number;
+  correctCount?: number;
+  incorrectCount?: number;
+  passed?: boolean;
   evaluatedAt?: number;
 }
 

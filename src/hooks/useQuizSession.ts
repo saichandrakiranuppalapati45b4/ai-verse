@@ -22,17 +22,25 @@ export function useQuizSession({
     let localAnswers = initialAnswers;
     let localFlags = initialFlags;
     let localIdx = initialQuestionIndex;
+    let localViolations = session.violationsCount || 0;
+    let localViolationLogs: import("../types/quiz").QuizViolationLog[] = session.violationLogs || [];
 
     if (typeof window !== "undefined") {
       try {
         const stored = localStorage.getItem(`quiz_draft_${session.id}`);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (parsed && parsed.answers) {
-            localAnswers = { ...initialAnswers, ...parsed.answers };
-            localFlags = parsed.flaggedQuestions || initialFlags;
+          if (parsed) {
+            if (parsed.answers) localAnswers = { ...initialAnswers, ...parsed.answers };
+            if (parsed.flaggedQuestions) localFlags = parsed.flaggedQuestions;
             if (typeof parsed.currentQuestionIndex === "number") {
               localIdx = parsed.currentQuestionIndex;
+            }
+            if (typeof parsed.violationsCount === "number" && parsed.violationsCount > localViolations) {
+              localViolations = parsed.violationsCount;
+            }
+            if (Array.isArray(parsed.violationLogs) && parsed.violationLogs.length > localViolationLogs.length) {
+              localViolationLogs = parsed.violationLogs;
             }
           }
         }
@@ -40,14 +48,16 @@ export function useQuizSession({
         // ignore
       }
     }
-    return { localAnswers, localFlags, localIdx };
+    return { localAnswers, localFlags, localIdx, localViolations, localViolationLogs };
   };
 
-  const { localAnswers, localFlags, localIdx } = getInitialState();
+  const { localAnswers, localFlags, localIdx, localViolations, localViolationLogs } = getInitialState();
 
   const [answers, setAnswers] = useState<Record<string, string>>(localAnswers);
   const [flaggedQuestions, setFlaggedQuestions] = useState<string[]>(localFlags);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(localIdx);
+  const [violationsCount, setViolationsCount] = useState<number>(localViolations);
+  const [violationLogs, setViolationLogs] = useState<import("../types/quiz").QuizViolationLog[]>(localViolationLogs);
   const [saveStatus, setSaveStatus] = useState<AutosaveStatus>("saved");
   const [lastSavedAt, setLastSavedAt] = useState<number>(session.lastAutosavedAt || Date.now());
 
@@ -59,6 +69,10 @@ export function useQuizSession({
   flagsRef.current = flaggedQuestions;
   const indexRef = useRef(currentQuestionIndex);
   indexRef.current = currentQuestionIndex;
+  const violationsCountRef = useRef(violationsCount);
+  violationsCountRef.current = violationsCount;
+  const violationLogsRef = useRef(violationLogs);
+  violationLogsRef.current = violationLogs;
 
   // Persist to local storage immediately on change (zero network cost, crash-proof)
   const syncLocalStorage = useCallback(() => {
@@ -71,6 +85,8 @@ export function useQuizSession({
           answers: answersRef.current,
           flaggedQuestions: flagsRef.current,
           currentQuestionIndex: indexRef.current,
+          violationsCount: violationsCountRef.current,
+          violationLogs: violationLogsRef.current,
           lastAutosavedAt: Date.now(),
           clientTimestamp: Date.now()
         };
@@ -101,6 +117,8 @@ export function useQuizSession({
         answers: answersRef.current,
         flaggedQuestions: flagsRef.current,
         currentQuestionIndex: indexRef.current,
+        violationsCount: violationsCountRef.current,
+        violationLogs: violationLogsRef.current,
         lastAutosavedAt: Date.now(),
         clientTimestamp: Date.now()
       };
@@ -120,6 +138,36 @@ export function useQuizSession({
       return false;
     }
   }, [session.id, quiz.id, session.userId]);
+
+  // Log Proctoring Violation
+  const logViolation = useCallback((type: import("../types/quiz").QuizViolationLog["type"], message: string) => {
+    const newLog: import("../types/quiz").QuizViolationLog = {
+      type,
+      message,
+      timestamp: Date.now()
+    };
+
+    setViolationsCount(prev => {
+      const nextCount = prev + 1;
+      violationsCountRef.current = nextCount;
+      return nextCount;
+    });
+
+    setViolationLogs(prev => {
+      const nextLogs = [...prev, newLog];
+      violationLogsRef.current = nextLogs;
+      isDirtyRef.current = true;
+      syncLocalStorage();
+      return nextLogs;
+    });
+
+    // Asynchronously flush violation to server immediately
+    setTimeout(() => {
+      performSave(true);
+    }, 100);
+
+    return violationsCountRef.current;
+  }, [performSave, syncLocalStorage]);
 
   // Option selection handler (Instant UI, mark dirty, sync local backup)
   const selectOption = useCallback((questionId: string, optionId: string) => {
@@ -214,12 +262,15 @@ export function useQuizSession({
     answers,
     flaggedQuestions,
     currentQuestionIndex,
+    violationsCount,
+    violationLogs,
     saveStatus,
     lastSavedAt,
     selectOption,
     clearOption,
     toggleFlag,
     goToQuestion,
+    logViolation,
     forceSave: () => performSave(true)
   };
 }

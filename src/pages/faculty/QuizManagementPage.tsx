@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { useModal } from "../../context/ModalContext";
 import { db } from "../../config/firebase";
 import {
   collection,
@@ -13,7 +14,7 @@ import {
   where
 } from "firebase/firestore";
 import type { Quiz, QuizQuestion, QuizSubmission, QuizSession } from "../../types/quiz";
-import { resetParticipantQuizSession, resetAllQuizSubmissions, deleteQuizCascading } from "../../services/quizService";
+import { resetParticipantQuizSession, resetAllQuizSubmissions, deleteQuizCascading, evaluateQuizAnswers } from "../../services/quizService";
 import { extractTextFromPdf, parseQuestionsFromText } from "../../utils/pdfExtractor";
 import { extractQuizQuestionsWithGemini } from "../../utils/geminiQuizExtractor";
 import SEO from "../../components/layout/SEO";
@@ -41,7 +42,13 @@ import {
   RotateCcw,
   Upload,
   FileUp,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
+  Eye,
+  BarChart3,
+  TrendingUp,
+  CheckCircle,
+  XCircle
 } from "lucide-react";
 
 interface EventOption {
@@ -53,6 +60,7 @@ interface EventOption {
 export const QuizManagementPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { showConfirm, showAlert } = useModal();
   const [searchParams, setSearchParams] = useSearchParams();
   const eventIdParam = searchParams.get("eventId") || searchParams.get("accessEventId");
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -134,6 +142,10 @@ export const QuizManagementPage: React.FC = () => {
   // Active Tab for list mode
   const [activeTab, setActiveTab] = useState<"quizzes" | "live_monitor" | "submissions">("quizzes");
 
+  // Inspect Participant Submission Modal
+  const [inspectingSubmission, setInspectingSubmission] = useState<QuizSubmission | null>(null);
+  const [inspectFilter, setInspectFilter] = useState<"all" | "correct" | "incorrect" | "unanswered">("all");
+
   // Load Quizzes & Events
   useEffect(() => {
     const fetchData = async () => {
@@ -170,7 +182,7 @@ export const QuizManagementPage: React.FC = () => {
     fetchData();
   }, []);
 
-  // Listen to live sessions & submissions for the selected quiz
+  // Listen to live sessions & submissions for the selected quiz with automated scoring backfill
   useEffect(() => {
     if (!selectedQuizId) {
       setSubmissions([]);
@@ -182,8 +194,28 @@ export const QuizManagementPage: React.FC = () => {
     const unsubSubmissions = onSnapshot(
       query(collection(db, "quizSubmissions"), where("quizId", "==", selectedQuizId)),
       (snap) => {
+        const targetQuiz = quizzes.find((q) => q.id === selectedQuizId);
         const subs: QuizSubmission[] = [];
-        snap.forEach((d) => subs.push({ id: d.id, ...d.data() } as QuizSubmission));
+        snap.forEach((d) => {
+          const raw = { id: d.id, ...d.data() } as QuizSubmission;
+          if ((raw.score === undefined || raw.score === null) && targetQuiz && targetQuiz.questions && targetQuiz.questions.length > 0) {
+            const evalData = evaluateQuizAnswers(targetQuiz, raw.answers || {});
+            const evaluated = { ...raw, ...evalData, evaluatedAt: Date.now() };
+            subs.push(evaluated);
+            // Persist backfill to Firestore
+            updateDoc(doc(db, "quizSubmissions", d.id), {
+              score: evalData.score,
+              maxScore: evalData.maxScore,
+              percentage: evalData.percentage,
+              correctCount: evalData.correctCount,
+              incorrectCount: evalData.incorrectCount,
+              passed: evalData.passed,
+              evaluatedAt: Date.now()
+            }).catch(() => {});
+          } else {
+            subs.push(raw);
+          }
+        });
         setSubmissions(subs);
       },
       (err) => console.warn("Submissions listener error:", err)
@@ -204,7 +236,36 @@ export const QuizManagementPage: React.FC = () => {
       unsubSubmissions();
       unsubSessions();
     };
-  }, [selectedQuizId]);
+  }, [selectedQuizId, quizzes]);
+
+  // Ensure all submissions have evaluated scores once quizzes list loads
+  useEffect(() => {
+    if (!selectedQuizId || submissions.length === 0) return;
+    const targetQuiz = quizzes.find((q) => q.id === selectedQuizId);
+    if (!targetQuiz || !targetQuiz.questions || targetQuiz.questions.length === 0) return;
+
+    const hasUnscored = submissions.some((s) => s.score === undefined || s.score === null);
+    if (!hasUnscored) return;
+
+    const evaluatedSubs = submissions.map((sub) => {
+      if (sub.score === undefined || sub.score === null) {
+        const evalData = evaluateQuizAnswers(targetQuiz, sub.answers || {});
+        updateDoc(doc(db, "quizSubmissions", sub.id), {
+          score: evalData.score,
+          maxScore: evalData.maxScore,
+          percentage: evalData.percentage,
+          correctCount: evalData.correctCount,
+          incorrectCount: evalData.incorrectCount,
+          passed: evalData.passed,
+          evaluatedAt: Date.now()
+        }).catch(() => {});
+        return { ...sub, ...evalData };
+      }
+      return sub;
+    });
+
+    setSubmissions(evaluatedSubs);
+  }, [selectedQuizId, quizzes, submissions]);
 
   // Open Full-Page Create Mode
   const handleOpenCreateModal = () => {
@@ -270,7 +331,12 @@ export const QuizManagementPage: React.FC = () => {
     });
 
     if (incompleteQuestions && incompleteQuestions.length > 0) {
-      alert(`Please complete all questions before saving. Missing fields in Question(s): ${incompleteQuestions.map(q => q.questionNumber).join(', ')} (Ensure Category, Question Text, and Correct Answer are set).`);
+      await showAlert({
+        title: "Incomplete Questions",
+        message: `Please complete all questions before saving.\n\nMissing fields in Question(s): ${incompleteQuestions.map(q => q.questionNumber).join(', ')}\n(Ensure Category, Question Text, and Correct Answer are selected).`,
+        type: "warning",
+        icon: "alert"
+      });
       return;
     }
 
@@ -322,14 +388,27 @@ export const QuizManagementPage: React.FC = () => {
       setEditingQuiz(null);
     } catch (err: any) {
       console.error("Error saving quiz:", err);
-      alert("Failed to save quiz: " + err.message);
+      await showAlert({
+        title: "Save Error",
+        message: "Failed to save quiz: " + err.message,
+        type: "danger"
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteQuiz = async (quizId: string) => {
-    if (!confirm("Are you sure you want to delete this quiz? All related submissions and session data will also be permanently deleted.")) return;
+    const target = quizzes.find(q => q.id === quizId);
+    const confirmed = await showConfirm({
+      title: "Delete Quiz?",
+      message: `Are you sure you want to delete "${target?.title || 'this quiz'}"?\n\nAll related questions, submissions, and session records will be permanently deleted.`,
+      confirmText: "Delete Quiz",
+      cancelText: "Cancel",
+      type: "danger",
+      icon: "trash"
+    });
+    if (!confirmed) return;
 
     try {
       await deleteQuizCascading(quizId);
@@ -340,12 +419,24 @@ export const QuizManagementPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Error deleting quiz:", err);
-      alert("Error deleting quiz: " + err.message);
+      await showAlert({
+        title: "Delete Error",
+        message: "Error deleting quiz: " + err.message,
+        type: "danger"
+      });
     }
   };
 
   const handleStartQuiz = async (quiz: Quiz) => {
-    if (!confirm(`Start "${quiz.title}"?\nThis will set the authoritative timer for ${quiz.durationMinutes} minutes from now and open the test to all participants.`)) return;
+    const confirmed = await showConfirm({
+      title: `Start "${quiz.title}"?`,
+      message: `This will set the authoritative exam timer for ${quiz.durationMinutes} minutes from now and open testing access to all registered participants.`,
+      confirmText: "Start Exam Now",
+      cancelText: "Cancel",
+      type: "primary",
+      icon: "play"
+    });
+    if (!confirmed) return;
     
     try {
       const now = Date.now();
@@ -367,12 +458,24 @@ export const QuizManagementPage: React.FC = () => {
       ));
     } catch (err: any) {
       console.error("Failed to start quiz:", err);
-      alert("Error starting quiz: " + err.message);
+      await showAlert({
+        title: "Error Starting Quiz",
+        message: "Error starting quiz: " + err.message,
+        type: "danger"
+      });
     }
   };
 
   const handleStopQuiz = async (quiz: Quiz) => {
-    if (!confirm(`Are you sure you want to STOP "${quiz.title}" right now?\nParticipants will be forced to submit.`)) return;
+    const confirmed = await showConfirm({
+      title: `Stop "${quiz.title}"?`,
+      message: `Are you sure you want to STOP "${quiz.title}" right now?\n\nAll active participants will be immediately forced to submit their current progress.`,
+      confirmText: "Stop Exam",
+      cancelText: "Keep Running",
+      type: "danger",
+      icon: "stop"
+    });
+    if (!confirmed) return;
 
     try {
       const now = Date.now();
@@ -391,22 +494,43 @@ export const QuizManagementPage: React.FC = () => {
       ));
     } catch (err: any) {
       console.error("Failed to stop quiz:", err);
-      alert("Error stopping quiz: " + err.message);
+      await showAlert({
+        title: "Error Stopping Quiz",
+        message: "Failed to stop quiz: " + err.message,
+        type: "danger"
+      });
     }
   };
 
   // Reset a specific participant's attempt
   const handleResetParticipant = async (sub: QuizSubmission) => {
-    if (!confirm(`Unlock and reset quiz attempt for ${sub.userName || sub.userEmail}?\n\nThis will remove their locked submission and allow them to retake the quiz.`)) return;
+    const confirmed = await showConfirm({
+      title: "Unlock & Reset Attempt?",
+      message: `Unlock and reset quiz attempt for ${sub.userName || sub.userEmail}?\n\nThis will remove their locked submission and allow them to retake the quiz from scratch.`,
+      confirmText: "Unlock & Reset",
+      cancelText: "Cancel",
+      type: "warning",
+      icon: "rotate"
+    });
+    if (!confirmed) return;
 
     try {
       await resetParticipantQuizSession(sub.quizId, sub.userId);
       setSubmissions(prev => prev.filter(s => s.id !== sub.id));
       setActiveSessions(prev => prev.filter(s => s.userId !== sub.userId));
-      alert(`Quiz attempt for ${sub.userName || "participant"} has been reset successfully.`);
+      await showAlert({
+        title: "Attempt Reset",
+        message: `Quiz attempt for ${sub.userName || "participant"} has been reset successfully.`,
+        type: "success",
+        icon: "check"
+      });
     } catch (err: any) {
       console.error("Failed to reset participant session:", err);
-      alert("Error resetting participant: " + err.message);
+      await showAlert({
+        title: "Reset Error",
+        message: "Error resetting participant: " + err.message,
+        type: "danger"
+      });
     }
   };
 
@@ -414,37 +538,90 @@ export const QuizManagementPage: React.FC = () => {
   const handleResetAllSubmissions = async () => {
     if (!selectedQuizId) return;
     const targetQuiz = quizzes.find(q => q.id === selectedQuizId);
-    if (!confirm(`WARNING: Are you sure you want to RESET ALL ${submissions.length} submissions for "${targetQuiz?.title || 'this quiz'}"?\n\nAll submission records and locks will be permanently cleared so participants can retake the quiz.`)) return;
+    const confirmed = await showConfirm({
+      title: "Reset All Submissions?",
+      message: `WARNING: Are you sure you want to RESET ALL ${submissions.length} submissions for "${targetQuiz?.title || 'this quiz'}"?\n\nAll submission records and locks will be permanently cleared so participants can retake the quiz.`,
+      confirmText: "Reset All Submissions",
+      cancelText: "Cancel",
+      type: "danger",
+      icon: "trash"
+    });
+    if (!confirmed) return;
 
     try {
       await resetAllQuizSubmissions(selectedQuizId);
       setSubmissions([]);
       setActiveSessions([]);
-      alert("All submissions for this quiz have been cleared successfully.");
+      await showAlert({
+        title: "All Submissions Cleared",
+        message: "All submissions for this quiz have been cleared successfully.",
+        type: "success",
+        icon: "check"
+      });
     } catch (err: any) {
       console.error("Failed to reset all submissions:", err);
-      alert("Error resetting submissions: " + err.message);
+      await showAlert({
+        title: "Reset Error",
+        message: "Error resetting submissions: " + err.message,
+        type: "danger"
+      });
     }
   };
 
   // Export Results to CSV
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     if (submissions.length === 0) {
-      alert("No submissions available to export.");
+      await showAlert({
+        title: "Export Notice",
+        message: "No submissions are currently available to export.",
+        type: "info"
+      });
       return;
     }
 
-    const headers = ["Submission ID", "Participant Name", "Email", "Team Name", "Answered", "Unanswered", "Time Spent (s)", "Submitted At"];
-    const rows = submissions.map((s) => [
-      s.id,
-      `"${s.userName || "N/A"}"`,
-      `"${s.userEmail || "N/A"}"`,
-      `"${s.teamName || "Solo"}"`,
-      s.answeredCount,
-      s.unansweredCount,
-      s.timeSpentSeconds,
-      new Date(s.submittedAt).toISOString()
-    ]);
+    const targetQuiz = quizzes.find((q) => q.id === selectedQuizId);
+    const headers = [
+      "Submission ID",
+      "Participant Name",
+      "Email",
+      "Team Name",
+      "Score",
+      "Max Score",
+      "Percentage (%)",
+      "Status",
+      "Correct Answers",
+      "Incorrect Answers",
+      "Unanswered",
+      "Total Questions",
+      "Time Spent (s)",
+      "Violations",
+      "Submitted At"
+    ];
+
+    const rows = submissions.map((s) => {
+      const scoreVal = s.score ?? "N/A";
+      const maxScoreVal = s.maxScore ?? (targetQuiz?.totalMarks || 50);
+      const pctVal = s.percentage !== undefined ? `${s.percentage}%` : "N/A";
+      const statusVal = s.passed ? "Passed" : (s.score !== undefined ? "Failed" : "Submitted");
+
+      return [
+        s.id,
+        `"${s.userName || "N/A"}"`,
+        `"${s.userEmail || "N/A"}"`,
+        `"${s.teamName || "Solo"}"`,
+        scoreVal,
+        maxScoreVal,
+        `"${pctVal}"`,
+        `"${statusVal}"`,
+        s.correctCount ?? "N/A",
+        s.incorrectCount ?? "N/A",
+        s.unansweredCount ?? 0,
+        s.totalQuestions ?? 0,
+        s.timeSpentSeconds,
+        s.violationsCount || 0,
+        new Date(s.submittedAt).toISOString()
+      ];
+    });
 
     const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -510,9 +687,14 @@ export const QuizManagementPage: React.FC = () => {
       updateCurrentQuestion({ options: nextOptions });
     };
 
-    const addQuestion = () => {
+    const addQuestion = async () => {
       if (!selectedCategoryView || selectedCategoryView.trim() === "") {
-        alert("Please create and select a Category from the right panel before adding a new question.");
+        await showAlert({
+          title: "Select Category",
+          message: "Please create and select a Category from the right panel before adding a new question.",
+          type: "warning",
+          icon: "alert"
+        });
         return;
       }
 
@@ -541,18 +723,26 @@ export const QuizManagementPage: React.FC = () => {
       setCurrentQuestionIndex(newQuestions.length - 1);
     };
 
-    const deleteQuestion = (idx: number) => {
-      if (confirm("Are you sure you want to delete this question?")) {
-        const next = questionsList.filter((_, i) => i !== idx);
-        const pts = Number(editingQuiz.pointsPerQuestion) || 2;
-        setEditingQuiz({
-          ...editingQuiz,
-          questions: next,
-          totalMarks: next.length * pts
-        });
-        if (currentQuestionIndex >= next.length) {
-          setCurrentQuestionIndex(Math.max(0, next.length - 1));
-        }
+    const deleteQuestion = async (idx: number) => {
+      const confirmed = await showConfirm({
+        title: "Delete Question?",
+        message: "Are you sure you want to delete this question?",
+        confirmText: "Delete",
+        cancelText: "Cancel",
+        type: "danger",
+        icon: "trash"
+      });
+      if (!confirmed) return;
+
+      const next = questionsList.filter((_, i) => i !== idx);
+      const pts = Number(editingQuiz.pointsPerQuestion) || 2;
+      setEditingQuiz({
+        ...editingQuiz,
+        questions: next,
+        totalMarks: next.length * pts
+      });
+      if (currentQuestionIndex >= next.length) {
+        setCurrentQuestionIndex(Math.max(0, next.length - 1));
       }
     };
 
@@ -616,15 +806,23 @@ export const QuizManagementPage: React.FC = () => {
         await handleTriggerAiScan(cleanText, pdfTargetCategory || selectedCategoryView || "General");
       } catch (err) {
         console.error("Failed to read file:", err);
-        alert("Could not extract text from this file. You can paste the questions text directly.");
+        await showAlert({
+          title: "Extraction Notice",
+          message: "Could not extract text from this file. You can paste the questions text directly.",
+          type: "warning"
+        });
       } finally {
         setIsParsingPdf(false);
       }
     };
 
-    const handleApplyBulkImport = () => {
+    const handleApplyBulkImport = async () => {
       if (parsedBulkQuestions.length === 0) {
-        alert("No valid questions detected. Please verify your questions format or paste valid questions text.");
+        await showAlert({
+          title: "No Questions Detected",
+          message: "No valid questions detected. Please verify your questions format or paste valid questions text.",
+          type: "warning"
+        });
         return;
       }
 
@@ -656,7 +854,12 @@ export const QuizManagementPage: React.FC = () => {
       setPdfFileName("");
       setPdfRawText("");
       setParsedBulkQuestions([]);
-      alert(`Successfully added ${formattedImported.length} question(s) into category "${targetCat}"!`);
+      await showAlert({
+        title: "Import Successful",
+        message: `Successfully added ${formattedImported.length} question(s) into category "${targetCat}"!`,
+        type: "success",
+        icon: "check"
+      });
     };
 
     const loadSampleQuestions = () => {
@@ -697,8 +900,16 @@ Answer: A`;
             <div className="flex items-center gap-3 min-w-0">
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm("Discard unsaved changes and return to quiz list?")) {
+                onClick={async () => {
+                  const confirmed = await showConfirm({
+                    title: "Discard Changes?",
+                    message: "Discard unsaved changes and return to quiz list?",
+                    confirmText: "Discard Changes",
+                    cancelText: "Continue Editing",
+                    type: "warning",
+                    icon: "alert"
+                  });
+                  if (confirmed) {
                     setIsEditorMode(false);
                     setEditingQuiz(null);
                     setCurrentQuestionIndex(0);
@@ -1825,6 +2036,7 @@ Answer: A`;
                       <th className="py-3 px-4">Team</th>
                       <th className="py-3 px-4">Started At</th>
                       <th className="py-3 px-4">Last Autosave</th>
+                      <th className="py-3 px-4">Violations</th>
                       <th className="py-3 px-4">Status</th>
                     </tr>
                   </thead>
@@ -1843,6 +2055,16 @@ Answer: A`;
                           </span>
                         </td>
                         <td className="py-3.5 px-4">
+                          {s.violationsCount && s.violationsCount > 0 ? (
+                            <span className="bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full font-black text-[10px] flex items-center gap-1 w-max animate-pulse">
+                              <AlertTriangle className="w-3 h-3 text-red-600" />
+                              {s.violationsCount} Detected
+                            </span>
+                          ) : (
+                            <span className="text-emerald-600 font-bold text-[11px]">0 (Clean)</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
                           <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 w-max">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Writing
                           </span>
@@ -1858,105 +2080,553 @@ Answer: A`;
       )}
 
       {/* ================= TAB 3: SUBMISSIONS & RESULTS ================= */}
-      {activeTab === "submissions" && (
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-500">Quiz Submissions:</span>
-              <select
-                value={selectedQuizId}
-                onChange={(e) => setSelectedQuizId(e.target.value)}
-                className="bg-slate-50 border border-slate-200 text-xs font-bold text-[#0F172A] px-3 py-1.5 rounded-xl"
-              >
-                {filteredQuizzes.map((q) => (
-                  <option key={q.id} value={q.id}>{q.title}</option>
-                ))}
-              </select>
-            </div>
+      {activeTab === "submissions" && (() => {
+        const currentQuizObj = quizzes.find((q) => q.id === selectedQuizId);
+        const totalSubs = submissions.length;
+        const scoredSubs = submissions.filter((s) => s.score !== undefined && s.score !== null);
+        const maxScoreAvailable = currentQuizObj?.totalMarks || (currentQuizObj?.questions?.length ? currentQuizObj.questions.length * 2 : 50);
+        const avgScore = scoredSubs.length > 0 ? (scoredSubs.reduce((acc, s) => acc + (s.score || 0), 0) / scoredSubs.length).toFixed(1) : "0";
+        const avgPct = scoredSubs.length > 0 ? Math.round(scoredSubs.reduce((acc, s) => acc + (s.percentage || 0), 0) / scoredSubs.length) : 0;
+        const passedCount = scoredSubs.filter((s) => s.passed).length;
+        const passRatePct = totalSubs > 0 ? Math.round((passedCount / totalSubs) * 100) : 0;
+        const highestScore = scoredSubs.length > 0 ? Math.max(...scoredSubs.map((s) => s.score || 0)) : 0;
+        const cleanProctorCount = submissions.filter((s) => !s.violationsCount || s.violationsCount === 0).length;
 
-            <div className="flex items-center gap-2">
-              {submissions.length > 0 && (
-                <button
-                  onClick={handleResetAllSubmissions}
-                  className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-                  title="Clear all submissions for this quiz"
+        return (
+          <div className="space-y-6">
+            {/* Header Control Bar */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Quiz Submissions:</span>
+                <select
+                  value={selectedQuizId}
+                  onChange={(e) => setSelectedQuizId(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 text-xs font-bold text-[#0F172A] px-3 py-1.5 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Clear All Submissions</span>
-                </button>
-              )}
-
-              <button
-                onClick={handleExportCSV}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>Export CSV</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm space-y-4">
-            <h3 className="text-base font-extrabold text-[#0F172A]">Finalized Submissions ({submissions.length})</h3>
-
-            {submissions.length === 0 ? (
-              <div className="py-12 text-center text-slate-400 space-y-2">
-                <Award className="w-10 h-10 mx-auto text-slate-300" />
-                <p className="text-xs font-semibold">No submissions recorded yet.</p>
+                  {filteredQuizzes.map((q) => (
+                    <option key={q.id} value={q.id}>{q.title}</option>
+                  ))}
+                </select>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                      <th className="py-3 px-4">Participant</th>
-                      <th className="py-3 px-4">Team</th>
-                      <th className="py-3 px-4">Answered</th>
-                      <th className="py-3 px-4">Time Spent</th>
-                      <th className="py-3 px-4">Submitted At</th>
-                      <th className="py-3 px-4">Submission Lock</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                    {submissions.map((sub) => (
-                      <tr key={sub.id} className="hover:bg-slate-50/50">
-                        <td className="py-3.5 px-4 font-bold text-[#0F172A]">
-                          <div>{sub.userName}</div>
-                          <div className="text-[10px] text-slate-400 font-normal">{sub.userEmail}</div>
-                        </td>
-                        <td className="py-3.5 px-4">{sub.teamName || "Solo"}</td>
-                        <td className="py-3.5 px-4 font-bold text-emerald-600">
-                          {sub.answeredCount} / {sub.totalQuestions}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          {Math.floor(sub.timeSpentSeconds / 60)}m {sub.timeSpentSeconds % 60}s
-                        </td>
-                        <td className="py-3.5 px-4">{new Date(sub.submittedAt).toLocaleTimeString()}</td>
-                        <td className="py-3.5 px-4">
-                          <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 w-max">
-                            <CheckCircle2 className="w-3 h-3 text-blue-600" /> Immutable
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => handleResetParticipant(sub)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
-                            title="Reset locked submission to allow re-entry"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>Unlock & Reset</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+              <div className="flex items-center gap-2">
+                {submissions.length > 0 && (
+                  <button
+                    onClick={handleResetAllSubmissions}
+                    className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="Clear all submissions for this quiz"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear All Submissions</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={handleExportCSV}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export Scorecard CSV</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Performance Metric Summary Cards */}
+            {totalSubs > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5">
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Submissions</span>
+                    <Users className="w-4 h-4 text-blue-500" />
+                  </div>
+                  <div className="text-xl font-black text-[#0F172A]">{totalSubs}</div>
+                  <div className="text-[10px] text-slate-400 font-medium mt-0.5">Finalized attempts</div>
+                </div>
+
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Average Score</span>
+                    <BarChart3 className="w-4 h-4 text-indigo-500" />
+                  </div>
+                  <div className="text-xl font-black text-[#0F172A]">
+                    {avgScore} <span className="text-xs text-slate-400 font-bold">/ {maxScoreAvailable}</span>
+                  </div>
+                  <div className="text-[10px] text-indigo-600 font-bold mt-0.5">{avgPct}% overall avg</div>
+                </div>
+
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Pass Rate</span>
+                    <Award className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="text-xl font-black text-emerald-600">
+                    {passedCount} <span className="text-xs text-slate-400 font-bold">/ {totalSubs}</span>
+                  </div>
+                  <div className="text-[10px] text-emerald-700 font-bold mt-0.5">{passRatePct}% qualified</div>
+                </div>
+
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Highest Score</span>
+                    <TrendingUp className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <div className="text-xl font-black text-[#0F172A]">
+                    {highestScore} <span className="text-xs text-slate-400 font-bold">/ {maxScoreAvailable}</span>
+                  </div>
+                  <div className="text-[10px] text-amber-600 font-bold mt-0.5">Top benchmark</div>
+                </div>
+
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs col-span-2 sm:col-span-1">
+                  <div className="flex items-center justify-between text-slate-400 mb-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider">Proctored Clean</span>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="text-xl font-black text-emerald-600">
+                    {cleanProctorCount} <span className="text-xs text-slate-400 font-bold">/ {totalSubs}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-medium mt-0.5">0 violations detected</div>
+                </div>
               </div>
             )}
+
+            {/* Submissions Table */}
+            <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-extrabold text-[#0F172A]">Finalized Submissions ({submissions.length})</h3>
+                <span className="text-xs text-slate-400 font-medium">Scores auto-evaluated & cryptographically locked</span>
+              </div>
+
+              {submissions.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Award className="w-10 h-10 mx-auto text-slate-300" />
+                  <p className="text-xs font-semibold">No submissions recorded yet.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-4">Participant</th>
+                        <th className="py-3 px-4">Team</th>
+                        <th className="py-3 px-4">Score & Performance</th>
+                        <th className="py-3 px-4">Accuracy</th>
+                        <th className="py-3 px-4">Time Spent</th>
+                        <th className="py-3 px-4">Proctoring</th>
+                        <th className="py-3 px-4">Submitted At</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                      {submissions.map((sub) => {
+                        const hasScore = sub.score !== undefined && sub.score !== null;
+                        const scoreDisplay = hasScore ? sub.score : "-";
+                        const maxDisplay = sub.maxScore || maxScoreAvailable;
+                        const pctDisplay = sub.percentage !== undefined ? sub.percentage : (hasScore ? Math.round(((sub.score || 0) / maxDisplay) * 100) : 0);
+                        const isPassed = sub.passed ?? (hasScore && (sub.score || 0) >= (currentQuizObj?.passingMarks || Math.round(maxDisplay * 0.4)));
+
+                        return (
+                          <tr key={sub.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3.5 px-4 font-bold text-[#0F172A]">
+                              <div>{sub.userName}</div>
+                              <div className="text-[10px] text-slate-400 font-normal">{sub.userEmail}</div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-semibold text-[11px]">
+                                {sub.teamName || "Solo"}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-black text-sm text-[#0F172A]">
+                                    {scoreDisplay} <span className="text-slate-400 font-bold text-xs">/ {maxDisplay}</span>
+                                  </span>
+                                  {hasScore && (
+                                    <span className="text-[10px] font-black px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200/60">
+                                      {pctDisplay}%
+                                    </span>
+                                  )}
+                                </div>
+                                <div>
+                                  {hasScore ? (
+                                    isPassed ? (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <CheckCircle className="w-2.5 h-2.5" /> Passed
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">
+                                        <XCircle className="w-2.5 h-2.5" /> Below Cutoff
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 font-semibold">Evaluating...</span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="space-y-0.5">
+                                <div className="font-bold text-[#0F172A]">
+                                  {sub.answeredCount} / {sub.totalQuestions} Answered
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-medium">
+                                  {sub.correctCount !== undefined ? (
+                                    <span>
+                                      <strong className="text-emerald-600">{sub.correctCount} Correct</strong>
+                                      {" • "}
+                                      <strong className="text-red-500">{sub.incorrectCount ?? (sub.answeredCount - sub.correctCount)} Wrong</strong>
+                                    </span>
+                                  ) : (
+                                    <span>{sub.unansweredCount} Unanswered</span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-3.5 px-4 font-mono font-medium text-slate-600">
+                              {Math.floor(sub.timeSpentSeconds / 60)}m {sub.timeSpentSeconds % 60}s
+                            </td>
+                            <td className="py-3.5 px-4">
+                              {sub.violationsCount && sub.violationsCount > 0 ? (
+                                <span className="bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 w-max">
+                                  <AlertTriangle className="w-3 h-3 text-red-600" />
+                                  {sub.violationsCount} Violations
+                                </span>
+                              ) : (
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 w-max">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Clean
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-500">
+                              <div>{new Date(sub.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                              <div className="text-[10px] text-slate-400">{new Date(sub.submittedAt).toLocaleDateString()}</div>
+                            </td>
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => setInspectingSubmission(sub)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
+                                  title="Inspect full participant answer sheet & score details"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>View Sheet</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleResetParticipant(sub)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
+                                  title="Reset locked submission to allow re-entry"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  <span>Reset</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Inspect Participant Submission & Score Breakdown Modal */}
+            {inspectingSubmission && (() => {
+              const quizForInspection = quizzes.find((q) => q.id === inspectingSubmission.quizId) || currentQuizObj;
+              const questions = quizForInspection?.questions || [];
+              const participantAnswers = inspectingSubmission.answers || {};
+
+              const filteredQuestions = questions.filter((q) => {
+                const selected = participantAnswers[q.id];
+                const isCorrect = selected && q.correctOptionId && selected.trim().toLowerCase() === q.correctOptionId.trim().toLowerCase();
+                if (inspectFilter === "correct") return isCorrect;
+                if (inspectFilter === "incorrect") return selected && !isCorrect;
+                if (inspectFilter === "unanswered") return !selected;
+                return true;
+              });
+
+              return (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                    
+                    {/* Modal Header */}
+                    <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
+                            PARTICIPANT SCORECARD & AUDIT
+                          </span>
+                          <span className="font-mono text-xs text-slate-400">
+                            {inspectingSubmission.id.substring(0, 12)}
+                          </span>
+                        </div>
+                        <h2 className="text-lg font-black text-[#0F172A]">
+                          {inspectingSubmission.userName} ({inspectingSubmission.userEmail})
+                        </h2>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Quiz: <strong>{inspectingSubmission.quizTitle || quizForInspection?.title}</strong> • Team: <strong>{inspectingSubmission.teamName || "Solo"}</strong>
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => setInspectingSubmission(null)}
+                        className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Modal Hero Metric Bar */}
+                    <div className="bg-slate-50 border-b border-slate-100 px-6 py-4 grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                        <span className="text-[10px] font-extrabold text-slate-400 block uppercase">Final Score</span>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <span className="text-xl font-black text-blue-600">{inspectingSubmission.score ?? 0}</span>
+                          <span className="text-xs text-slate-400 font-bold">/ {inspectingSubmission.maxScore ?? maxScoreAvailable}</span>
+                          <span className="ml-auto text-[10px] font-black px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200">
+                            {inspectingSubmission.percentage ?? 0}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                        <span className="text-[10px] font-extrabold text-slate-400 block uppercase">Accuracy</span>
+                        <div className="text-sm font-black text-[#0F172A] mt-1">
+                          <span className="text-emerald-600">{inspectingSubmission.correctCount ?? 0} Correct</span>
+                          {" / "}
+                          <span className="text-red-500">{inspectingSubmission.incorrectCount ?? 0} Wrong</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                        <span className="text-[10px] font-extrabold text-slate-400 block uppercase">Time Spent</span>
+                        <div className="text-sm font-black text-[#0F172A] mt-1 font-mono">
+                          {Math.floor(inspectingSubmission.timeSpentSeconds / 60)}m {inspectingSubmission.timeSpentSeconds % 60}s
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
+                        <span className="text-[10px] font-extrabold text-slate-400 block uppercase">Proctoring</span>
+                        <div className="text-sm font-black mt-1">
+                          {inspectingSubmission.violationsCount && inspectingSubmission.violationsCount > 0 ? (
+                            <span className="text-red-600 flex items-center gap-1 font-bold">
+                              <AlertTriangle className="w-3.5 h-3.5" /> {inspectingSubmission.violationsCount} Flags
+                            </span>
+                          ) : (
+                            <span className="text-emerald-600 flex items-center gap-1 font-bold">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> 100% Clean
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Filter Tabs */}
+                    <div className="px-6 py-3 border-b border-slate-100 flex items-center gap-2 shrink-0 bg-white">
+                      <button
+                        onClick={() => setInspectFilter("all")}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          inspectFilter === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        All Questions ({questions.length})
+                      </button>
+                      <button
+                        onClick={() => setInspectFilter("correct")}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          inspectFilter === "correct" ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60"
+                        }`}
+                      >
+                        Correct ({inspectingSubmission.correctCount ?? 0})
+                      </button>
+                      <button
+                        onClick={() => setInspectFilter("incorrect")}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          inspectFilter === "incorrect" ? "bg-red-600 text-white" : "bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60"
+                        }`}
+                      >
+                        Incorrect ({inspectingSubmission.incorrectCount ?? 0})
+                      </button>
+                      <button
+                        onClick={() => setInspectFilter("unanswered")}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                          inspectFilter === "unanswered" ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200/60"
+                        }`}
+                      >
+                        Unanswered ({inspectingSubmission.unansweredCount ?? 0})
+                      </button>
+                    </div>
+
+                    {/* Questions & Proctoring Audit Body */}
+                    <div className="p-6 overflow-y-auto space-y-6">
+                      
+                      {/* Proctoring Incident Audit details if violations present */}
+                      {inspectingSubmission.violationsCount && inspectingSubmission.violationsCount > 0 && inspectingSubmission.violationLogs && inspectingSubmission.violationLogs.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-2">
+                          <div className="flex items-center gap-2 text-xs font-bold text-red-700">
+                            <AlertTriangle className="w-4 h-4 text-red-600" />
+                            <span>Proctoring Security Violation Incident Log ({inspectingSubmission.violationsCount})</span>
+                          </div>
+                          <div className="space-y-1.5 pt-1">
+                            {inspectingSubmission.violationLogs.map((log, idx) => (
+                              <div key={idx} className="flex items-center justify-between text-xs bg-white/80 px-3 py-1.5 rounded-lg border border-red-100">
+                                <span className="font-medium text-slate-700">{log.message}</span>
+                                <span className="text-[11px] font-mono text-slate-400 shrink-0 ml-2">
+                                  {new Date(log.timestamp).toLocaleTimeString()}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Question by Question Answer Sheet */}
+                      {filteredQuestions.length === 0 ? (
+                        <div className="py-8 text-center text-slate-400 text-xs">
+                          No questions matching the selected filter.
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {filteredQuestions.map((q, idx) => {
+                            const selectedOptId = participantAnswers[q.id];
+                            const isCorrect = selectedOptId && q.correctOptionId && selectedOptId.trim().toLowerCase() === q.correctOptionId.trim().toLowerCase();
+                            const isUnanswered = !selectedOptId;
+
+                            return (
+                              <div
+                                key={q.id || idx}
+                                className={`p-4 rounded-2xl border transition-all ${
+                                  isCorrect 
+                                    ? "bg-emerald-50/30 border-emerald-200/80" 
+                                    : isUnanswered 
+                                      ? "bg-slate-50/80 border-slate-200" 
+                                      : "bg-red-50/30 border-red-200/80"
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2 mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-xs text-slate-700 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                                      Q{q.questionNumber || idx + 1}
+                                    </span>
+                                    {q.category && (
+                                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                                        {q.category}
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200/60">
+                                      {q.points || currentQuizObj?.pointsPerQuestion || 2} pts
+                                    </span>
+                                  </div>
+
+                                  <div>
+                                    {isCorrect ? (
+                                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                                        <Check className="w-3 h-3" /> +{q.points || currentQuizObj?.pointsPerQuestion || 2} pts
+                                      </span>
+                                    ) : isUnanswered ? (
+                                      <span className="text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-full">
+                                        Unanswered (0 pts)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300 flex items-center gap-1">
+                                        <X className="w-3 h-3" /> 0 pts
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <p className="text-xs font-extrabold text-[#0F172A] leading-relaxed mb-3">
+                                  {q.text}
+                                </p>
+
+                                {q.codeSnippet && (
+                                  <pre className="bg-slate-900 text-slate-100 font-mono text-[11px] p-3 rounded-xl mb-3 overflow-x-auto">
+                                    <code>{q.codeSnippet}</code>
+                                  </pre>
+                                )}
+
+                                {/* Options Breakdown */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {q.options.map((opt) => {
+                                    const isSelectedByUser = selectedOptId === opt.id;
+                                    const isCorrectAnswer = q.correctOptionId === opt.id;
+
+                                    let optionStyle = "bg-white border-slate-200 text-slate-700";
+                                    let badgeText = null;
+
+                                    if (isSelectedByUser && isCorrectAnswer) {
+                                      optionStyle = "bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-1 ring-emerald-500/20";
+                                      badgeText = "✓ Participant Selected (Correct)";
+                                    } else if (isSelectedByUser && !isCorrectAnswer) {
+                                      optionStyle = "bg-red-50 border-red-500 text-red-900 font-bold ring-1 ring-red-500/20";
+                                      badgeText = "✗ Participant Selected (Wrong)";
+                                    } else if (isCorrectAnswer) {
+                                      optionStyle = "bg-emerald-50/50 border-emerald-400 border-dashed text-emerald-800 font-bold";
+                                      badgeText = "✓ Official Correct Answer";
+                                    }
+
+                                    return (
+                                      <div
+                                        key={opt.id}
+                                        className={`p-2.5 rounded-xl border text-xs flex flex-col justify-between gap-1 transition-all ${optionStyle}`}
+                                      >
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-black text-[11px] uppercase opacity-70">
+                                            {opt.id.replace("opt_", "")})
+                                          </span>
+                                          <span className="leading-snug">{opt.text}</span>
+                                        </div>
+                                        {badgeText && (
+                                          <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded self-start ${
+                                            isSelectedByUser && isCorrectAnswer
+                                              ? "bg-emerald-600 text-white"
+                                              : isSelectedByUser && !isCorrectAnswer
+                                                ? "bg-red-600 text-white"
+                                                : "bg-emerald-200 text-emerald-900"
+                                          }`}>
+                                            {badgeText}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                                {q.explanation && (
+                                  <div className="mt-2.5 p-2 bg-blue-50/60 border border-blue-100 rounded-lg text-[11px] text-blue-900">
+                                    <strong className="font-bold">Explanation:</strong> {q.explanation}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-3xl flex items-center justify-between shrink-0">
+                      <span className="text-xs text-slate-500 font-medium">
+                        Submission recorded on {new Date(inspectingSubmission.submittedAt).toLocaleString()}
+                      </span>
+                      <button
+                        onClick={() => setInspectingSubmission(null)}
+                        className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-5 py-2 rounded-xl transition-all cursor-pointer"
+                      >
+                        Close Scorecard
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+              );
+            })()}
+
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       </main>
     </div>

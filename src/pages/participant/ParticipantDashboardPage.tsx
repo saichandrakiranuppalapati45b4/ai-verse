@@ -23,9 +23,9 @@ import SEO from "../../components/layout/SEO";
 import TeamReviewPage from "./TeamReviewPage";
 import ProjectSubmissionPage from "./ProjectSubmissionPage";
 import { db } from "../../config/firebase";
-import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, query, where } from "firebase/firestore";
 import { getAllQuizzes } from "../../services/quizService";
-import type { Quiz } from "../../types/quiz";
+import type { Quiz, QuizSubmission } from "../../types/quiz";
 
 // Countdown Timer Component
 const CountdownTimer: React.FC = () => {
@@ -81,6 +81,7 @@ export const ParticipantDashboardPage: React.FC = () => {
   const [members, setMembers] = useState<any[]>([]);
   const [eventBannerUrl, setEventBannerUrl] = useState<string>("/event-banner.png");
   const [availableQuizzes, setAvailableQuizzes] = useState<Quiz[]>([]);
+  const [userSubmissions, setUserSubmissions] = useState<Record<string, QuizSubmission>>({});
 
   // Submission Form State
   const [projectTitle, setProjectTitle] = useState<string>("");
@@ -142,6 +143,21 @@ export const ParticipantDashboardPage: React.FC = () => {
             if (tn !== "team alpha-9" && tn !== "my team") {
               targetReg = allRegs.find((r) => (r.groupName || "").toLowerCase().trim() === tn);
             }
+          }
+        }
+
+        // Fetch participant's existing quiz submissions
+        if (user?.uid) {
+          try {
+            const subSnap = await getDocs(query(collection(db, "quizSubmissions"), where("userId", "==", user.uid)));
+            const subMap: Record<string, QuizSubmission> = {};
+            subSnap.forEach((d) => {
+              const s = { id: d.id, ...d.data() } as QuizSubmission;
+              if (s.quizId) subMap[s.quizId] = s;
+            });
+            setUserSubmissions(subMap);
+          } catch (e) {
+            console.warn("Error fetching user quiz submissions:", e);
           }
         }
 
@@ -803,7 +819,13 @@ export const ParticipantDashboardPage: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {availableQuizzes.map((quiz) => {
                       const now = Date.now();
+                      const userSub = userSubmissions[quiz.id];
+                      const isSubmitted = !!userSub;
+                      const hasScore = userSub && userSub.score !== undefined && userSub.score !== null;
+                      const maxQScore = userSub?.maxScore || quiz.totalMarks || (quiz.questions?.length ? quiz.questions.length * 2 : 50);
+
                       const isLive = Boolean(
+                        !isSubmitted &&
                         quiz.status === "active" &&
                         quiz.scheduledStartTime &&
                         quiz.scheduledStartTime <= now &&
@@ -813,20 +835,36 @@ export const ParticipantDashboardPage: React.FC = () => {
                         quiz.status === "completed" ||
                         (quiz.scheduledEndTime && quiz.scheduledEndTime <= now && quiz.scheduledStartTime)
                       );
-                      const isUpcoming = Boolean(quiz.scheduledStartTime && quiz.scheduledStartTime > now);
+                      const isUpcoming = Boolean(!isSubmitted && quiz.scheduledStartTime && quiz.scheduledStartTime > now);
 
                       return (
                         <div
                           key={quiz.id}
-                          className="bg-slate-50 border border-slate-200 hover:border-blue-300 rounded-2xl p-5 flex flex-col justify-between space-y-4 transition-all"
+                          className={`border rounded-2xl p-5 flex flex-col justify-between space-y-4 transition-all ${
+                            isSubmitted 
+                              ? "bg-white border-blue-200/80 shadow-xs" 
+                              : "bg-slate-50 border-slate-200 hover:border-blue-300"
+                          }`}
                         >
                           <div className="space-y-2">
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
                               <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/60">
                                 {quiz.track || "General"}
                               </span>
                               
-                              {isLive ? (
+                              {isSubmitted ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                    <CircleCheckBig className="w-3 h-3 text-emerald-600" />
+                                    <span>Submitted</span>
+                                  </span>
+                                  {hasScore && (
+                                    <span className="text-[10px] font-black text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                                      Score: {userSub.score} / {maxQScore} ({userSub.percentage}%)
+                                    </span>
+                                  )}
+                                </div>
+                              ) : isLive ? (
                                 <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live Now
                                 </span>
@@ -854,17 +892,27 @@ export const ParticipantDashboardPage: React.FC = () => {
                               {quiz.questions?.length || quiz.questionsCount || 0} Questions • {quiz.durationMinutes}m
                             </span>
 
-                            <Link
-                              to={`/participant/quiz/${quiz.id}/lobby`}
-                              className={`text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer ${
-                                isLive 
-                                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700" 
-                                  : "bg-[#0F172A] hover:bg-slate-800"
-                              }`}
-                            >
-                              <span>{isLive ? "Enter Exam" : "Enter Lobby"}</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </Link>
+                            {isSubmitted ? (
+                              <Link
+                                to={`/participant/quiz/${quiz.id}/completed`}
+                                className="bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Trophy className="w-3.5 h-3.5 text-blue-600" />
+                                <span>View Scorecard</span>
+                              </Link>
+                            ) : (
+                              <Link
+                                to={`/participant/quiz/${quiz.id}/lobby`}
+                                className={`text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                                  isLive 
+                                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700" 
+                                    : "bg-[#0F172A] hover:bg-slate-800"
+                                }`}
+                              >
+                                <span>{isLive ? "Enter Exam" : "Enter Lobby"}</span>
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </Link>
+                            )}
                           </div>
                         </div>
                       );

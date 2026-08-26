@@ -389,7 +389,9 @@ export async function saveDraftAnswers(
       // Fire-and-forget lightweight session ping
       updateDoc(doc(db, "quizSessions", sessionId), {
         lastAutosavedAt: now,
-        updatedAt: now
+        updatedAt: now,
+        violationsCount: payload.violationsCount || 0,
+        violationLogs: payload.violationLogs || []
       }).catch(() => {});
 
       return true;
@@ -410,28 +412,152 @@ export async function saveDraftAnswers(
 }
 
 /**
- * Atomic Final Submission with Double-Submit Prevention Lock
+ * Evaluates participant answers against a Quiz question set
+ */
+export function evaluateQuizAnswers(
+  quiz: Quiz,
+  answers: Record<string, string> = {}
+): {
+  score: number;
+  maxScore: number;
+  percentage: number;
+  correctCount: number;
+  incorrectCount: number;
+  unansweredCount: number;
+  passed: boolean;
+} {
+  const questions = quiz.questions || [];
+  const defaultPts = Number(quiz.pointsPerQuestion) || 2;
+  let score = 0;
+  let maxScore = 0;
+  let correctCount = 0;
+  let incorrectCount = 0;
+  let unansweredCount = 0;
+
+  if (questions.length === 0) {
+    const answered = Object.keys(answers).filter(k => !!answers[k]).length;
+    const totalQ = quiz.questionsCount || (quiz.totalMarks ? Math.round(quiz.totalMarks / defaultPts) : answered);
+    return {
+      score: 0,
+      maxScore: quiz.totalMarks || (totalQ * defaultPts) || 50,
+      percentage: 0,
+      correctCount: 0,
+      incorrectCount: answered,
+      unansweredCount: Math.max(0, totalQ - answered),
+      passed: false
+    };
+  }
+
+  questions.forEach((q) => {
+    const qPts = Number(q.points) || defaultPts;
+    maxScore += qPts;
+    const selected = answers[q.id];
+    
+    if (selected && selected.trim().length > 0) {
+      if (
+        q.correctOptionId &&
+        selected.trim().toLowerCase() === q.correctOptionId.trim().toLowerCase()
+      ) {
+        score += qPts;
+        correctCount++;
+      } else {
+        incorrectCount++;
+      }
+    } else {
+      unansweredCount++;
+    }
+  });
+
+  if (maxScore === 0) {
+    maxScore = Number(quiz.totalMarks) || (questions.length * defaultPts) || 50;
+  }
+
+  const percentage = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+  const passingMarks = Number(quiz.passingMarks) || (maxScore > 0 ? Math.round(maxScore * 0.4) : 0);
+  const passed = score >= passingMarks;
+
+  return {
+    score,
+    maxScore,
+    percentage,
+    correctCount,
+    incorrectCount,
+    unansweredCount,
+    passed
+  };
+}
+
+/**
+ * Atomic Final Submission with Double-Submit Prevention Lock & Instant Score Evaluation
  */
 export async function submitQuizFinal(
   session: QuizSession,
   answers: Record<string, string>,
   totalQuestions: number,
-  isAutoSubmitted = false
+  isAutoSubmitted = false,
+  violationsCount = 0,
+  violationLogs: import("../types/quiz").QuizViolationLog[] = [],
+  providedQuiz?: Quiz | null
 ): Promise<QuizSubmission> {
   const sessionId = session.id;
   const now = Date.now();
+
+  // Fetch quiz if not provided or missing questions to ensure score is calculated
+  let targetQuiz = providedQuiz;
+  if (!targetQuiz || !targetQuiz.questions || targetQuiz.questions.length === 0) {
+    try {
+      targetQuiz = await getQuizById(session.quizId);
+    } catch {
+      // ignore
+    }
+  }
 
   // 1. Check if already submitted to prevent duplicates
   const submissionRef = doc(db, "quizSubmissions", sessionId);
   const existingSnap = await getDoc(submissionRef);
   if (existingSnap.exists()) {
     const existing = existingSnap.data() as QuizSubmission;
+    // If existing submission lacks score and we have quiz questions, backfill it
+    if (existing.score === undefined && targetQuiz) {
+      const evalData = evaluateQuizAnswers(targetQuiz, existing.answers || answers);
+      const updatedExisting: QuizSubmission = {
+        ...existing,
+        ...evalData,
+        evaluatedAt: now
+      };
+      await updateDoc(submissionRef, {
+        score: evalData.score,
+        maxScore: evalData.maxScore,
+        percentage: evalData.percentage,
+        correctCount: evalData.correctCount,
+        incorrectCount: evalData.incorrectCount,
+        passed: evalData.passed,
+        evaluatedAt: now
+      }).catch(() => {});
+      return updatedExisting;
+    }
     return existing;
   }
 
   const answeredCount = Object.keys(answers).filter(k => !!answers[k]).length;
-  const unansweredCount = Math.max(0, totalQuestions - answeredCount);
+  const totalQCount = totalQuestions || targetQuiz?.questions?.length || targetQuiz?.questionsCount || answeredCount;
+  const unansweredCount = Math.max(0, totalQCount - answeredCount);
   const timeSpentSeconds = Math.max(1, Math.floor((now - session.startTime) / 1000));
+
+  // Compute evaluation score
+  let evalResult = {
+    score: 0,
+    maxScore: targetQuiz?.totalMarks || (totalQCount * 2) || 50,
+    percentage: 0,
+    correctCount: 0,
+    incorrectCount: answeredCount,
+    unansweredCount,
+    passed: false
+  };
+
+  if (targetQuiz) {
+    evalResult = evaluateQuizAnswers(targetQuiz, answers);
+  }
 
   const submissionPayload: QuizSubmission = {
     id: sessionId,
@@ -445,13 +571,22 @@ export async function submitQuizFinal(
     teamName: session.teamName,
     answers,
     answeredCount,
-    unansweredCount,
-    totalQuestions,
+    unansweredCount: evalResult.unansweredCount ?? unansweredCount,
+    totalQuestions: totalQCount,
     timeSpentSeconds,
     startTime: session.startTime,
     submittedAt: now,
     isAutoSubmitted,
-    isFinal: true
+    isFinal: true,
+    violationsCount,
+    violationLogs,
+    score: evalResult.score,
+    maxScore: evalResult.maxScore,
+    percentage: evalResult.percentage,
+    correctCount: evalResult.correctCount,
+    incorrectCount: evalResult.incorrectCount,
+    passed: evalResult.passed,
+    evaluatedAt: now
   };
 
   // Perform atomic batch write: (1) create submission doc, (2) update session status to submitted
@@ -461,7 +596,9 @@ export async function submitQuizFinal(
     status: "submitted",
     submittedAt: now,
     lastAutosavedAt: now,
-    updatedAt: now
+    updatedAt: now,
+    violationsCount,
+    violationLogs
   });
 
   await batch.commit();

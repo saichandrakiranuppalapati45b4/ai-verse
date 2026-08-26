@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -8,7 +8,7 @@ import {
   getOrCreateQuizSession, 
   submitQuizFinal 
 } from "../../services/quizService";
-import type { Quiz, QuizSession, QuizQuestion } from "../../types/quiz";
+import type { Quiz, QuizSession, QuizQuestion, QuizViolationLog } from "../../types/quiz";
 import { useQuizTimer } from "../../hooks/useQuizTimer";
 import { useQuizSession } from "../../hooks/useQuizSession";
 import SEO from "../../components/layout/SEO";
@@ -24,7 +24,13 @@ import {
   X,
   Lightbulb,
   Network,
-  ChevronDown
+  ChevronDown,
+  Maximize2,
+  AlertTriangle,
+  Lock,
+  EyeOff,
+  MousePointer,
+  Copy
 } from "lucide-react";
 
 export const QuizTakingPage: React.FC = () => {
@@ -42,6 +48,14 @@ export const QuizTakingPage: React.FC = () => {
   const [showSubmitModal, setShowSubmitModal] = useState<boolean>(false);
   const [showTimeoutModal, setShowTimeoutModal] = useState<boolean>(false);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState<boolean>(false);
+
+  // Fullscreen and Proctoring State
+  const [showFullscreenPrompt, setShowFullscreenPrompt] = useState<boolean>(true);
+  const [showFullscreenExitModal, setShowFullscreenExitModal] = useState<boolean>(false);
+  const [activeViolationToast, setActiveViolationToast] = useState<{ id: number; message: string; type: string } | null>(null);
+
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastViolationTimeRef = useRef<number>(0);
 
   // 1. Initial Load: Quiz & Authoritative Session
   useEffect(() => {
@@ -89,6 +103,15 @@ export const QuizTakingPage: React.FC = () => {
         if (isMounted) {
           setQuiz(quizData);
           setSession(userSession);
+          
+          // Check if already in fullscreen
+          const isFs = !!(
+            document.fullscreenElement ||
+            (document as any).webkitFullscreenElement ||
+            (document as any).mozFullScreenElement ||
+            (document as any).msFullscreenElement
+          );
+          setShowFullscreenPrompt(!isFs);
         }
       } catch (err: any) {
         console.error("Error initializing exam session:", err);
@@ -148,24 +171,227 @@ export const QuizTakingPage: React.FC = () => {
     durationMinutes: 30,
     status: "in_progress",
     lastAutosavedAt: Date.now(),
+    violationsCount: 0,
+    violationLogs: [],
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
 
-  // 2. Client Session & Autosave State Hook
+  // 2. Client Session & Autosave State Hook with Proctoring Support
   const {
     answers,
     currentQuestionIndex,
+    violationsCount,
+    violationLogs,
     saveStatus,
     selectOption,
     goToQuestion,
+    logViolation,
     forceSave
   } = useQuizSession({
     quiz: safeQuiz,
     session: safeSession
   });
 
-  // 3. Final Submission Handler
+  // Trigger violation with toast notification & debouncing
+  const triggerViolation = useCallback((type: QuizViolationLog["type"], message: string) => {
+    if (isSubmitting || session?.status !== "in_progress") return;
+
+    const now = Date.now();
+    // Debounce rapid duplicate trigger within 800ms
+    if (now - lastViolationTimeRef.current < 800) return;
+    lastViolationTimeRef.current = now;
+
+    logViolation(type, message);
+
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setActiveViolationToast({
+      id: now,
+      message: `${message} (Violation recorded)`,
+      type
+    });
+
+    toastTimerRef.current = setTimeout(() => {
+      setActiveViolationToast(null);
+    }, 4000);
+  }, [isSubmitting, session?.status, logViolation]);
+
+  // Fullscreen Request Handler
+  const enterFullscreen = async () => {
+    try {
+      const el = document.documentElement as any;
+      if (el.requestFullscreen) {
+        await el.requestFullscreen();
+      } else if (el.webkitRequestFullscreen) {
+        await el.webkitRequestFullscreen();
+      } else if (el.mozRequestFullScreen) {
+        await el.mozRequestFullScreen();
+      } else if (el.msRequestFullscreen) {
+        await el.msRequestFullscreen();
+      }
+      setShowFullscreenPrompt(false);
+      setShowFullscreenExitModal(false);
+    } catch (err) {
+      console.warn("Fullscreen request error:", err);
+      setShowFullscreenPrompt(false);
+      setShowFullscreenExitModal(false);
+    }
+  };
+
+  // 3. Proctoring Event Listeners (Fullscreen, Tab Switch, Right-Click, Copy-Paste, DevTools)
+  useEffect(() => {
+    if (loading || !quiz || !session || session.status !== "in_progress" || isSubmitting) return;
+
+    const handleFullscreenChange = () => {
+      const isFs = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+
+      if (!isFs && !isSubmitting) {
+        setShowFullscreenExitModal(true);
+        triggerViolation("fullscreen_exit", "Exited full-screen examination mode");
+      } else if (isFs) {
+        setShowFullscreenExitModal(false);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden && !isSubmitting) {
+        triggerViolation("tab_switch", "Tab switch or background window detected");
+      }
+    };
+
+    const handleWindowBlur = () => {
+      if (!isSubmitting && !document.hidden) {
+        triggerViolation("tab_switch", "Window lost focus / application switch detected");
+      }
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      triggerViolation("right_click", "Right-click context menu is disabled");
+      return false;
+    };
+
+    const handleCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      triggerViolation("copy_attempt", "Copying assessment content is prohibited");
+      return false;
+    };
+
+    const handleCut = (e: ClipboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      triggerViolation("copy_attempt", "Cutting assessment content is prohibited");
+      return false;
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      triggerViolation("paste_attempt", "Pasting content into assessment is prohibited");
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+      // Block Ctrl+C / Cmd+C (Copy)
+      if (isCtrlOrCmd && key === "c") {
+        e.preventDefault();
+        triggerViolation("copy_attempt", "Ctrl+C copy shortcut is disabled");
+        return;
+      }
+
+      // Block Ctrl+V / Cmd+V (Paste)
+      if (isCtrlOrCmd && key === "v") {
+        e.preventDefault();
+        triggerViolation("paste_attempt", "Ctrl+V paste shortcut is disabled");
+        return;
+      }
+
+      // Block Ctrl+X / Cmd+X (Cut)
+      if (isCtrlOrCmd && key === "x") {
+        e.preventDefault();
+        triggerViolation("copy_attempt", "Ctrl+X cut shortcut is disabled");
+        return;
+      }
+
+      // Block Ctrl+A / Cmd+A (Select All)
+      if (isCtrlOrCmd && key === "a") {
+        e.preventDefault();
+        return;
+      }
+
+      // Block Ctrl+U / Cmd+U (View Source)
+      if (isCtrlOrCmd && key === "u") {
+        e.preventDefault();
+        triggerViolation("dev_tools", "View source shortcut is disabled");
+        return;
+      }
+
+      // Block Ctrl+P / Cmd+P (Print)
+      if (isCtrlOrCmd && key === "p") {
+        e.preventDefault();
+        triggerViolation("shortcut_attempt", "Print shortcut is disabled");
+        return;
+      }
+
+      // Block DevTools shortcuts (F12, Ctrl+Shift+I/J/C)
+      if (e.key === "F12") {
+        e.preventDefault();
+        triggerViolation("dev_tools", "F12 Developer Tools shortcut is disabled");
+        return;
+      }
+
+      if (isCtrlOrCmd && e.shiftKey && (key === "i" || key === "j" || key === "c")) {
+        e.preventDefault();
+        triggerViolation("dev_tools", "Developer Tools inspection shortcut is disabled");
+        return;
+      }
+
+      // Block Alt+Tab
+      if (e.altKey && e.key === "Tab") {
+        e.preventDefault();
+        triggerViolation("shortcut_attempt", "Alt+Tab switch attempt detected");
+        return;
+      }
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    document.addEventListener("mozfullscreenchange", handleFullscreenChange);
+    document.addEventListener("MSFullscreenChange", handleFullscreenChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleWindowBlur);
+    document.addEventListener("contextmenu", handleContextMenu, true);
+    document.addEventListener("copy", handleCopy, true);
+    document.addEventListener("cut", handleCut, true);
+    document.addEventListener("paste", handlePaste, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
+      document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("contextmenu", handleContextMenu, true);
+      document.removeEventListener("copy", handleCopy, true);
+      document.removeEventListener("cut", handleCut, true);
+      document.removeEventListener("paste", handlePaste, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [loading, quiz, session, isSubmitting, triggerViolation]);
+
+  // 4. Final Submission Handler
   const handleFinalSubmit = useCallback(async (isAuto = false) => {
     if (!quiz || !session || isSubmitting) return;
 
@@ -178,8 +404,20 @@ export const QuizTakingPage: React.FC = () => {
         session,
         answers,
         quiz.questions?.length || 0,
-        isAuto
+        isAuto,
+        violationsCount,
+        violationLogs,
+        quiz
       );
+
+      // Exit fullscreen mode cleanly if active
+      if (document.fullscreenElement) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // ignore
+        }
+      }
 
       // Navigate to confirmation receipt
       navigate(`/participant/quiz/${quiz.id}/completed`, { 
@@ -191,9 +429,9 @@ export const QuizTakingPage: React.FC = () => {
       setIsSubmitting(false);
       alert("Submission error: " + (err.message || "Please check connection and retry."));
     }
-  }, [quiz, session, isSubmitting, answers, forceSave, navigate]);
+  }, [quiz, session, isSubmitting, answers, violationsCount, violationLogs, forceSave, navigate]);
 
-  // 4. Authoritative Server Timer Hook
+  // 5. Authoritative Server Timer Hook
   const handleTimeExpired = useCallback(() => {
     if (!session || session.status !== "in_progress" || isSubmitting) return;
     setShowTimeoutModal(true);
@@ -254,6 +492,33 @@ export const QuizTakingPage: React.FC = () => {
         description="Active examination environment with autosave and authoritative countdown timer." 
       />
 
+      {/* ================= PROCTORING VIOLATION TOAST ================= */}
+      {activeViolationToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-top-4 fade-in duration-300 max-w-lg w-full px-4 pointer-events-auto">
+          <div className="bg-[#1E0808]/95 text-white border-2 border-red-500/80 rounded-2xl p-4 shadow-2xl backdrop-blur-md flex items-center justify-between gap-3 ring-4 ring-red-500/20">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <span className="text-[10px] font-black uppercase tracking-wider text-red-400 block">
+                  ⚠️ Proctoring Violation Logged
+                </span>
+                <p className="text-xs font-bold text-white mt-0.5">
+                  {activeViolationToast.message}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveViolationToast(null)}
+              className="text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ================= TOP NAV BAR ================= */}
       <header className="h-16 px-4 sm:px-8 border-b border-slate-200 bg-white flex flex-col justify-center relative sticky top-0 z-30">
         <div className="flex items-center justify-between w-full">
@@ -270,22 +535,45 @@ export const QuizTakingPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Right: Save & Exit Button */}
-          <div className="flex items-center gap-4">
-             {/* Autosave Status Pill */}
-             <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full">
-               {saveStatus === "saving" && <span className="text-blue-600 text-[11px]">Saving...</span>}
-               {saveStatus === "saved" && <span className="text-slate-400 text-[11px]">Saved</span>}
-               {saveStatus === "offline" && <span className="text-amber-500 text-[11px]">Offline</span>}
-             </div>
+          {/* Right: Proctoring status, Autosave Pill & Save/Exit */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            
+            {/* Live Proctoring Badge */}
+            {violationsCount === 0 ? (
+              <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                <ShieldAlert className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Proctored (0 Violations)</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full bg-red-50 text-red-700 border border-red-300 animate-pulse shadow-xs">
+                <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                <span>{violationsCount} Violation{violationsCount > 1 ? "s" : ""}</span>
+              </div>
+            )}
 
-             <button
-               onClick={() => navigate("/participant/dashboard")}
-               className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 font-bold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-             >
-               <X className="w-4 h-4" />
-               <span>Save & Exit</span>
-             </button>
+            {/* Autosave Status Pill */}
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100/80">
+              {saveStatus === "saving" && <span className="text-blue-600 text-[11px] font-bold">Saving...</span>}
+              {saveStatus === "saved" && <span className="text-slate-500 text-[11px] font-medium">Saved</span>}
+              {saveStatus === "offline" && <span className="text-amber-600 text-[11px] font-bold">Offline</span>}
+            </div>
+
+            <button
+              onClick={async () => {
+                if (document.fullscreenElement) {
+                  try {
+                    await document.exitFullscreen();
+                  } catch {
+                    // ignore
+                  }
+                }
+                navigate("/participant/dashboard");
+              }}
+              className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <X className="w-4 h-4" />
+              <span className="hidden sm:inline">Save & Exit</span>
+            </button>
           </div>
         </div>
         
@@ -299,7 +587,7 @@ export const QuizTakingPage: React.FC = () => {
       </header>
 
       {/* ================= MAIN EXAMINATION GRID ================= */}
-      <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start select-none">
         
         {/* ================= LEFT COLUMN: QUESTION CONTENT (8 COLS) ================= */}
         <div className="lg:col-span-8 space-y-6">
@@ -508,6 +796,95 @@ export const QuizTakingPage: React.FC = () => {
         </div>
       </main>
 
+      {/* ================= FULLSCREEN REQUIRED ENTRY PROMPT MODAL ================= */}
+      {showFullscreenPrompt && (
+        <div className="fixed inset-0 z-50 bg-[#0A0F1D]/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl text-center animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 rounded-3xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto ring-8 ring-blue-500/10">
+              <Maximize2 className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full">
+                🔒 PROCTORING MODE REQUIRED
+              </span>
+              <h3 className="text-2xl font-black text-[#0F172A]">
+                Enter Full-Screen Examination
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-md mx-auto">
+                To ensure assessment integrity, this quiz requires active full-screen mode. Please review the security rules below before starting.
+              </p>
+            </div>
+
+            {/* Anti-Cheating Rules Box */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-left space-y-2.5 text-xs text-slate-700">
+              <div className="flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-blue-600 shrink-0" />
+                <span><strong>Fullscreen Locked:</strong> Exiting full screen counts as a violation.</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <Copy className="w-4 h-4 text-amber-600 shrink-0" />
+                <span><strong>No Copy / Paste:</strong> Clipboard access and selection are strictly disabled.</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <MousePointer className="w-4 h-4 text-purple-600 shrink-0" />
+                <span><strong>No Right Click:</strong> Context menu & developer shortcuts are blocked.</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <EyeOff className="w-4 h-4 text-red-600 shrink-0" />
+                <span><strong>No Tab Switch:</strong> Switching tabs or applications logs a violation.</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={enterFullscreen}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm py-4 rounded-2xl shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <Maximize2 className="w-5 h-5" />
+              <span>Enter Fullscreen & Begin Assessment</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= FULLSCREEN EXIT WARNING MODAL ================= */}
+      {showFullscreenExitModal && !showFullscreenPrompt && (
+        <div className="fixed inset-0 z-50 bg-[#1E0808]/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-red-500 rounded-3xl max-w-md w-full p-6 sm:p-8 space-y-6 shadow-2xl text-center animate-in zoom-in-95 duration-200 ring-8 ring-red-500/20">
+            <div className="w-16 h-16 rounded-3xl bg-red-50 text-red-600 flex items-center justify-center mx-auto ring-8 ring-red-500/10 animate-bounce">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="bg-red-50 text-red-700 border border-red-200 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full">
+                ⚠️ PROCTORING VIOLATION RECORDED
+              </span>
+              <h3 className="text-2xl font-black text-[#0F172A]">
+                Full-Screen Mode Exited!
+              </h3>
+              <p className="text-xs text-slate-600 font-medium">
+                You have exited full-screen mode. This incident has been logged to your exam record. Return immediately to prevent disqualification.
+              </p>
+            </div>
+
+            <div className="bg-red-50 p-3.5 rounded-2xl border border-red-200 text-center">
+              <span className="text-[11px] font-bold text-red-600 uppercase tracking-wider block">Total Violations</span>
+              <span className="text-2xl font-black text-red-700">{violationsCount}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={enterFullscreen}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-black text-sm py-4 rounded-2xl shadow-lg shadow-red-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <Maximize2 className="w-5 h-5" />
+              <span>Return to Full-Screen Mode</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ================= FINAL SUBMISSION CONFIRMATION MODAL ================= */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -523,18 +900,31 @@ export const QuizTakingPage: React.FC = () => {
             </div>
 
             {/* Summary Statistics */}
-            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 text-center">
+            <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 text-center">
               <div>
-                <span className="text-xs font-bold text-slate-400 block">Answered</span>
-                <span className="text-lg font-black text-emerald-600">{answeredCount}</span>
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Answered</span>
+                <span className="text-base font-black text-emerald-600">{answeredCount}</span>
               </div>
               <div>
-                <span className="text-xs font-bold text-slate-400 block">Unanswered</span>
-                <span className={`text-lg font-black ${unansweredCount > 0 ? "text-amber-600" : "text-slate-700"}`}>
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Unanswered</span>
+                <span className={`text-base font-black ${unansweredCount > 0 ? "text-amber-600" : "text-slate-700"}`}>
                   {unansweredCount}
                 </span>
               </div>
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 block uppercase">Violations</span>
+                <span className={`text-base font-black ${violationsCount > 0 ? "text-red-600" : "text-emerald-600"}`}>
+                  {violationsCount}
+                </span>
+              </div>
             </div>
+
+            {violationsCount > 0 && (
+              <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-800 font-medium">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <span>Notice: <strong>{violationsCount} proctoring violation(s)</strong> have been recorded in this session.</span>
+              </div>
+            )}
 
             {unansweredCount > 0 && (
               <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-xs text-amber-800 font-medium">

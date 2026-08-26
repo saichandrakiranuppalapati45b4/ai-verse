@@ -177,37 +177,42 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
           let loadedMembers: TeamMember[] = [];
 
           if (Array.isArray(targetReg.members) && targetReg.members.length > 0) {
-            const leaderMember = targetReg.members.find((m: any) => {
+            // Check if the members array contains an explicit leader entry
+            const leaderIndex = targetReg.members.findIndex((m: any) => {
               const r = (m.role || "").toLowerCase().trim();
-              return r === "leader" || r === "team lead" || r === "lead";
+              return r === "leader" || r === "team lead" || r === "lead" || m.isLead === true;
             });
 
-            if (leaderMember) {
+            if (leaderIndex !== -1) {
+              const leaderMember = targetReg.members[leaderIndex];
               leaderInfo = {
                 name: leaderMember.name || leaderInfo.name,
                 email: leaderMember.email || leaderInfo.email,
                 rollNo: leaderMember.studentId || leaderMember.rollNo || leaderInfo.rollNo,
                 phone: leaderMember.phoneNumber || leaderMember.phone || leaderInfo.phone
               };
-            }
 
-            const nonLeaderMembers = targetReg.members.filter((m: any) => {
-              const isLeaderByEmail = m.email && leaderInfo.email && m.email.toLowerCase().trim() === leaderInfo.email.toLowerCase().trim();
-              const isLeaderById = m.studentId && leaderInfo.rollNo && m.studentId === leaderInfo.rollNo;
-              const isLeaderByRole = (m.role || "").toLowerCase().trim().includes("lead");
-              return !(isLeaderByEmail || isLeaderById || isLeaderByRole);
-            });
+              // All other entries in the array (except the one at leaderIndex) are teammates!
+              loadedMembers = targetReg.members
+                .filter((_m: any, idx: number) => idx !== leaderIndex)
+                .map((m: any) => ({
+                  name: m.name || "Team Member",
+                  role: m.role || "Developer",
+                  rollNo: m.studentId || m.rollNo || "N/A",
+                  email: m.email || "N/A",
+                  phone: m.phoneNumber || m.phone || "N/A"
+                }));
+            } else {
+              // The members array contains ONLY additional teammates (or leader is not in members array)
+              // If the first member matches the leader exactly by name & studentId, exclude it; otherwise include all
+              const isFirstMemberLeader = 
+                targetReg.members.length > 1 &&
+                targetReg.members[0].name === leaderInfo.name &&
+                (targetReg.members[0].studentId === leaderInfo.rollNo || targetReg.members[0].rollNo === leaderInfo.rollNo);
 
-            if (nonLeaderMembers.length > 0) {
-              loadedMembers = nonLeaderMembers.map((m: any) => ({
-                name: m.name || "Team Member",
-                role: m.role || "Developer",
-                rollNo: m.studentId || m.rollNo || "N/A",
-                email: m.email || "N/A",
-                phone: m.phoneNumber || m.phone || "N/A"
-              }));
-            } else if (targetReg.members.length > 1) {
-              loadedMembers = targetReg.members.slice(1).map((m: any) => ({
+              const membersToMap = isFirstMemberLeader ? targetReg.members.slice(1) : targetReg.members;
+
+              loadedMembers = membersToMap.map((m: any) => ({
                 name: m.name || "Team Member",
                 role: m.role || "Developer",
                 rollNo: m.studentId || m.rollNo || "N/A",
