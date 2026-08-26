@@ -7,42 +7,99 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+
+    function isStaff() {
+      return isAuthenticated() && request.auth.token.role in ['faculty', 'organizer'];
     }
 
-    // Quizzes Collection: Anyone authenticated can read active quizzes, staff can manage
+    // Quizzes Collection: Anyone authenticated can read active quizzes, only staff can write
     match /quizzes/{quizId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if isStaff();
     }
 
     // Quiz Sessions: Users can read and write only their own session
     match /quizSessions/{sessionId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || request.auth.token.role in ['faculty', 'organizer']);
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isStaff());
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || request.auth.token.role in ['faculty', 'organizer']);
-      allow delete: if isAuthenticated() && request.auth.token.role in ['faculty', 'organizer'];
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+      allow delete: if isStaff();
     }
 
     // Quiz Answers (Draft autosaves): Strictly user's own session
     match /quizAnswers/{sessionId} {
-      allow read, write: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || resource.data.userId == request.auth.uid || request.auth.token.role in ['faculty', 'organizer']);
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isStaff());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
+      allow delete: if isStaff();
     }
 
     // Quiz Submissions: Users can submit once; immutable once marked final
     match /quizSubmissions/{submissionId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || request.auth.token.role in ['faculty', 'organizer']);
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isStaff());
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated() && request.auth.token.role in ['faculty', 'organizer'];
-      allow delete: if isAuthenticated() && request.auth.token.role in ['faculty', 'organizer'];
+      allow update: if isStaff();
+      allow delete: if isStaff();
     }
 
-    // Default match for other collections (events, registrations, users, announcements, etc.)
-    match /{document=**} {
-      allow read, write: if isAuthenticated() || true;
+    // Events Collection: Public read, staff write
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if isStaff();
     }
+
+    // Registrations: Authenticated read own, staff read all, authenticated create own
+    match /registrations/{registrationId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if isAuthenticated();
+      allow delete: if isStaff();
+    }
+
+    // Users Collection: Read own profile, staff can manage
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isStaff());
+      allow delete: if isStaff();
+    }
+
+    // Settings Collection: Staff read/write, authenticated read
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+    }
+
+    // Announcements: Authenticated read, staff write
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+    }
+
+    // Gallery: Public read, staff write
+    match /gallery/{itemId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Evaluations (Jury): Authenticated read, authenticated write
+    match /evaluations/{evalId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Content: Public read, staff write
+    match /content/{contentId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Attendance: Authenticated read, staff write
+    match /attendance/{recordId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Default deny — no wildcard allow
   }
 }
-

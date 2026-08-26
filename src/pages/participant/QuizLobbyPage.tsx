@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { getOrCreateQuizSession, getDeterministicSessionId } from "../../services/quizService";
 import type { Quiz } from "../../types/quiz";
-import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import SEO from "../../components/layout/SEO";
 import { 
@@ -40,76 +40,109 @@ export const QuizLobbyPage: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Real-time listener for quiz status & changes
+  // Polling quiz status (replaces real-time onSnapshot to prevent 1,500 listener hotspot)
+  // Polls every 5 seconds for quiz start status, and on tab focus
+  const hasLoadedRef = useRef(false);
   useEffect(() => {
     if (!quizId) return;
 
-    setLoading(true);
-    setError(null);
+    if (!hasLoadedRef.current) {
+      setLoading(true);
+      setError(null);
+    }
 
+    let isMounted = true;
     const quizRef = doc(db, "quizzes", quizId);
-    const unsubQuiz = onSnapshot(quizRef, async (snap) => {
-      if (!snap.exists()) {
-        setError("The requested quiz could not be found or has not been published.");
-        setLoading(false);
-        return;
-      }
 
-      const data = snap.data();
-      const loadedQuiz: Quiz = {
-        id: snap.id,
-        title: data.title || "AI Verse Quiz",
-        description: data.description || "",
-        eventId: data.eventId || "",
-        eventTitle: data.eventTitle || "",
-        track: data.track || "General",
-        durationMinutes: Number(data.durationMinutes) || 30,
-        totalMarks: Number(data.totalMarks) || 50,
-        passingMarks: Number(data.passingMarks) || 20,
-        instructions: Array.isArray(data.instructions) && data.instructions.length > 0 ? data.instructions : [
-          "Each question has 4 options with single correct answer.",
-          "Your answers are automatically saved periodically in the background.",
-          "You can navigate freely between questions using the Question Palette.",
-          "Once submitted or when the timer expires, no further modifications are allowed.",
-          "Do not close or switch browser tabs to ensure an uninterrupted session."
-        ],
-        status: data.status || "active",
-        scheduledStartTime: data.scheduledStartTime || 0,
-        scheduledEndTime: data.scheduledEndTime || 0,
-        questionsCount: Number(data.questionsCount) || (data.questions?.length || 0),
-        questions: data.questions || [],
-        createdAt: data.createdAt || Date.now(),
-        updatedAt: data.updatedAt || Date.now()
-      };
+    const fetchQuizStatus = async () => {
+      try {
+        const snap = await getDoc(quizRef);
+        if (!isMounted) return;
+        
+        if (!snap.exists()) {
+          setError("The requested quiz could not be found or has not been published.");
+          setLoading(false);
+          return;
+        }
 
-      setQuiz(loadedQuiz);
+        const data = snap.data();
+        const loadedQuiz: Quiz = {
+          id: snap.id,
+          title: data.title || "AI Verse Quiz",
+          description: data.description || "",
+          eventId: data.eventId || "",
+          eventTitle: data.eventTitle || "",
+          track: data.track || "General",
+          durationMinutes: Number(data.durationMinutes) || 30,
+          totalMarks: Number(data.totalMarks) || 50,
+          passingMarks: Number(data.passingMarks) || 20,
+          instructions: Array.isArray(data.instructions) && data.instructions.length > 0 ? data.instructions : [
+            "Each question has 4 options with single correct answer.",
+            "Your answers are automatically saved periodically in the background.",
+            "You can navigate freely between questions using the Question Palette.",
+            "Once submitted or when the timer expires, no further modifications are allowed.",
+            "Do not close or switch browser tabs to ensure an uninterrupted session."
+          ],
+          status: data.status || "active",
+          scheduledStartTime: data.scheduledStartTime || 0,
+          scheduledEndTime: data.scheduledEndTime || 0,
+          questionsCount: Number(data.questionsCount) || (data.questions?.length || 0),
+          questions: data.questions || [],
+          createdAt: data.createdAt || Date.now(),
+          updatedAt: data.updatedAt || Date.now()
+        };
 
-      // Check if user already submitted in this current round
-      if (user?.uid) {
-        try {
-          const sessionId = getDeterministicSessionId(quizId, user.uid);
-          const subSnap = await getDoc(doc(db, "quizSubmissions", sessionId));
-          if (subSnap.exists()) {
-            const subData = subSnap.data();
-            const wasSubmittedBeforeRestart = loadedQuiz.scheduledStartTime && subData.submittedAt && (subData.submittedAt < loadedQuiz.scheduledStartTime);
-            if (!wasSubmittedBeforeRestart) {
-              navigate(`/participant/quiz/${quizId}/completed`, { replace: true });
-              return;
+        if (!isMounted) return;
+        setQuiz(loadedQuiz);
+
+        // Check if user already submitted in this current round
+        if (user?.uid) {
+          try {
+            const sessionId = getDeterministicSessionId(quizId, user.uid);
+            const subSnap = await getDoc(doc(db, "quizSubmissions", sessionId));
+            if (subSnap.exists()) {
+              const subData = subSnap.data();
+              const wasSubmittedBeforeRestart = loadedQuiz.scheduledStartTime && subData.submittedAt && (subData.submittedAt < loadedQuiz.scheduledStartTime);
+              if (!wasSubmittedBeforeRestart) {
+                navigate(`/participant/quiz/${quizId}/completed`, { replace: true });
+                return;
+              }
             }
+          } catch (err) {
+            console.warn("Error checking submission record:", err);
           }
-        } catch (err) {
-          console.warn("Error checking submission record:", err);
+        }
+
+        hasLoadedRef.current = true;
+        setLoading(false);
+      } catch (err) {
+        console.error("Error fetching quiz status:", err);
+        if (!hasLoadedRef.current && isMounted) {
+          setError("Failed to load quiz details. Please check your internet connection.");
+          setLoading(false);
         }
       }
+    };
 
-      setLoading(false);
-    }, (err) => {
-      console.error("Error subscribing to quiz doc:", err);
-      setError("Failed to load quiz details. Please check your internet connection.");
-      setLoading(false);
-    });
+    // Initial fetch
+    fetchQuizStatus();
 
-    return () => unsubQuiz();
+    // Poll every 30 seconds (Ultra-Low Quota mode)
+    const pollId = setInterval(fetchQuizStatus, 30_000);
+
+    // Also re-check immediately when tab becomes visible
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchQuizStatus();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pollId);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [quizId, user, navigate]);
 
   // Derived status computations

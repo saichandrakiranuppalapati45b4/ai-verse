@@ -17,14 +17,21 @@ import type {
   QuizDraftAnswers, 
   QuizSubmission 
 } from "../types/quiz";
+import { quizMonitor } from "../utils/quizMonitor";
+import { retryWithBackoff } from "../utils/networkStatus";
 
-// In-memory cache for immutable quiz question data to achieve zero duplicate reads
+// ─── In-Memory Cache ─────────────────────────────────────────────────────────
+
 const quizMemoryCache = new Map<string, { data: Quiz; cachedAt: number }>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+// ─── Request Deduplication ───────────────────────────────────────────────────
+// Prevents multiple concurrent fetches for the same quiz ID
+const inflightRequests = new Map<string, Promise<Quiz | null>>();
+
 /**
- * Fetch quiz with in-memory caching
- * All 200 participants hitting this in the same session will only fetch once per client
+ * Fetch quiz with in-memory caching AND request deduplication.
+ * If two components call getQuizById("abc") concurrently, only one Firestore read fires.
  */
 export async function getQuizById(quizId: string, forceRefresh = false): Promise<Quiz | null> {
   const cleanId = quizId.trim();
@@ -54,7 +61,23 @@ export async function getQuizById(quizId: string, forceRefresh = false): Promise
     }
   }
 
-  // 3. Fetch from Firestore
+  // 3. Deduplicate in-flight requests
+  const existing = inflightRequests.get(cleanId);
+  if (existing) {
+    return existing;
+  }
+
+  const fetchPromise = fetchQuizFromFirestore(cleanId);
+  inflightRequests.set(cleanId, fetchPromise);
+
+  try {
+    return await fetchPromise;
+  } finally {
+    inflightRequests.delete(cleanId);
+  }
+}
+
+async function fetchQuizFromFirestore(cleanId: string): Promise<Quiz | null> {
   try {
     const quizDoc = await getDoc(doc(db, "quizzes", cleanId));
     if (!quizDoc.exists()) {
@@ -102,9 +125,10 @@ export async function getQuizById(quizId: string, forceRefresh = false): Promise
       }
     }
 
+    quizMonitor.trackSuccess("load_failure");
     return quiz;
   } catch (err) {
-    console.error(`[QuizService] Error fetching quiz ${cleanId}:`, err);
+    quizMonitor.trackError("load_failure", `Error fetching quiz ${cleanId}`, { error: String(err) });
     throw err;
   }
 }
@@ -140,7 +164,7 @@ export async function getAllQuizzes(): Promise<Quiz[]> {
     });
     return quizzes;
   } catch (err) {
-    console.error("[QuizService] Error fetching quizzes list:", err);
+    quizMonitor.trackError("load_failure", "Error fetching quizzes list", { error: String(err) });
     return [];
   }
 }
@@ -262,7 +286,7 @@ export async function getOrCreateQuizSession(
     await setDoc(sessionRef, newSession);
     return newSession;
   } catch (err) {
-    console.error("[QuizService] Error initializing quiz session:", err);
+    quizMonitor.trackError("firestore_error", "Error initializing quiz session", { error: String(err) });
     throw err;
   }
 }
@@ -280,7 +304,7 @@ export async function resetParticipantQuizSession(quizId: string, userId: string
       localStorage.removeItem(`quiz_draft_${sessionId}`);
     }
   } catch (err) {
-    console.error(`[QuizService] Error resetting session for ${sessionId}:`, err);
+    quizMonitor.trackError("firestore_error", `Error resetting session for ${sessionId}`, { error: String(err) });
     throw err;
   }
 }
@@ -298,7 +322,7 @@ export async function resetAllQuizSubmissions(quizId: string): Promise<void> {
     sessSnap.forEach(d => batch.delete(d.ref));
     await batch.commit();
   } catch (err) {
-    console.error(`[QuizService] Error resetting all submissions for quiz ${quizId}:`, err);
+    quizMonitor.trackError("firestore_error", `Error resetting all submissions for quiz ${quizId}`, { error: String(err) });
     throw err;
   }
 }
@@ -314,7 +338,7 @@ export async function deleteQuizCascading(quizId: string): Promise<void> {
       sessionStorage.removeItem(`quiz_cache_${quizId}`);
     }
   } catch (err) {
-    console.error(`[QuizService] Error deleting quiz ${quizId} cascading:`, err);
+    quizMonitor.trackError("firestore_error", `Error deleting quiz ${quizId} cascading`, { error: String(err) });
     throw err;
   }
 }
@@ -341,7 +365,7 @@ export async function deleteQuizzesByEventId(eventId: string, eventTitle?: strin
     }
     return deletedCount;
   } catch (err) {
-    console.error(`[QuizService] Error deleting quizzes for event ${eventId}:`, err);
+    quizMonitor.trackError("firestore_error", `Error deleting quizzes for event ${eventId}`, { error: String(err) });
     return 0;
   }
 }
@@ -357,25 +381,26 @@ export async function loadDraftAnswers(sessionId: string): Promise<QuizDraftAnsw
     }
     return null;
   } catch (err) {
-    console.warn("[QuizService] Warning loading draft answers:", err);
+    quizMonitor.trackError("load_failure", "Warning loading draft answers", { sessionId, error: String(err) });
     return null;
   }
 }
 
 /**
- * Idempotent Autosave with Exponential Backoff
- * Writes to `quizAnswers/{sessionId}` and updates session timestamp
+ * Idempotent Autosave — Single Firestore Write
+ * 
+ * OPTIMIZATION: Writes ONLY to `quizAnswers/{sessionId}`.
+ * The redundant `quizSessions` timestamp update has been removed to halve
+ * write volume (saves ~1,500 writes per autosave cycle at scale).
  */
 export async function saveDraftAnswers(
   draft: QuizDraftAnswers, 
   maxRetries = 2
 ): Promise<boolean> {
   const sessionId = draft.sessionId;
-  let attempt = 0;
-  let delayMs = 500;
-
-  while (attempt <= maxRetries) {
-    try {
+  
+  try {
+    return await retryWithBackoff(async () => {
       const now = Date.now();
       const payload: QuizDraftAnswers = {
         ...draft,
@@ -385,30 +410,13 @@ export async function saveDraftAnswers(
 
       // Atomic setDoc with merge to ensure idempotent safety
       await setDoc(doc(db, "quizAnswers", sessionId), payload, { merge: true });
-      
-      // Fire-and-forget lightweight session ping
-      updateDoc(doc(db, "quizSessions", sessionId), {
-        lastAutosavedAt: now,
-        updatedAt: now,
-        violationsCount: payload.violationsCount || 0,
-        violationLogs: payload.violationLogs || []
-      }).catch(() => {});
-
+      quizMonitor.trackSuccess("save_failure");
       return true;
-    } catch (err) {
-      attempt++;
-      if (attempt > maxRetries) {
-        console.error(`[QuizService] Autosave failed after ${maxRetries} attempts for session ${sessionId}:`, err);
-        return false;
-      }
-      // Exponential backoff with jitter
-      const jitter = Math.floor(Math.random() * 200);
-      await new Promise((resolve) => setTimeout(resolve, delayMs + jitter));
-      delayMs *= 2;
-    }
+    }, maxRetries, 500);
+  } catch (err) {
+    quizMonitor.trackError("save_failure", `Autosave failed for session ${sessionId}`, { error: String(err) });
+    return false;
   }
-
-  return false;
 }
 
 /**
@@ -487,8 +495,12 @@ export function evaluateQuizAnswers(
   };
 }
 
+// ─── Submission Lock ─────────────────────────────────────────────────────────
+// Prevents concurrent submission calls from timer-expiry + manual-submit race
+let submissionInFlight = new Set<string>();
+
 /**
- * Atomic Final Submission with Double-Submit Prevention Lock & Instant Score Evaluation
+ * Atomic Final Submission with Double-Submit Prevention Lock, Retry, & Instant Score Evaluation
  */
 export async function submitQuizFinal(
   session: QuizSession,
@@ -502,115 +514,146 @@ export async function submitQuizFinal(
   const sessionId = session.id;
   const now = Date.now();
 
-  // Fetch quiz if not provided or missing questions to ensure score is calculated
-  let targetQuiz = providedQuiz;
-  if (!targetQuiz || !targetQuiz.questions || targetQuiz.questions.length === 0) {
-    try {
-      targetQuiz = await getQuizById(session.quizId);
-    } catch {
-      // ignore
+  // Concurrency lock: prevent timer + manual submit race
+  if (submissionInFlight.has(sessionId)) {
+    // Wait for the existing submission to complete and return its result
+    await new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (!submissionInFlight.has(sessionId)) {
+          clearInterval(check);
+          resolve(undefined);
+        }
+      }, 200);
+      // Safety timeout
+      setTimeout(() => { clearInterval(check); resolve(undefined); }, 10000);
+    });
+    // Fetch the already-created submission
+    const existingSnap = await getDoc(doc(db, "quizSubmissions", sessionId));
+    if (existingSnap.exists()) {
+      return existingSnap.data() as QuizSubmission;
     }
   }
 
-  // 1. Check if already submitted to prevent duplicates
-  const submissionRef = doc(db, "quizSubmissions", sessionId);
-  const existingSnap = await getDoc(submissionRef);
-  if (existingSnap.exists()) {
-    const existing = existingSnap.data() as QuizSubmission;
-    // If existing submission lacks score and we have quiz questions, backfill it
-    if (existing.score === undefined && targetQuiz) {
-      const evalData = evaluateQuizAnswers(targetQuiz, existing.answers || answers);
-      const updatedExisting: QuizSubmission = {
-        ...existing,
-        ...evalData,
-        evaluatedAt: now
-      };
-      await updateDoc(submissionRef, {
-        score: evalData.score,
-        maxScore: evalData.maxScore,
-        percentage: evalData.percentage,
-        correctCount: evalData.correctCount,
-        incorrectCount: evalData.incorrectCount,
-        passed: evalData.passed,
-        evaluatedAt: now
-      }).catch(() => {});
-      return updatedExisting;
+  submissionInFlight.add(sessionId);
+
+  try {
+    // Fetch quiz if not provided or missing questions to ensure score is calculated
+    let targetQuiz = providedQuiz;
+    if (!targetQuiz || !targetQuiz.questions || targetQuiz.questions.length === 0) {
+      try {
+        targetQuiz = await getQuizById(session.quizId);
+      } catch {
+        // ignore
+      }
     }
-    return existing;
-  }
 
-  const answeredCount = Object.keys(answers).filter(k => !!answers[k]).length;
-  const totalQCount = totalQuestions || targetQuiz?.questions?.length || targetQuiz?.questionsCount || answeredCount;
-  const unansweredCount = Math.max(0, totalQCount - answeredCount);
-  const timeSpentSeconds = Math.max(1, Math.floor((now - session.startTime) / 1000));
-
-  // Compute evaluation score
-  let evalResult = {
-    score: 0,
-    maxScore: targetQuiz?.totalMarks || (totalQCount * 2) || 50,
-    percentage: 0,
-    correctCount: 0,
-    incorrectCount: answeredCount,
-    unansweredCount,
-    passed: false
-  };
-
-  if (targetQuiz) {
-    evalResult = evaluateQuizAnswers(targetQuiz, answers);
-  }
-
-  const submissionPayload: QuizSubmission = {
-    id: sessionId,
-    sessionId,
-    quizId: session.quizId,
-    quizTitle: session.quizTitle,
-    userId: session.userId,
-    userEmail: session.userEmail,
-    userName: session.userName,
-    teamId: session.teamId,
-    teamName: session.teamName,
-    answers,
-    answeredCount,
-    unansweredCount: evalResult.unansweredCount ?? unansweredCount,
-    totalQuestions: totalQCount,
-    timeSpentSeconds,
-    startTime: session.startTime,
-    submittedAt: now,
-    isAutoSubmitted,
-    isFinal: true,
-    violationsCount,
-    violationLogs,
-    score: evalResult.score,
-    maxScore: evalResult.maxScore,
-    percentage: evalResult.percentage,
-    correctCount: evalResult.correctCount,
-    incorrectCount: evalResult.incorrectCount,
-    passed: evalResult.passed,
-    evaluatedAt: now
-  };
-
-  // Perform atomic batch write: (1) create submission doc, (2) update session status to submitted
-  const batch = writeBatch(db);
-  batch.set(submissionRef, submissionPayload);
-  batch.update(doc(db, "quizSessions", sessionId), {
-    status: "submitted",
-    submittedAt: now,
-    lastAutosavedAt: now,
-    updatedAt: now,
-    violationsCount,
-    violationLogs
-  });
-
-  await batch.commit();
-
-  // Clear local draft caches
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.removeItem(`quiz_draft_${sessionId}`);
-    } catch {
-      // ignore
+    // 1. Check if already submitted to prevent duplicates
+    const submissionRef = doc(db, "quizSubmissions", sessionId);
+    const existingSnap = await getDoc(submissionRef);
+    if (existingSnap.exists()) {
+      const existing = existingSnap.data() as QuizSubmission;
+      // If existing submission lacks score and we have quiz questions, backfill it
+      if (existing.score === undefined && targetQuiz) {
+        const evalData = evaluateQuizAnswers(targetQuiz, existing.answers || answers);
+        const updatedExisting: QuizSubmission = {
+          ...existing,
+          ...evalData,
+          evaluatedAt: now
+        };
+        await updateDoc(submissionRef, {
+          score: evalData.score,
+          maxScore: evalData.maxScore,
+          percentage: evalData.percentage,
+          correctCount: evalData.correctCount,
+          incorrectCount: evalData.incorrectCount,
+          passed: evalData.passed,
+          evaluatedAt: now
+        }).catch(() => {});
+        return updatedExisting;
+      }
+      return existing;
     }
-  }
 
-  return submissionPayload;
+    const answeredCount = Object.keys(answers).filter(k => !!answers[k]).length;
+    const totalQCount = totalQuestions || targetQuiz?.questions?.length || targetQuiz?.questionsCount || answeredCount;
+    const unansweredCount = Math.max(0, totalQCount - answeredCount);
+    const timeSpentSeconds = Math.max(1, Math.floor((now - session.startTime) / 1000));
+
+    // Compute evaluation score
+    let evalResult = {
+      score: 0,
+      maxScore: targetQuiz?.totalMarks || (totalQCount * 2) || 50,
+      percentage: 0,
+      correctCount: 0,
+      incorrectCount: answeredCount,
+      unansweredCount,
+      passed: false
+    };
+
+    if (targetQuiz) {
+      evalResult = evaluateQuizAnswers(targetQuiz, answers);
+    }
+
+    const submissionPayload: QuizSubmission = {
+      id: sessionId,
+      sessionId,
+      quizId: session.quizId,
+      quizTitle: session.quizTitle,
+      userId: session.userId,
+      userEmail: session.userEmail,
+      userName: session.userName,
+      teamId: session.teamId,
+      teamName: session.teamName,
+      answers,
+      answeredCount,
+      unansweredCount: evalResult.unansweredCount ?? unansweredCount,
+      totalQuestions: totalQCount,
+      timeSpentSeconds,
+      startTime: session.startTime,
+      submittedAt: now,
+      isAutoSubmitted,
+      isFinal: true,
+      violationsCount,
+      violationLogs,
+      score: evalResult.score,
+      maxScore: evalResult.maxScore,
+      percentage: evalResult.percentage,
+      correctCount: evalResult.correctCount,
+      incorrectCount: evalResult.incorrectCount,
+      passed: evalResult.passed,
+      evaluatedAt: now
+    };
+
+    // Perform atomic batch write with retry
+    await retryWithBackoff(async () => {
+      const batch = writeBatch(db);
+      batch.set(submissionRef, submissionPayload);
+      batch.update(doc(db, "quizSessions", sessionId), {
+        status: "submitted",
+        submittedAt: now,
+        lastAutosavedAt: now,
+        updatedAt: now,
+        violationsCount,
+        violationLogs
+      });
+      await batch.commit();
+    }, 3, 1000);
+
+    // Clear local draft caches
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(`quiz_draft_${sessionId}`);
+      } catch {
+        // ignore
+      }
+    }
+
+    quizMonitor.trackSuccess("submission_failure");
+    return submissionPayload;
+  } catch (err) {
+    quizMonitor.trackError("submission_failure", `Final submission failed for ${sessionId}`, { error: String(err) });
+    throw err;
+  } finally {
+    submissionInFlight.delete(sessionId);
+  }
 }

@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import jsQR from "jsqr";
 import { db, auth } from "../../config/firebase";
-import { collection, getDocs, getDoc, doc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc, updateDoc, setDoc } from "firebase/firestore";
 import SEO from "../../components/layout/SEO";
 import { 
   Search, 
-  Filter, 
   ArrowUpDown, 
   RefreshCw, 
   FileText, 
@@ -13,197 +12,374 @@ import {
   Camera,
   Check,
   X,
-  AlertCircle
+  Sun,
+  Moon,
+  Calendar,
+  Users,
+  ChevronDown,
+  ArrowLeft,
+  MapPin,
+  Clock,
+  LogIn,
+  Sparkles
 } from "lucide-react";
-
 
 interface StudentAttendee {
   id: string;
   name: string;
   email: string;
   studentId: string;
+  teamName: string;
   department: string;
   year: string;
   program: string;
-  checkInTime: string;
-  status: "Present" | "Late" | "Absent";
-  avatar: string;
-  regId?: string;
-  isLead?: boolean;
+  isLead: boolean;
   memberIndex?: number;
+  regId: string;
+  morningStatus: "Present" | "Late" | "Absent";
+  morningCheckInTime: string;
+  afternoonStatus: "Present" | "Late" | "Absent";
+  afternoonCheckInTime: string;
 }
 
+interface EventItem {
+  id: string;
+  title: string;
+  startDate?: string;
+  endDate?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  timeRange?: string;
+  venue?: string;
+  location?: string;
+  room?: string;
+  status?: string;
+  isToday?: boolean;
+}
 
-const OrgAttendancePage: React.FC = () => {
+export const OrgAttendancePage: React.FC = () => {
+  // Two-step flow: "landing" = event selection, "marking" = attendance marking
+  const [activeView, setActiveView] = useState<"landing" | "marking">("landing");
+
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string>("");
+  const [assignedEvent, setAssignedEvent] = useState<EventItem | null>(null);
   const [students, setStudents] = useState<StudentAttendee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "Present" | "Late" | "Absent">("ALL");
   const [sortBy, setSortBy] = useState<"name" | "time" | "status">("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [syncTime, setSyncTime] = useState(2); // minutes ago
 
+  // Two Attendance Session Tabs: "morning" | "afternoon"
+  const [sessionTab, setSessionTab] = useState<"morning" | "afternoon">("morning");
+
+  // QR Scanner Modal States
   const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
   const [scannedTeamInfo, setScannedTeamInfo] = useState<any | null>(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanSuccessMsg, setScanSuccessMsg] = useState("");
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [rosterAttendance, setRosterAttendance] = useState<Record<string, "Present" | "Late" | "Absent">>({});
+  
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const requestRef = useRef<number | null>(null);
   const isProcessingQR = useRef(false);
 
-  const [assignedEvent, setAssignedEvent] = useState<any | null>(null);
-  const [isEventDay, setIsEventDay] = useState(true);
+  // Helper to format today's local date as YYYY-MM-DD
+  const getTodayStr = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
 
-
-
+  // 1. Fetch available events on page load
   useEffect(() => {
-    const loadAttendanceData = async () => {
+    const fetchEvents = async () => {
       try {
         setLoading(true);
+        const todayStr = getTodayStr();
+        const userEmail = auth.currentUser?.email?.toLowerCase().trim() || "";
 
-        // 1. Fetch assigned event title matching the logged-in organizer from "team" or "organizers" collection
-        const userEmail = auth.currentUser?.email || "saichandrakiranuppalapati@gmail.com";
-        let assignedEventTitle = "test event";
-
-        const orgsSnap = await getDocs(collection(db, "organizers"));
-        const organizerData = orgsSnap.docs.map(d => d.data()).find(o => 
-          o.email?.toLowerCase() === userEmail.toLowerCase() || 
-          o.username?.toLowerCase() === userEmail.toLowerCase() ||
-          o.email === "teammember1@gmail.com" ||
-          o.username === "teammember1@gmail.com"
-        );
-
-        if (organizerData?.assignedEvents?.[0]) {
-          assignedEventTitle = organizerData.assignedEvents[0];
-        } else {
-          const teamSnap = await getDocs(collection(db, "team"));
-          const teamOrganizerData = teamSnap.docs.map(d => d.data()).find(o => 
-            o.email?.toLowerCase() === userEmail.toLowerCase() || 
-            o.username?.toLowerCase() === userEmail.toLowerCase() ||
-            o.email === "j.smith@uni.edu"
+        // Check if organizer is assigned specific events
+        let assignedTitles: string[] = [];
+        try {
+          const orgsSnap = await getDocs(collection(db, "organizers"));
+          const orgData = orgsSnap.docs.map(d => d.data()).find(o => 
+            o.email?.toLowerCase() === userEmail || o.username?.toLowerCase() === userEmail
           );
-          if (teamOrganizerData?.assignedEvents?.[0]) {
-            assignedEventTitle = teamOrganizerData.assignedEvents[0];
+          if (orgData?.assignedEvents && Array.isArray(orgData.assignedEvents)) {
+            assignedTitles = orgData.assignedEvents.map((t: string) => t.toLowerCase().trim());
           }
+        } catch (e) {
+          console.warn("Could not load organizers assignment:", e);
         }
 
-        // 2. Query events details matching title
         const eventsSnap = await getDocs(collection(db, "events"));
-        const matchedEvent = eventsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)).find(e => e.title?.toLowerCase() === assignedEventTitle.toLowerCase());
-        const activeEventInfo = (matchedEvent || { id: "neural_workshop", title: assignedEventTitle, venue: "Main Auditorium", room: "Quantum Lab B-02" }) as any;
-        setAssignedEvent(activeEventInfo);
+        const rawEvents: EventItem[] = [];
 
-        // Check if today matches activeEventInfo date parameters (e.g. startDate)
-        const eventDate = activeEventInfo.startDate || activeEventInfo.date;
-        if (eventDate) {
-          const localToday = new Date();
-          const localTodayStr = `${localToday.getFullYear()}-${String(localToday.getMonth() + 1).padStart(2, "0")}-${String(localToday.getDate()).padStart(2, "0")}`;
-          
-          if (eventDate !== localTodayStr) {
-            setIsEventDay(false);
-          } else {
-            setIsEventDay(true);
-          }
-        } else {
-          setIsEventDay(true);
-        }
-
-        // 3. Query registrations from Firestore and clean up sample entries
-        const regsSnap = await getDocs(collection(db, "registrations"));
-        const deletePromises: Promise<any>[] = [];
-        regsSnap.forEach((docSnap) => {
+        eventsSnap.forEach((docSnap) => {
           const data = docSnap.data();
-          if (data.teamLeadEmail === "alex.rivera@azure.edu" || 
-              data.teamLeadEmail === "sarah.chen@azure.edu" || 
-              data.teamLeadEmail === "jordan.smith@azure.edu") {
-            deletePromises.push(deleteDoc(doc(db, "registrations", docSnap.id)));
-          }
+          const eventDate = data.startDate || data.date || "";
+          const endDate = data.endDate || eventDate;
+          const isToday = eventDate === todayStr || (eventDate <= todayStr && endDate >= todayStr);
+
+          rawEvents.push({
+            id: docSnap.id,
+            title: data.title || "Untitled Event",
+            startDate: data.startDate || data.date || "",
+            endDate: data.endDate || "",
+            date: data.date || data.startDate || "",
+            startTime: data.startTime || "09:00 AM",
+            endTime: data.endTime || "05:00 PM",
+            timeRange: data.timeRange || (data.startTime ? `${data.startTime} - ${data.endTime || ""}` : "09:00 AM - 05:00 PM"),
+            venue: data.venue || data.location || "Campus Venue",
+            location: data.location || data.venue || "Campus Venue",
+            room: data.room || "Room 101",
+            status: data.status || "Active",
+            isToday
+          });
         });
 
-        if (deletePromises.length > 0) {
-          await Promise.all(deletePromises);
+        // Filter events:
+        // Priority 1: Events assigned to organizer (if any assigned)
+        // Priority 2: Events occurring today (or active/published)
+        let filteredEvents = rawEvents;
+        if (assignedTitles.length > 0) {
+          const matchedAssigned = rawEvents.filter(e => 
+            assignedTitles.some(t => e.title.toLowerCase().trim().includes(t) || t.includes(e.title.toLowerCase().trim()))
+          );
+          if (matchedAssigned.length > 0) {
+            filteredEvents = matchedAssigned;
+          }
         }
 
-        // Fetch clean dataset from registrations collection and administrative users to exclude them from student roster
-        const usersSnap = await getDocs(collection(db, "users"));
-        const dbUserEmails = new Set(
-          usersSnap.docs.map(doc => doc.data().email?.toLowerCase()).filter(Boolean)
-        );
-
-        const updatedRegsSnap = await getDocs(collection(db, "registrations"));
-        
-        // Fetch attendances from the new collection to override statuses
-        const attsSnap = await getDocs(collection(db, "attendances"));
-        const attendances = attsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-
-        const list: StudentAttendee[] = [];
-        const regList: any[] = [];
-
-        updatedRegsSnap.forEach((docSnap) => {
-          const data = docSnap.data();
-          regList.push({ id: docSnap.id, ...data });
-          // Map database elements to student columns if applicable
-          if (data.eventId === activeEventInfo.id || data.eventTitle?.toLowerCase() === activeEventInfo.title?.toLowerCase()) {
-            // Push Team Lead if not a database user/organizer
-            if (!dbUserEmails.has(data.teamLeadEmail?.toLowerCase())) {
-              const attRecord = attendances.find(a => a.participantId === (docSnap.id + "_lead") && a.eventId === activeEventInfo.id);
-              list.push({
-                id: docSnap.id + "_lead",
-                regId: docSnap.id,
-                isLead: true,
-                name: data.teamLeadName || "Unnamed Student",
-                email: data.teamLeadEmail || "",
-                studentId: data.teamLeadStudentId || `AI-2026-${Math.floor(100 + Math.random() * 900)}`,
-                department: data.groupName || "Computer Science",
-                year: data.year || "Year 3",
-                program: data.program || "Honours",
-                checkInTime: attRecord?.checkInTime || data.checkInTime || "Not Checked-in",
-                status: (attRecord?.status as any) || (data.attendanceStatus as any) || "Absent",
-                avatar: data.avatar || "satoshiImg"
-              });
-            }
-
-            // Push Teammates if not a database user/organizer
-            if (data.members && data.members.length > 0) {
-              data.members.forEach((m: any, idx: number) => {
-                if (!dbUserEmails.has(m.email?.toLowerCase())) {
-                  const attRecord = attendances.find(a => a.participantId === (docSnap.id + `_member_${idx}`) && a.eventId === activeEventInfo.id);
-                  list.push({
-                    id: docSnap.id + `_member_${idx}`,
-                    regId: docSnap.id,
-                    isLead: false,
-                    memberIndex: idx,
-                    name: m.name || "Unnamed Teammate",
-                    email: m.email || "",
-                    studentId: m.studentId || `AI-2026-${Math.floor(100 + Math.random() * 900)}`,
-                    department: data.groupName || "Computer Science",
-                    year: data.year || "Year 3",
-                    program: data.program || "Honours",
-                    checkInTime: attRecord?.checkInTime || m.checkInTime || "Not Checked-in",
-                    status: (attRecord?.status as any) || (m.attendanceStatus as any) || "Absent",
-                    avatar: "sarah"
-                  });
-                }
-              });
-            }
-          }
+        // Sort: Today's events first, then active events
+        filteredEvents.sort((a, b) => {
+          if (a.isToday && !b.isToday) return -1;
+          if (!a.isToday && b.isToday) return 1;
+          return (a.startDate || "").localeCompare(b.startDate || "");
         });
 
-        setStudents(list);
-        setRegistrations(regList);
+        setEvents(filteredEvents);
+
+        if (filteredEvents.length > 0) {
+          // Select today's event if available, otherwise first event
+          const todayEv = filteredEvents.find(e => e.isToday);
+          const defaultEvent = todayEv || filteredEvents[0];
+          setSelectedEventId(defaultEvent.id);
+          setAssignedEvent(defaultEvent);
+        }
       } catch (err) {
-        console.error("Error loading attendance records:", err);
+        console.error("Error fetching events:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    loadAttendanceData();
+    fetchEvents();
   }, []);
 
-  // Real QR code scanner frame loop and callbacks
+  // 2. Fetch registered participants when selectedEventId changes
+  useEffect(() => {
+    if (!selectedEventId) return;
+
+    const loadEventAttendees = async () => {
+      try {
+        setLoading(true);
+        const currentEvent = events.find(e => e.id === selectedEventId);
+        if (currentEvent) {
+          setAssignedEvent(currentEvent);
+        }
+
+        // Fetch registrations
+        const regsSnap = await getDocs(collection(db, "registrations"));
+        const allRegs: any[] = [];
+        regsSnap.forEach(d => {
+          allRegs.push({ id: d.id, ...d.data() });
+        });
+        setRegistrations(allRegs);
+
+        // Fetch attendances collection records for this event
+        const attsSnap = await getDocs(collection(db, "attendances"));
+        const attendances = attsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
+        const eventRegs = allRegs.filter((r: any) => 
+          r.eventId === selectedEventId || 
+          (currentEvent && (r.eventTitle || "").toLowerCase().trim() === currentEvent.title.toLowerCase().trim())
+        );
+
+        const attendeeList: StudentAttendee[] = [];
+
+        eventRegs.forEach((r: any) => {
+          const leadId = `${r.id}_lead`;
+          const attLeadMorning = attendances.find((a: any) => 
+            a.eventId === selectedEventId && 
+            a.participantId === leadId && 
+            (a.session === "morning" || !a.session)
+          );
+          const attLeadAfternoon = attendances.find((a: any) => 
+            a.eventId === selectedEventId && 
+            a.participantId === leadId && 
+            a.session === "afternoon"
+          );
+
+          // 1. Team Lead / Individual Registrant
+          attendeeList.push({
+            id: leadId,
+            regId: r.id,
+            isLead: true,
+            name: r.teamLeadName || r.name || "Team Lead",
+            email: r.teamLeadEmail || r.email || "",
+            studentId: r.teamLeadStudentId || r.studentId || `AI-${r.id.substring(0, 5).toUpperCase()}`,
+            teamName: r.groupName || r.teamName || "Solo Registration",
+            department: r.department || r.branch || "Engineering & Tech",
+            year: r.year || "Year 3",
+            program: r.program || "B.Tech",
+            morningStatus: (attLeadMorning?.status as any) || r.attendanceStatusMorning || r.attendanceStatus || "Absent",
+            morningCheckInTime: attLeadMorning?.checkInTime || r.checkInTimeMorning || (r.attendanceStatus === "Present" ? r.checkInTime : "Not Checked-in"),
+            afternoonStatus: (attLeadAfternoon?.status as any) || r.attendanceStatusAfternoon || "Absent",
+            afternoonCheckInTime: attLeadAfternoon?.checkInTime || r.checkInTimeAfternoon || "Not Checked-in"
+          });
+
+          // 2. Team Squad Members
+          if (Array.isArray(r.members) && r.members.length > 0) {
+            r.members.forEach((m: any, idx: number) => {
+              const memId = `${r.id}_member_${idx}`;
+              const attMemMorning = attendances.find((a: any) => 
+                a.eventId === selectedEventId && 
+                a.participantId === memId && 
+                (a.session === "morning" || !a.session)
+              );
+              const attMemAfternoon = attendances.find((a: any) => 
+                a.eventId === selectedEventId && 
+                a.participantId === memId && 
+                a.session === "afternoon"
+              );
+
+              attendeeList.push({
+                id: memId,
+                regId: r.id,
+                isLead: false,
+                memberIndex: idx,
+                name: m.name || `Teammate ${idx + 1}`,
+                email: m.email || "",
+                studentId: m.studentId || `AI-${r.id.substring(0, 3)}-${idx + 1}`,
+                teamName: r.groupName || r.teamName || "Team Member",
+                department: m.department || r.department || "Engineering & Tech",
+                year: m.year || r.year || "Year 3",
+                program: m.program || r.program || "B.Tech",
+                morningStatus: (attMemMorning?.status as any) || m.attendanceStatusMorning || m.attendanceStatus || "Absent",
+                morningCheckInTime: attMemMorning?.checkInTime || m.checkInTimeMorning || (m.attendanceStatus === "Present" ? m.checkInTime : "Not Checked-in"),
+                afternoonStatus: (attMemAfternoon?.status as any) || m.attendanceStatusAfternoon || "Absent",
+                afternoonCheckInTime: attMemAfternoon?.checkInTime || m.checkInTimeAfternoon || "Not Checked-in"
+              });
+            });
+          }
+        });
+
+        setStudents(attendeeList);
+      } catch (err) {
+        console.error("Error loading event attendees:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadEventAttendees();
+  }, [selectedEventId, events]);
+
+  // Handle status toggle for a student (Morning vs Afternoon)
+  const handleStatusChange = async (studentId: string, newStatus: "Present" | "Late" | "Absent") => {
+    const timeNow = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    const formattedCheckIn = newStatus === "Absent" ? "Not Checked-in" : `${timeNow} (Manual)`;
+
+    const student = students.find(s => s.id === studentId);
+    if (!student) return;
+
+    // Update locally based on active sessionTab
+    setStudents(prev => prev.map(s => {
+      if (s.id !== studentId) return s;
+      if (sessionTab === "morning") {
+        return { ...s, morningStatus: newStatus, morningCheckInTime: formattedCheckIn };
+      } else {
+        return { ...s, afternoonStatus: newStatus, afternoonCheckInTime: formattedCheckIn };
+      }
+    }));
+
+    // Update in Firestore
+    try {
+      const regId = student.regId;
+      const docRef = doc(db, "registrations", regId);
+
+      // 1. Update attendances collection
+      if (selectedEventId) {
+        const attsSnap = await getDocs(collection(db, "attendances"));
+        const existingDoc = attsSnap.docs.find(d => {
+          const data = d.data();
+          return data.eventId === selectedEventId && data.participantId === student.id && data.session === sessionTab;
+        });
+
+        if (existingDoc) {
+          await updateDoc(doc(db, "attendances", existingDoc.id), {
+            status: newStatus,
+            checkInTime: formattedCheckIn
+          });
+        } else {
+          await setDoc(doc(collection(db, "attendances")), {
+            eventId: selectedEventId,
+            participantId: student.id,
+            name: student.name,
+            role: "Participant",
+            session: sessionTab,
+            status: newStatus,
+            checkInTime: formattedCheckIn
+          });
+        }
+      }
+
+      // 2. Update registrations document fields
+      if (student.isLead) {
+        const updates: any = {};
+        if (sessionTab === "morning") {
+          updates.attendanceStatusMorning = newStatus;
+          updates.checkInTimeMorning = formattedCheckIn;
+          updates.attendanceStatus = newStatus; // Backwards compatibility
+          updates.checkInTime = formattedCheckIn;
+        } else {
+          updates.attendanceStatusAfternoon = newStatus;
+          updates.checkInTimeAfternoon = formattedCheckIn;
+        }
+        await updateDoc(docRef, updates);
+      } else if (student.memberIndex !== undefined) {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const membersList = [...(data.members || [])];
+          if (membersList[student.memberIndex]) {
+            if (sessionTab === "morning") {
+              membersList[student.memberIndex].attendanceStatusMorning = newStatus;
+              membersList[student.memberIndex].checkInTimeMorning = formattedCheckIn;
+              membersList[student.memberIndex].attendanceStatus = newStatus;
+              membersList[student.memberIndex].checkInTime = formattedCheckIn;
+            } else {
+              membersList[student.memberIndex].attendanceStatusAfternoon = newStatus;
+              membersList[student.memberIndex].checkInTimeAfternoon = formattedCheckIn;
+            }
+          }
+          await updateDoc(docRef, { members: membersList });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to update status in Firestore:", err);
+    }
+  };
+
+  // QR Code Scanner Handlers
   const handleScannedCode = async (decodedText: string) => {
     if (isProcessingQR.current) return;
     isProcessingQR.current = true;
@@ -211,9 +387,7 @@ const OrgAttendancePage: React.FC = () => {
     try {
       const cleanText = decodedText.trim();
       let reg = registrations.find(r => r.id === cleanText || r.qrCodeData === cleanText);
-      
-      // Fallback: If not found locally, fetch directly from DB
-      // (Handles cases where registration was just created in another tab)
+
       if (!reg) {
         setScanLoading(true);
         try {
@@ -230,18 +404,18 @@ const OrgAttendancePage: React.FC = () => {
       }
 
       if (reg) {
-        if (reg.eventId !== assignedEvent?.id && reg.eventTitle?.toLowerCase() !== assignedEvent?.title?.toLowerCase()) {
-          alert(`This registration is for "${reg.eventTitle}". You can only check-in attendees for your assigned event: "${assignedEvent?.title}".`);
+        if (reg.eventId && reg.eventId !== selectedEventId && reg.eventTitle?.toLowerCase() !== assignedEvent?.title?.toLowerCase()) {
+          alert(`This ticket is for "${reg.eventTitle}". Please select that event or scan attendees for "${assignedEvent?.title}".`);
         } else {
           setScannedTeamInfo(reg);
         }
       } else {
-        alert(`Invalid ticket QR Code or registration ID. (Scanned data: "${cleanText}")`);
+        alert(`Invalid ticket QR Code or registration ID: "${cleanText}"`);
       }
     } finally {
       setTimeout(() => {
         isProcessingQR.current = false;
-      }, 1500); // Prevent rapid-fire scanning of the same invalid code
+      }, 1500);
     }
   };
 
@@ -261,7 +435,6 @@ const OrgAttendancePage: React.FC = () => {
         });
 
         if (code) {
-          console.log("Real QR Decoded:", code.data);
           handleScannedCode(code.data);
           return;
         }
@@ -294,7 +467,7 @@ const OrgAttendancePage: React.FC = () => {
             requestRef.current = requestAnimationFrame(scanFrame);
           }
         } catch (err) {
-          console.warn("Camera access failed or unavailable, displaying mock feed fallback:", err);
+          console.warn("Camera access failed or unavailable:", err);
         }
       }
     };
@@ -321,144 +494,31 @@ const OrgAttendancePage: React.FC = () => {
   useEffect(() => {
     if (scannedTeamInfo) {
       const initialStatuses: Record<string, "Present" | "Late" | "Absent"> = {};
-      initialStatuses["lead"] = (scannedTeamInfo.attendanceStatus as any) || "Present";
+      const leadStatus = sessionTab === "morning" 
+        ? (scannedTeamInfo.attendanceStatusMorning || scannedTeamInfo.attendanceStatus || "Present")
+        : (scannedTeamInfo.attendanceStatusAfternoon || "Present");
+      initialStatuses["lead"] = leadStatus as any;
+
       if (scannedTeamInfo.members) {
         scannedTeamInfo.members.forEach((m: any, idx: number) => {
-          initialStatuses[`member_${idx}`] = m.attendanceStatus || "Present";
+          const memStatus = sessionTab === "morning"
+            ? (m.attendanceStatusMorning || m.attendanceStatus || "Present")
+            : (m.attendanceStatusAfternoon || "Present");
+          initialStatuses[`member_${idx}`] = memStatus;
         });
       }
       setRosterAttendance(initialStatuses);
     } else {
       setRosterAttendance({});
     }
-  }, [scannedTeamInfo]);
+  }, [scannedTeamInfo, sessionTab]);
 
-
-  // Toggle status handler (updates Firestore and State)
-  const handleStatusChange = async (studentId: string, newStatus: "Present" | "Late" | "Absent") => {
-    const timeNow = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-    const formattedCheckIn = newStatus === "Absent" 
-      ? "Not Checked-in" 
-      : `${timeNow} (Manual)`;
-
-    // Find student in local state
-    const student = students.find(s => s.id === studentId);
-    if (!student) return;
-
-    // Update locally
-    setStudents(prev => prev.map(s => s.id === studentId ? {
-      ...s,
-      status: newStatus,
-      checkInTime: formattedCheckIn
-    } : s));
-
-    // Update in Firestore
-    try {
-      const regId = student.regId || studentId;
-      const docRef = doc(db, "registrations", regId);
-
-      if (assignedEvent) {
-        const attsSnap = await getDocs(collection(db, "attendances"));
-        const existingDoc = attsSnap.docs.find(d => {
-          const data = d.data();
-          return data.eventId === assignedEvent.id && data.participantId === student.id;
-        });
-
-        if (existingDoc) {
-          await updateDoc(doc(db, "attendances", existingDoc.id), {
-            status: newStatus,
-            checkInTime: formattedCheckIn
-          });
-        } else {
-          await setDoc(doc(collection(db, "attendances")), {
-            eventId: assignedEvent.id,
-            participantId: student.id,
-            name: student.name,
-            role: "Participant",
-            status: newStatus,
-            checkInTime: formattedCheckIn
-          });
-        }
-      }
-
-      if (student.isLead) {
-        await updateDoc(docRef, {
-          attendanceStatus: newStatus,
-          checkInTime: formattedCheckIn
-        });
-      } else if (student.memberIndex !== undefined) {
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const membersList = [...(data.members || [])];
-          if (membersList[student.memberIndex]) {
-            membersList[student.memberIndex].attendanceStatus = newStatus;
-            membersList[student.memberIndex].checkInTime = formattedCheckIn;
-          }
-          await updateDoc(docRef, {
-            members: membersList
-          });
-        }
-      } else {
-        await updateDoc(docRef, {
-          attendanceStatus: newStatus,
-          checkInTime: formattedCheckIn
-        });
-      }
-    } catch (err) {
-      console.error("Failed to update status in DB:", err);
-    }
-  };
-
-  // Simulated Sync Action
-  const handleSyncAttendance = () => {
-    setSyncTime(0);
-    alert("Attendance data successfully synced to Azure University database!");
-  };
-
-  // Simulated Report Action
-  const handleGenerateReport = () => {
-    alert("Attendance log compiled! Downloading Neural_Networks_Attendance_Report.csv...");
-  };
-
-  // Search & Filter students
-  const filteredStudents = useMemo(() => {
-    let result = students.filter((s) => {
-      const q = searchQuery.toLowerCase();
-      return (
-        s.name.toLowerCase().includes(q) ||
-        s.studentId.toLowerCase().includes(q) ||
-        s.department.toLowerCase().includes(q)
-      );
-    });
-
-    // Apply Sorting
-    result.sort((a, b) => {
-      let fieldA: string = "";
-      let fieldB: string = "";
-
-      if (sortBy === "name") {
-        fieldA = a.name;
-        fieldB = b.name;
-      } else if (sortBy === "time") {
-        fieldA = a.checkInTime;
-        fieldB = b.checkInTime;
-      } else if (sortBy === "status") {
-        fieldA = a.status;
-        fieldB = b.status;
-      }
-
-      return sortOrder === "asc"
-        ? fieldA.localeCompare(fieldB)
-        : fieldB.localeCompare(fieldA);
-    });
-
-    return result;
-  }, [students, searchQuery, sortBy, sortOrder]);
-
-  // Compute real statistics based on the students list
+  // Compute live statistics based on active sessionTab
   const stats = useMemo(() => {
-    const presentList = students.filter(s => s.status === "Present" || s.status === "Late");
+    const presentList = students.filter(s => {
+      const status = sessionTab === "morning" ? s.morningStatus : s.afternoonStatus;
+      return status === "Present" || status === "Late";
+    });
     const totalPresent = presentList.length;
     const totalExpected = students.length;
     const rate = totalExpected > 0 ? ((totalPresent / totalExpected) * 100).toFixed(1) : "0.0";
@@ -468,195 +528,516 @@ const OrgAttendancePage: React.FC = () => {
       expected: totalExpected,
       rate
     };
-  }, [students]);
+  }, [students, sessionTab]);
 
-  if (!isEventDay) {
+  // Search & Filter students
+  const filteredStudents = useMemo(() => {
+    let result = students.filter((s) => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = 
+        s.name.toLowerCase().includes(q) ||
+        s.studentId.toLowerCase().includes(q) ||
+        s.email.toLowerCase().includes(q) ||
+        s.teamName.toLowerCase().includes(q);
+
+      const status = sessionTab === "morning" ? s.morningStatus : s.afternoonStatus;
+      const matchesStatus = statusFilter === "ALL" || status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+
+    result.sort((a, b) => {
+      let fieldA: string = "";
+      let fieldB: string = "";
+
+      if (sortBy === "name") {
+        fieldA = a.name;
+        fieldB = b.name;
+      } else if (sortBy === "time") {
+        fieldA = sessionTab === "morning" ? a.morningCheckInTime : a.afternoonCheckInTime;
+        fieldB = sessionTab === "morning" ? b.morningCheckInTime : b.afternoonCheckInTime;
+      } else if (sortBy === "status") {
+        fieldA = sessionTab === "morning" ? a.morningStatus : a.afternoonStatus;
+        fieldB = sessionTab === "morning" ? b.morningStatus : b.afternoonStatus;
+      }
+
+      return sortOrder === "asc"
+        ? fieldA.localeCompare(fieldB)
+        : fieldB.localeCompare(fieldA);
+    });
+
+    return result;
+  }, [students, searchQuery, statusFilter, sortBy, sortOrder, sessionTab]);
+
+  // Generate & Download Attendance CSV Report
+  const handleGenerateReport = () => {
+    if (students.length === 0) {
+      alert("No attendance records to export.");
+      return;
+    }
+
+    const headers = ["Student Name", "Student ID", "Email", "Team Name", "Role", "Morning Status", "Morning Check-In Time", "Afternoon Status", "Afternoon Check-In Time"];
+    const rows = students.map(s => [
+      `"${s.name}"`,
+      `"${s.studentId}"`,
+      `"${s.email}"`,
+      `"${s.teamName}"`,
+      `"${s.isLead ? "Team Lead" : "Member"}"`,
+      `"${s.morningStatus}"`,
+      `"${s.morningCheckInTime}"`,
+      `"${s.afternoonStatus}"`,
+      `"${s.afternoonCheckInTime}"`
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const eventNameClean = (assignedEvent?.title || "event").replace(/[^a-z0-9]/gi, "_").toLowerCase();
+    link.setAttribute("download", `${eventNameClean}_full_attendance_${getTodayStr()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleSyncAttendance = () => {
+    alert("Attendance state successfully synchronized with AI Verse database!");
+  };
+
+  // Handler to enter a specific event's attendance page
+  const enterEvent = (eventId: string) => {
+    setSelectedEventId(eventId);
+    const ev = events.find(e => e.id === eventId);
+    if (ev) setAssignedEvent(ev);
+    setActiveView("marking");
+  };
+
+
+  // ======================== LANDING VIEW ========================
+  if (activeView === "landing") {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-8 bg-slate-50/50 rounded-3xl border border-slate-100/60 shadow-sm animate-in fade-in duration-300">
-        <SEO title="Attendance Portal Closed - AI Verse" description="The attendance portal is closed on non-event days." />
-        <div className="w-20 h-20 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center border border-amber-100 shadow-inner mb-6 animate-bounce">
-          <AlertCircle className="w-10 h-10" />
-        </div>
-        
-        <span className="text-[10px] font-black uppercase text-amber-500 tracking-widest px-3 py-1 rounded-full bg-amber-50 border border-amber-100/50 inline-block mb-3">
-          Portal Offline
-        </span>
-        
-        <h1 className="text-3xl font-black text-slate-800 tracking-tight leading-none mb-3">
-          Attendance Portal Closed
-        </h1>
-        
-        <p className="text-slate-500 text-sm font-semibold max-w-md leading-relaxed mb-6">
-          The attendance check-in system for <span className="text-slate-800 font-extrabold">"{assignedEvent?.title || "test event"}"</span> is scheduled for <span className="text-[#2563EB] font-extrabold">{assignedEvent?.startDate || "2026-07-31"}</span>. It is only accessible on the official day of the event.
-        </p>
+      <div className="space-y-8 pb-24 text-left font-sans relative">
+        <SEO 
+          title="Attendance - Student Organizer" 
+          description="Select an event to start marking attendance for registered participants."
+        />
 
-        <div className="text-[10px] font-bold text-slate-400 bg-white border border-slate-200/50 px-4 py-2 rounded-xl shadow-sm">
-          Current System Date: <span className="text-slate-650 font-black">{new Date().toLocaleDateString("en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        {/* Page Header */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2.5">
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] uppercase font-black tracking-widest px-3.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-md shadow-blue-600/20">
+              <Sparkles className="w-3 h-3" />
+              Attendance Portal
+            </span>
+            <span className="text-slate-400 text-xs font-bold bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+              {getTodayStr()}
+            </span>
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight">
+            Today's Events
+          </h1>
+          <p className="text-slate-500 text-sm font-medium max-w-xl">
+            Select an event below to start marking attendance for registered participants. Only events scheduled for today or currently active events are shown.
+          </p>
         </div>
+
+        {/* Loading State */}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-28">
+            <RefreshCw className="h-10 w-10 text-blue-600 animate-spin" />
+            <p className="text-sm text-slate-400 font-bold mt-4">Loading events...</p>
+          </div>
+        ) : events.length === 0 ? (
+          /* No Events State */
+          <div className="flex flex-col items-center justify-center py-28 text-center">
+            <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center mb-5">
+              <Calendar className="w-10 h-10 text-slate-300" />
+            </div>
+            <h3 className="text-xl font-black text-slate-700">No Events Today</h3>
+            <p className="text-sm text-slate-400 font-medium max-w-sm mt-2">
+              There are no events scheduled for today or assigned to you. Check back later or contact the admin.
+            </p>
+          </div>
+        ) : (
+          /* Event Cards Grid */
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {events.map((ev, idx) => {
+              const isLive = ev.isToday;
+              const gradients = [
+                "from-blue-600 via-blue-700 to-indigo-800",
+                "from-violet-600 via-purple-700 to-indigo-800",
+                "from-emerald-600 via-teal-700 to-cyan-800",
+                "from-orange-500 via-amber-600 to-yellow-700",
+                "from-rose-600 via-pink-700 to-fuchsia-800",
+              ];
+              const gradient = gradients[idx % gradients.length];
+
+              return (
+                <div 
+                  key={ev.id} 
+                  className="group relative rounded-3xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-1 cursor-pointer"
+                  onClick={() => enterEvent(ev.id)}
+                >
+                  {/* Gradient Background */}
+                  <div className={`bg-gradient-to-br ${gradient} p-7 pb-6 min-h-[260px] flex flex-col justify-between relative`}>
+                    
+                    {/* Decorative Elements */}
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4" />
+                    <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/4" />
+
+                    {/* Top Row: Live Badge */}
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                          {isLive && (
+                            <span className="bg-white/20 backdrop-blur-sm text-white text-[10px] uppercase font-black tracking-widest px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-white/20">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-lg shadow-emerald-400/50" />
+                              Live Today
+                            </span>
+                          )}
+                          {!isLive && (
+                            <span className="bg-white/15 backdrop-blur-sm text-white/80 text-[10px] uppercase font-black tracking-widest px-3 py-1.5 rounded-full border border-white/15">
+                              Scheduled
+                            </span>
+                          )}
+                        </div>
+                        <span className="bg-white/15 backdrop-blur-sm text-white/80 text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/15">
+                          {ev.startDate || ev.date || "TBD"}
+                        </span>
+                      </div>
+
+                      {/* Event Title */}
+                      <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight leading-tight mb-1 group-hover:translate-x-0.5 transition-transform">
+                        {ev.title}
+                      </h2>
+                    </div>
+
+                    {/* Bottom Section: Details + Enter */}
+                    <div className="relative z-10 space-y-4 mt-auto">
+                      <div className="flex flex-wrap gap-2">
+                        <span className="bg-white/15 backdrop-blur-sm text-white/90 text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border border-white/10">
+                          <MapPin className="w-3 h-3" />
+                          {ev.venue || "Campus"} {ev.room ? `• ${ev.room}` : ""}
+                        </span>
+                        <span className="bg-white/15 backdrop-blur-sm text-white/90 text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 border border-white/10">
+                          <Clock className="w-3 h-3" />
+                          {ev.timeRange || `${ev.startTime || "09:00"} - ${ev.endTime || "17:00"}`}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          enterEvent(ev.id);
+                        }}
+                        className="w-full bg-white hover:bg-white/95 text-slate-900 font-black text-sm py-3.5 rounded-2xl flex items-center justify-center gap-2.5 shadow-lg shadow-black/10 transition-all active:scale-[0.97] group-hover:shadow-xl"
+                      >
+                        <LogIn className="w-4.5 h-4.5" />
+                        Enter Event
+                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                          Mark Attendance
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
 
+  // ======================== MARKING VIEW ========================
   return (
     <div className="space-y-6 pb-24 text-left font-sans relative">
       <SEO 
         title="Session Attendance - Student Organizer" 
-        description="Verify check-ins, generate session QR codes, and log attendee records."
+        description="Mark morning and afternoon attendance, verify check-ins, and scan participant QR codes."
       />
+      {/* ================= BACK BUTTON ================= */}
+      <button
+        onClick={() => {
+          setActiveView("landing");
+          setStudents([]);
+        }}
+        className="flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-blue-600 transition-colors cursor-pointer group"
+      >
+        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+        Back to Events
+      </button>
 
-      {/* ================= SESSION INFO HEADER ================= */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="space-y-2">
-          {/* Live Session Badge */}
-          <div className="flex items-center gap-2">
-            <span className="bg-[#EFF6FF] text-[#2563EB] border border-[#2563EB]/15 text-[10px] uppercase font-black tracking-widest px-3 py-1 rounded-lg">
-              Live Session
-            </span>
-            <span className="text-slate-400 text-xs font-semibold flex items-center gap-1">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              {assignedEvent ? `${assignedEvent.starts || "14:00"} - ${assignedEvent.ends || "17:00"}` : "14:00 - 17:00"}
-            </span>
+      {/* ================= TOP EVENT & SESSION BAR ================= */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-xs space-y-6">
+        
+        {/* Row 1: Event Info & Event Switcher */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-5 border-b border-slate-100">
+          <div className="space-y-1.5 max-w-2xl">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="bg-blue-50 text-blue-700 border border-blue-200/60 text-[10px] uppercase font-black tracking-widest px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                {assignedEvent?.isToday ? "Today's Event • Live Check-in" : "Assigned Event"}
+              </span>
+
+              <span className="text-slate-500 text-xs font-semibold flex items-center gap-1.5 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                {assignedEvent?.startDate || assignedEvent?.date || getTodayStr()}
+              </span>
+
+              <span className="text-slate-500 text-xs font-semibold bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                {assignedEvent?.venue || "Campus Lab"} • {assignedEvent?.room || "Auditorium"}
+              </span>
+            </div>
+
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight leading-tight">
+              {assignedEvent ? assignedEvent.title : "Event Session Attendance"}
+            </h1>
+            <p className="text-slate-500 text-xs sm:text-sm font-medium">
+              Registered participants for this event are loaded below. Select session and mark check-in via table or QR scanner.
+            </p>
           </div>
 
-          <h1 className="text-3xl font-black text-slate-800 tracking-tight leading-none">
-            {assignedEvent ? assignedEvent.title : "Neural Networks Workshop"}
-          </h1>
-          <p className="text-slate-500 text-xs font-semibold">
-            {assignedEvent ? `${assignedEvent.venue || "c block lab"} • Room ${assignedEvent.room || "Quantum Lab B-02"}` : "Main Auditorium • Hosted by Faculty of CS"}
-          </p>
+          {/* Event Selector Dropdown if multiple events */}
+          {events.length > 1 && (
+            <div className="flex flex-col items-start sm:items-end gap-1.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Switch Event</span>
+              <div className="relative inline-block w-full sm:w-auto">
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-300/80 rounded-xl px-4 py-2.5 pr-10 text-xs font-bold text-slate-800 cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {events.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      {ev.isToday ? "🎯 [TODAY] " : ""}{ev.title} ({ev.startDate || ev.date || "Scheduled"})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-3 pointer-events-none" />
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Dynamic Metric Cards */}
-        <div className="flex items-center gap-4 self-start lg:self-center">
-          {/* PRESENT CARD */}
-          <div className="bg-white border border-slate-100 rounded-2xl px-5 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.015)] text-center min-w-[100px]">
-            <span className="text-[9px] uppercase tracking-wider font-black text-slate-400">Present</span>
-            <div className="text-2xl font-black text-[#2563EB] mt-0.5">{stats.present}</div>
+        {/* Row 2: 🌅 MORNING & 🌆 AFTERNOON SESSION TABS + METRICS */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+          
+          {/* Two Big Attendance Tabs */}
+          <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200/80 self-start">
+            <button
+              onClick={() => setSessionTab("morning")}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                sessionTab === "morning"
+                  ? "bg-white text-blue-700 shadow-sm border border-slate-200/80"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+              }`}
+            >
+              <Sun className={`w-4 h-4 ${sessionTab === "morning" ? "text-amber-500" : "text-slate-400"}`} />
+              <span>Morning Session</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${
+                sessionTab === "morning" ? "bg-blue-50 text-blue-700" : "bg-slate-200 text-slate-600"
+              }`}>
+                09:00 - 13:00
+              </span>
+            </button>
+
+            <button
+              onClick={() => setSessionTab("afternoon")}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                sessionTab === "afternoon"
+                  ? "bg-white text-indigo-700 shadow-sm border border-slate-200/80"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+              }`}
+            >
+              <Moon className={`w-4 h-4 ${sessionTab === "afternoon" ? "text-indigo-500" : "text-slate-400"}`} />
+              <span>Afternoon Session</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${
+                sessionTab === "afternoon" ? "bg-indigo-50 text-indigo-700" : "bg-slate-200 text-slate-600"
+              }`}>
+                14:00 - 18:00
+              </span>
+            </button>
           </div>
 
-          {/* EXPECTED CARD */}
-          <div className="bg-white border border-slate-100 rounded-2xl px-5 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.015)] text-center min-w-[100px]">
-            <span className="text-[9px] uppercase tracking-wider font-black text-slate-400">Expected</span>
-            <div className="text-2xl font-black text-slate-800 mt-0.5">{stats.expected}</div>
+          {/* Real-time Attendance Stats Cards */}
+          <div className="flex items-center gap-3">
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl px-5 py-2.5 text-center min-w-[90px] shadow-2xs">
+              <span className="text-[9px] uppercase tracking-wider font-black text-slate-400 block">Present</span>
+              <div className="text-xl font-black text-blue-600">{stats.present}</div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl px-5 py-2.5 text-center min-w-[90px] shadow-2xs">
+              <span className="text-[9px] uppercase tracking-wider font-black text-slate-400 block">Expected</span>
+              <div className="text-xl font-black text-slate-800">{stats.expected}</div>
+            </div>
+
+            <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl px-5 py-2.5 text-center min-w-[90px] shadow-2xs">
+              <span className="text-[9px] uppercase tracking-wider font-black text-emerald-700 block">Rate</span>
+              <div className="text-xl font-black text-emerald-600">{stats.rate}%</div>
+            </div>
           </div>
 
-          {/* ATTENDANCE RATE CARD */}
-          <div className="bg-white border border-[#B3F3D2]/30 rounded-2xl px-5 py-3 shadow-[0_8px_30px_rgba(0,0,0,0.015)] text-center min-w-[100px]">
-            <span className="text-[9px] uppercase tracking-wider font-black text-slate-400">Rate</span>
-            <div className="text-2xl font-black text-emerald-600 mt-0.5">{stats.rate}%</div>
-          </div>
         </div>
+
       </div>
 
       {/* ================= CONTROLS ROW ================= */}
-      <div className="flex items-center gap-3 pt-2 max-w-2xl">
-        <div className="relative flex-grow">
-          <Search className="absolute left-3.5 top-2.5 h-4.5 w-4.5 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="Search by name, ID or department..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-white border border-slate-200/80 rounded-xl py-2 pl-10 pr-4 text-xs font-semibold text-slate-750 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-aether-blue-500 shadow-sm"
-          />
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+        <div className="flex items-center gap-3 flex-1 max-w-xl">
+          <div className="relative flex-grow">
+            <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search by student name, ID, team name, or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-white border border-slate-200/90 rounded-xl py-2 pl-10 pr-4 text-xs font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+            />
+          </div>
+
+          {/* Status Filter Pill */}
+          <select
+            value={statusFilter}
+            onChange={(e: any) => setStatusFilter(e.target.value)}
+            className="bg-white border border-slate-200/90 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer shadow-2xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="Present">Present Only</option>
+            <option value="Late">Late Only</option>
+            <option value="Absent">Absent Only</option>
+          </select>
         </div>
-        <button 
-          onClick={() => {
-            setSortBy(sortBy === "name" ? "status" : "name");
-            setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-          }}
-          className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-650 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all whitespace-nowrap"
-        >
-          <Filter className="h-4 w-4 text-slate-400" />
-          Filter
-        </button>
-        <button 
-          onClick={() => {
-            setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-          }}
-          className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-650 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-sm transition-all whitespace-nowrap"
-        >
-          <ArrowUpDown className="h-4 w-4 text-slate-400" />
-          Sort
-        </button>
+
+        <div className="flex items-center gap-2.5">
+          <button 
+            onClick={() => {
+              setSortBy(sortBy === "name" ? "status" : "name");
+              setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+            }}
+            className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-2xs transition-all whitespace-nowrap cursor-pointer"
+          >
+            <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />
+            <span>Sort ({sortBy})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsScannerModalOpen(true);
+              setScanSuccessMsg("");
+            }}
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs px-4.5 py-2 rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
+          >
+            <QrCode className="h-4 w-4" />
+            <span>Scan QR Code</span>
+          </button>
+        </div>
       </div>
 
       {/* ================= SPLIT SCREEN GRID ================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* Left Side: Attendees Table (8/12) */}
-        <div className="lg:col-span-8 bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.015)]">
+        <div className="lg:col-span-8 bg-white border border-slate-200/90 rounded-3xl overflow-hidden shadow-xs">
+          
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-blue-600" />
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                Registered Participants Roster ({filteredStudents.length})
+              </h3>
+            </div>
+            <span className="text-[11px] font-bold text-slate-400">
+              Active: <span className="font-extrabold text-blue-600">{sessionTab === "morning" ? "Morning Session" : "Afternoon Session"}</span>
+            </span>
+          </div>
+
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
-              <RefreshCw className="h-8 w-8 text-[#2563EB] animate-spin" />
-              <p className="text-xs text-slate-400 font-semibold mt-2">Loading students log...</p>
+              <RefreshCw className="h-8 w-8 text-blue-600 animate-spin" />
+              <p className="text-xs text-slate-400 font-bold mt-3">Loading registered participants...</p>
             </div>
           ) : filteredStudents.length === 0 ? (
-            <div className="py-20 text-center text-slate-400 font-semibold text-xs">
-              No students match the criteria.
+            <div className="py-20 text-center space-y-2">
+              <Users className="w-10 h-10 text-slate-300 mx-auto" />
+              <p className="text-sm font-extrabold text-slate-700">No participants match the criteria</p>
+              <p className="text-xs text-slate-400 font-medium max-w-sm mx-auto">
+                {students.length === 0 
+                  ? `No registered participants found for "${assignedEvent?.title}". Ensure teams have registered for this event.`
+                  : "Try adjusting your search terms or status filter."}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-semibold text-slate-600">
                 <thead>
                   <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-400 uppercase text-[9px] font-black tracking-wider">
-                    <th className="px-6 py-4">Student</th>
-                    <th className="px-6 py-4">ID & Dept</th>
-                    <th className="px-6 py-4">Last Check-in</th>
-                    <th className="px-6 py-4 text-right pr-12">Action</th>
+                    <th className="px-6 py-3.5">Participant & Team</th>
+                    <th className="px-6 py-3.5">Student ID & Contact</th>
+                    <th className="px-6 py-3.5">Session Check-In</th>
+                    <th className="px-6 py-3.5 text-right pr-8">Status / Toggle</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredStudents.map((student) => {
-                    const isPresent = student.status === "Present";
-                    const isLate = student.status === "Late";
+                    const status = sessionTab === "morning" ? student.morningStatus : student.afternoonStatus;
+                    const checkIn = sessionTab === "morning" ? student.morningCheckInTime : student.afternoonCheckInTime;
+                    const isPresent = status === "Present";
+                    const isLate = status === "Late";
 
                     return (
-                      <tr key={student.id} className="hover:bg-slate-50/30 transition-colors">
+                      <tr key={student.id} className="hover:bg-slate-50/60 transition-colors">
                         {/* Student Column */}
                         <td className="px-6 py-4">
                           <div>
-                            <span className="font-extrabold text-slate-800 text-xs block leading-snug">
-                              {student.name}
-                            </span>
-                            <span className="text-[10px] text-slate-400 mt-0.5 block">
-                              {student.year} • {student.program}
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-slate-800 text-xs leading-snug">
+                                {student.name}
+                              </span>
+                              {student.isLead && (
+                                <span className="text-[9px] font-black bg-blue-100/80 text-blue-700 px-2 py-0.5 rounded-md uppercase">
+                                  Lead
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-slate-400 font-medium mt-0.5 block">
+                              Team: <span className="text-slate-600 font-bold">{student.teamName}</span>
                             </span>
                           </div>
                         </td>
 
                         {/* ID & Dept Column */}
                         <td className="px-6 py-4">
-                          <span className="text-slate-850 font-bold block">{student.studentId}</span>
-                          <span className="text-[10px] text-slate-400 mt-0.5 block font-medium">{student.department}</span>
+                          <span className="text-slate-800 font-mono font-bold block">{student.studentId}</span>
+                          <span className="text-[11px] text-slate-400 mt-0.5 block truncate max-w-[180px]">{student.email}</span>
                         </td>
 
                         {/* Last Check-in Column */}
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${
-                              isPresent ? "bg-emerald-500" : isLate ? "bg-amber-500" : "bg-slate-350"
+                              isPresent ? "bg-emerald-500 shadow-xs" : isLate ? "bg-amber-500" : "bg-slate-300"
                             }`}></span>
-                            <span className="text-slate-700 font-bold">{student.checkInTime}</span>
+                            <span className="text-slate-700 font-bold">{checkIn}</span>
                           </div>
                         </td>
 
                         {/* Actions Column */}
-                        <td className="px-6 py-4 text-right pr-12">
+                        <td className="px-6 py-4 text-right pr-8">
                           <button
                             onClick={() => {
                               const nextStatus = isPresent ? "Late" : isLate ? "Absent" : "Present";
                               handleStatusChange(student.id, nextStatus);
                             }}
-                            className={`px-3.5 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all shadow-sm border ${
+                            className={`px-3.5 py-1.5 rounded-xl text-[10px] font-black tracking-wider uppercase transition-all shadow-2xs border cursor-pointer active:scale-95 ${
                               isPresent
-                                ? "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100/30"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                                 : isLate
-                                ? "bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100/30"
-                                : "bg-rose-50 text-rose-650 border-rose-100 hover:bg-rose-100/30"
+                                ? "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                                : "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100"
                             }`}
                           >
-                            {student.status}
+                            {status}
                           </button>
                         </td>
                       </tr>
@@ -668,17 +1049,24 @@ const OrgAttendancePage: React.FC = () => {
           )}
         </div>
 
-        {/* Right Side: QR check-in & active sessions (4/12) */}
+        {/* Right Side: QR check-in & Action Box (4/12) */}
         <div className="lg:col-span-4 space-y-6">
           
           {/* Card 1: Student Check-in (QR code) */}
-          <div className="bg-[#2563EB] rounded-2xl p-6 text-white text-center space-y-4 shadow-lg shadow-blue-600/10">
-            <h3 className="text-sm font-black uppercase tracking-wider text-blue-100">
-              Student Check-in
+          <div className="bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] rounded-3xl p-6 text-white text-center space-y-4 shadow-lg shadow-slate-900/10 border border-slate-800">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-full border border-blue-500/20">
+                {sessionTab === "morning" ? "Morning Check-In" : "Afternoon Check-In"}
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+
+            <h3 className="text-base font-black text-white">
+              Student Ticket Check-in
             </h3>
 
             {/* Viewfinder Camera Simulation */}
-            <div className="bg-slate-900/90 rounded-xl p-4 w-44 h-44 mx-auto border border-slate-800 shadow-inner relative flex flex-col items-center justify-center overflow-hidden group">
+            <div className="bg-black/60 rounded-2xl p-4 w-44 h-44 mx-auto border border-slate-700 shadow-inner relative flex flex-col items-center justify-center overflow-hidden group">
               {/* Scan Laser Line */}
               <div className="absolute left-0 right-0 h-0.5 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] top-4 animate-bounce z-10"></div>
               
@@ -693,12 +1081,12 @@ const OrgAttendancePage: React.FC = () => {
               
               {/* Status Text */}
               <div className="text-[8px] text-blue-400 font-black uppercase tracking-widest mt-2">
-                Scanner Viewfinder
+                Scanner Ready
               </div>
             </div>
 
-            <p className="text-xs font-semibold text-blue-100/90 leading-relaxed max-w-[240px] mx-auto">
-              Scan student's registration code with your scanner app to check them in.
+            <p className="text-xs font-medium text-slate-300 leading-relaxed max-w-[240px] mx-auto">
+              Scan student's registration QR code or ticket to instantly record attendance for the <span className="font-bold text-white">{sessionTab === "morning" ? "Morning" : "Afternoon"}</span> session.
             </p>
 
             <div className="pt-2">
@@ -707,79 +1095,75 @@ const OrgAttendancePage: React.FC = () => {
                   setIsScannerModalOpen(true);
                   setScanSuccessMsg("");
                 }}
-                className="w-full bg-white hover:bg-blue-50 text-[#2563EB] font-extrabold text-xs py-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 cursor-pointer active:scale-95"
               >
                 <QrCode className="h-4.5 w-4.5" />
-                Enter to Check-in
+                Launch Live Scanner
               </button>
             </div>
           </div>
 
+          {/* Card 2: Attendance Actions */}
+          <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-xs space-y-4">
+            <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">
+              Quick Actions
+            </h4>
 
+            <div className="space-y-2.5">
+              <button
+                onClick={handleGenerateReport}
+                className="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs py-3 px-4 rounded-xl border border-slate-200/80 flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <FileText className="h-4 w-4 text-slate-500" />
+                <span>Export Attendance (CSV)</span>
+              </button>
 
-        </div>
-      </div>
-
-      {/* ================= STICKY BOTTOM BAR ================= */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-2xl w-[calc(100%-2rem)]">
-        <div className="bg-white/85 backdrop-blur-md border border-slate-200/50 shadow-xl rounded-2xl px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-6">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 self-start sm:self-auto">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
-            <span>Last sync: {syncTime === 0 ? "just now" : `${syncTime} mins ago`}</span>
+              <button
+                onClick={handleSyncAttendance}
+                className="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs py-3 px-4 rounded-xl border border-blue-200/60 flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <RefreshCw className="h-4 w-4 text-blue-600" />
+                <span>Sync Attendance Database</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-            <button
-              onClick={handleGenerateReport}
-              className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all whitespace-nowrap"
-            >
-              <FileText className="h-4 w-4 text-slate-400" />
-              Generate Report
-            </button>
-            <button
-              onClick={handleSyncAttendance}
-              className="bg-[#2563EB] hover:bg-blue-700 text-white font-extrabold text-xs py-2.5 px-4.5 rounded-xl flex items-center justify-center gap-1.5 shadow-md shadow-blue-600/10 transition-all whitespace-nowrap"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Sync Final Attendance
-            </button>
-          </div>
         </div>
       </div>
 
       {/* ================= QR SCANNER MODAL ================= */}
       {isScannerModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-950 text-white rounded-2xl shadow-xl w-full max-w-md border border-slate-800 p-6 flex flex-col items-center space-y-6 relative overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-slate-950 text-white rounded-3xl shadow-2xl w-full max-w-md border border-slate-800 p-6 flex flex-col items-center space-y-6 relative overflow-hidden animate-in zoom-in-95 duration-200">
             {/* Close Button */}
             <button
               onClick={() => {
                 setIsScannerModalOpen(false);
                 setScannedTeamInfo(null);
               }}
-              className="absolute top-4 right-4 p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors"
+              className="absolute top-4 right-4 p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-xl transition-colors cursor-pointer"
             >
               <X className="h-5 w-5" />
             </button>
 
             {/* Header */}
             <div className="text-center space-y-1">
-              <span className="text-[9px] font-black uppercase text-blue-400 tracking-widest block">QR Code Scanner</span>
-              <h2 className="text-lg font-black text-white tracking-tight leading-snug">
-                Student QR Check-in
+              <span className="text-[10px] font-black uppercase text-blue-400 tracking-widest block">
+                {sessionTab === "morning" ? "Morning Session Check-in" : "Afternoon Session Check-in"}
+              </span>
+              <h2 className="text-xl font-black text-white tracking-tight">
+                Participant Ticket Check-in
               </h2>
-              <p className="text-[11px] text-slate-400 font-semibold max-w-[280px]">
-                Scan registration barcodes presented by students to record attendance.
+              <p className="text-xs text-slate-400 font-medium max-w-[280px]">
+                Scan registration QR barcode presented by student to log session attendance.
               </p>
             </div>
 
-            {/* Camera Viewfinder Simulation */}
+            {/* Camera Viewfinder */}
             {!scannedTeamInfo && (
               <div className="w-56 h-56 rounded-2xl border-4 border-dashed border-blue-500 relative flex items-center justify-center bg-black overflow-hidden shrink-0">
-                {/* Laser animation */}
                 <div className="absolute top-0 left-0 w-full h-1 bg-red-500 shadow-[0_0_8px_#ef4444] animate-[bounce_2.5s_infinite] z-20"></div>
                 
-                {/* Corner bracket decorations */}
                 <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-blue-400 z-20"></div>
                 <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-blue-400 z-20"></div>
                 <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-blue-400 z-20"></div>
@@ -807,7 +1191,7 @@ const OrgAttendancePage: React.FC = () => {
                         />
                       </div>
                       <span className="text-[9px] text-slate-500 font-black uppercase tracking-wider">
-                        Webcam Feed Inactive
+                        Camera View Ready
                       </span>
                     </div>
                   </>
@@ -815,36 +1199,36 @@ const OrgAttendancePage: React.FC = () => {
               </div>
             )}
 
-            {/* Selector to simulate scanning */}
+            {/* Quick Simulate Option if no webcam */}
             {!scannedTeamInfo && !scanLoading && (
-              <div className="w-full pt-2">
+              <div className="w-full pt-1">
                 <button
                   type="button"
                   onClick={async () => {
                     const reg = registrations.find(x => 
-                      (x.eventId === assignedEvent?.id || x.eventTitle?.toLowerCase() === assignedEvent?.title?.toLowerCase())
+                      (x.eventId === selectedEventId || (x.eventTitle || "").toLowerCase().trim() === (assignedEvent?.title || "").toLowerCase().trim())
                     );
                     if (!reg) {
-                      alert(`No registrations found in the database for the active assigned event "${assignedEvent?.title || "Quantum Workshop"}".`);
+                      alert(`No registrations found in the database for the active event "${assignedEvent?.title}".`);
                       return;
                     }
 
                     setScanLoading(true);
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await new Promise(resolve => setTimeout(resolve, 600));
                     setScanLoading(false);
                     setScannedTeamInfo(reg);
                   }}
-                  className="w-full bg-[#2563EB] hover:bg-blue-700 text-white font-extrabold text-xs py-3 rounded-xl transition-all shadow-md shadow-blue-900/30 uppercase tracking-wider flex items-center justify-center gap-1.5"
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs py-2.5 rounded-xl transition-all uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Camera className="h-4 w-4" />
-                  Simulate QR Scan
+                  Select First Ticket from Database
                 </button>
               </div>
             )}
 
             {/* Team details view */}
             {scannedTeamInfo && (
-              <div className="w-full space-y-5 text-left animate-in fade-in duration-200">
+              <div className="w-full space-y-4 text-left animate-in fade-in duration-200">
                 {scanSuccessMsg ? (
                   <div className="flex flex-col items-center justify-center gap-2 py-8 text-center animate-in zoom-in-95 duration-200">
                     <div className="w-12 h-12 rounded-full bg-emerald-500/25 text-emerald-400 flex items-center justify-center border border-emerald-500/40 shadow-inner">
@@ -855,113 +1239,79 @@ const OrgAttendancePage: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    {/* Premium Team Header */}
-                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800/80 to-slate-900 border border-slate-700/50 shadow-lg">
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle,rgba(59,130,246,0.15)_0%,transparent_70%)] pointer-events-none transform-gpu -mr-10 -mt-10" />
-                      
-                      <div className="px-5 py-4 border-b border-slate-700/50">
-                        <span className="inline-block px-2.5 py-1 bg-blue-500/20 text-blue-400 text-[9px] font-black tracking-widest uppercase rounded-full border border-blue-500/30 mb-2 shadow-[0_0_10px_rgba(59,130,246,0.2)]">Scanned Team Info</span>
-                        <h3 className="text-lg font-black text-white leading-tight tracking-tight">{scannedTeamInfo.groupName}</h3>
-                        <p className="text-[11px] text-slate-400 mt-1 font-semibold flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-                          {scannedTeamInfo.eventTitle}
-                        </p>
+                    <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4 space-y-3">
+                      <div>
+                        <span className="inline-block px-2.5 py-0.5 bg-blue-500/20 text-blue-400 text-[9px] font-black tracking-widest uppercase rounded-full border border-blue-500/30 mb-1">
+                          Scanned Registration
+                        </span>
+                        <h3 className="text-base font-black text-white">{scannedTeamInfo.groupName || scannedTeamInfo.teamLeadName}</h3>
+                        <p className="text-[11px] text-slate-400 font-semibold">{scannedTeamInfo.eventTitle}</p>
                       </div>
 
-                      <div className="p-2 space-y-2">
-                        {/* Team Lead Section */}
-                        <div className="bg-slate-950/40 rounded-xl p-3 flex items-center justify-between border border-slate-800/50 hover:border-slate-700 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 p-[2px] shadow-md shadow-blue-900/20 flex-shrink-0">
-                              <div className="w-full h-full bg-slate-900 rounded-full flex items-center justify-center">
-                                <span className="text-white font-bold text-xs">{(scannedTeamInfo.teamLeadName || "U").charAt(0).toUpperCase()}</span>
-                              </div>
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-0.5">Team Lead</span>
-                              <span className="text-sm font-extrabold text-slate-100 leading-none">{scannedTeamInfo.teamLeadName}</span>
-                              <span className="text-[10px] text-slate-400 mt-1">{scannedTeamInfo.teamLeadEmail}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col items-end gap-1.5">
-                            <span className="text-slate-500 font-bold text-[9px] tracking-widest uppercase">{scannedTeamInfo.teamLeadStudentId}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const currentStatus = rosterAttendance["lead"] || "Present";
-                                const nextStatus = currentStatus === "Present" ? "Late" : currentStatus === "Late" ? "Absent" : "Present";
-                                setRosterAttendance(prev => ({ ...prev, lead: nextStatus }));
-                              }}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border shadow-sm
-                                ${(!rosterAttendance["lead"] || rosterAttendance["lead"] === "Present") && "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"}
-                                ${rosterAttendance["lead"] === "Late" && "bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20"}
-                                ${rosterAttendance["lead"] === "Absent" && "bg-red-500/10 text-red-400 border-red-500/30 hover:bg-red-500/20"}
-                              `}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full
-                                ${(!rosterAttendance["lead"] || rosterAttendance["lead"] === "Present") && "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.5)]"}
-                                ${rosterAttendance["lead"] === "Late" && "bg-amber-400 shadow-[0_0_5px_rgba(251,191,36,0.5)]"}
-                                ${rosterAttendance["lead"] === "Absent" && "bg-red-400 shadow-[0_0_5px_rgba(248,113,113,0.5)]"}
-                              `} />
-                              {rosterAttendance["lead"] || "Present"}
-                            </button>
-                          </div>
+                      {/* Lead */}
+                      <div className="bg-slate-950/60 rounded-xl p-3 flex items-center justify-between border border-slate-800/80">
+                        <div>
+                          <span className="text-[10px] font-bold text-blue-400 block">Team Lead</span>
+                          <span className="text-xs font-bold text-white">{scannedTeamInfo.teamLeadName}</span>
+                          <span className="text-[10px] text-slate-400 block">{scannedTeamInfo.teamLeadEmail}</span>
                         </div>
-
-                        {/* Teammates List */}
-                        {scannedTeamInfo.members && scannedTeamInfo.members.length > 0 && (
-                          <div className="pt-2">
-                            <span className="text-[10px] font-black text-slate-500 tracking-wider uppercase block px-2 mb-2">Teammates Roster</span>
-                            <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-                              {scannedTeamInfo.members.map((member: any, i: number) => (
-                                <div key={i} className="bg-slate-950/20 hover:bg-slate-900/40 rounded-xl p-2.5 flex items-center justify-between border border-transparent hover:border-slate-800 transition-colors group">
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700/50 group-hover:border-slate-600 transition-colors">
-                                      <span className="text-slate-300 font-bold text-[10px]">{(member.name || "U").charAt(0).toUpperCase()}</span>
-                                    </div>
-                                    <div className="flex flex-col">
-                                      <span className="text-xs font-bold text-slate-300 leading-tight">{member.name || "Unnamed"}</span>
-                                      <span className="text-[9px] text-slate-500">{member.studentId || "No ID"}</span>
-                                    </div>
-                                  </div>
-                                  
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const currentStatus = rosterAttendance[`member_${i}`] || "Present";
-                                      const nextStatus = currentStatus === "Present" ? "Late" : currentStatus === "Late" ? "Absent" : "Present";
-                                      setRosterAttendance(prev => ({ ...prev, [`member_${i}`]: nextStatus }));
-                                    }}
-                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all border
-                                      ${(!rosterAttendance[`member_${i}`] || rosterAttendance[`member_${i}`] === "Present") && "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20"}
-                                      ${rosterAttendance[`member_${i}`] === "Late" && "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20"}
-                                      ${rosterAttendance[`member_${i}`] === "Absent" && "bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20"}
-                                    `}
-                                  >
-                                    <span className={`w-1 h-1 rounded-full
-                                      ${(!rosterAttendance[`member_${i}`] || rosterAttendance[`member_${i}`] === "Present") && "bg-emerald-400"}
-                                      ${rosterAttendance[`member_${i}`] === "Late" && "bg-amber-400"}
-                                      ${rosterAttendance[`member_${i}`] === "Absent" && "bg-red-400"}
-                                    `} />
-                                    {rosterAttendance[`member_${i}`] || "Present"}
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentStatus = rosterAttendance["lead"] || "Present";
+                            const nextStatus = currentStatus === "Present" ? "Late" : currentStatus === "Late" ? "Absent" : "Present";
+                            setRosterAttendance(prev => ({ ...prev, lead: nextStatus }));
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border cursor-pointer ${
+                            (!rosterAttendance["lead"] || rosterAttendance["lead"] === "Present")
+                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                              : rosterAttendance["lead"] === "Late"
+                              ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                              : "bg-red-500/20 text-red-300 border-red-500/40"
+                          }`}
+                        >
+                          {rosterAttendance["lead"] || "Present"}
+                        </button>
                       </div>
+
+                      {/* Teammates */}
+                      {scannedTeamInfo.members && scannedTeamInfo.members.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Squad Members</span>
+                          {scannedTeamInfo.members.map((member: any, i: number) => (
+                            <div key={i} className="bg-slate-950/40 rounded-xl p-2.5 flex items-center justify-between border border-slate-800/60">
+                              <div>
+                                <span className="text-xs font-bold text-slate-200 block">{member.name || `Member ${i + 1}`}</span>
+                                <span className="text-[10px] text-slate-400">{member.studentId || member.email || ""}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentStatus = rosterAttendance[`member_${i}`] || "Present";
+                                  const nextStatus = currentStatus === "Present" ? "Late" : currentStatus === "Late" ? "Absent" : "Present";
+                                  setRosterAttendance(prev => ({ ...prev, [`member_${i}`]: nextStatus }));
+                                }}
+                                className={`px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase border cursor-pointer ${
+                                  (!rosterAttendance[`member_${i}`] || rosterAttendance[`member_${i}`] === "Present")
+                                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                    : rosterAttendance[`member_${i}`] === "Late"
+                                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                    : "bg-red-500/20 text-red-300 border-red-500/40"
+                                }`}
+                              >
+                                {rosterAttendance[`member_${i}`] || "Present"}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Action buttons */}
-                    <div className="flex gap-3 pt-3">
+                    <div className="flex gap-2.5 pt-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          setScannedTeamInfo(null);
-                        }}
-                        className="flex-1 border border-slate-700 hover:bg-slate-800 hover:border-slate-600 text-slate-300 font-extrabold text-[11px] py-3.5 rounded-xl transition-all uppercase tracking-wider"
+                        onClick={() => setScannedTeamInfo(null)}
+                        className="flex-1 border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold text-xs py-3 rounded-xl cursor-pointer"
                       >
                         Cancel
                       </button>
@@ -970,141 +1320,99 @@ const OrgAttendancePage: React.FC = () => {
                         onClick={async () => {
                           setScanLoading(true);
                           try {
-                            const updatedMembers = (scannedTeamInfo.members || []).map((m: any, idx: number) => ({
-                              ...m,
-                              attendanceStatus: rosterAttendance[`member_${idx}`] || "Present"
-                            }));
+                            const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " (QR Scan)";
+                            const docRef = doc(db, "registrations", scannedTeamInfo.id);
 
-                            // 1. Update Firestore registration document
-                            await updateDoc(doc(db, "registrations", scannedTeamInfo.id), {
-                              attendanceStatus: rosterAttendance["lead"] || "Present",
-                              checkInTime: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " (QR Scan)",
-                              members: updatedMembers
+                            // Update registration members with session specific attendance
+                            const updatedMembers = (scannedTeamInfo.members || []).map((m: any, idx: number) => {
+                              const status = rosterAttendance[`member_${idx}`] || "Present";
+                              if (sessionTab === "morning") {
+                                return { ...m, attendanceStatusMorning: status, checkInTimeMorning: timeStr, attendanceStatus: status, checkInTime: timeStr };
+                              } else {
+                                return { ...m, attendanceStatusAfternoon: status, checkInTimeAfternoon: timeStr };
+                              }
                             });
 
-                            // 1.5 Update attendances collection
-                            if (assignedEvent) {
-                              const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " (QR Scan)";
-                              const attsSnap = await getDocs(collection(db, "attendances"));
-                              const existingDocs = attsSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-                              
-                              // Save lead
-                              const leadId = scannedTeamInfo.id + "_lead";
-                              const leadStatus = rosterAttendance["lead"] || "Present";
-                              const existingLead = existingDocs.find(d => d.eventId === assignedEvent.id && d.participantId === leadId);
-                              
-                              if (existingLead) {
-                                await updateDoc(doc(db, "attendances", existingLead.id), { status: leadStatus, checkInTime: timeStr });
-                              } else {
-                                await setDoc(doc(collection(db, "attendances")), {
-                                  eventId: assignedEvent.id,
-                                  participantId: leadId,
-                                  name: scannedTeamInfo.teamLeadName || "Unnamed Student",
-                                  role: "Participant",
-                                  status: leadStatus,
-                                  checkInTime: timeStr
-                                });
-                              }
+                            const regUpdates: any = { members: updatedMembers };
+                            const leadStatus = rosterAttendance["lead"] || "Present";
 
-                              // Save members
-                              if (scannedTeamInfo.members && scannedTeamInfo.members.length > 0) {
-                                for (let i = 0; i < scannedTeamInfo.members.length; i++) {
-                                  const m = scannedTeamInfo.members[i];
-                                  const memId = scannedTeamInfo.id + `_member_${i}`;
-                                  const memStatus = rosterAttendance[`member_${i}`] || "Present";
-                                  const existingMem = existingDocs.find(d => d.eventId === assignedEvent.id && d.participantId === memId);
-                                  
-                                  if (existingMem) {
-                                    await updateDoc(doc(db, "attendances", existingMem.id), { status: memStatus, checkInTime: timeStr });
-                                  } else {
-                                    await setDoc(doc(collection(db, "attendances")), {
-                                      eventId: assignedEvent.id,
-                                      participantId: memId,
-                                      name: m.name || "Unnamed Teammate",
-                                      role: "Participant",
-                                      status: memStatus,
-                                      checkInTime: timeStr
-                                    });
-                                  }
-                                }
-                              }
+                            if (sessionTab === "morning") {
+                              regUpdates.attendanceStatusMorning = leadStatus;
+                              regUpdates.checkInTimeMorning = timeStr;
+                              regUpdates.attendanceStatus = leadStatus;
+                              regUpdates.checkInTime = timeStr;
+                            } else {
+                              regUpdates.attendanceStatusAfternoon = leadStatus;
+                              regUpdates.checkInTimeAfternoon = timeStr;
                             }
 
-                            // 2. Update local students list
-                            setStudents(prev => {
-                              const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) + " (QR Scan)";
-                              const exists = prev.some(s => s.regId === scannedTeamInfo.id);
-                              
-                              if (exists) {
-                                return prev.map(s => {
-                                  if (s.regId === scannedTeamInfo.id) {
-                                    if (s.isLead) {
-                                      return { ...s, status: rosterAttendance["lead"] || "Present", checkInTime: timeStr };
-                                    } else if (s.memberIndex !== undefined) {
-                                      return { ...s, status: rosterAttendance[`member_${s.memberIndex}`] || "Present", checkInTime: timeStr };
-                                    }
-                                  }
-                                  return s;
-                                });
-                              } else {
-                                const newStudents = [...prev];
-                                
-                                newStudents.push({
-                                  id: scannedTeamInfo.id + "_lead",
-                                  regId: scannedTeamInfo.id,
-                                  isLead: true,
-                                  name: scannedTeamInfo.teamLeadName || "Unnamed Student",
-                                  email: scannedTeamInfo.teamLeadEmail || "",
-                                  studentId: scannedTeamInfo.teamLeadStudentId || `AI-2026-${Math.floor(100 + Math.random() * 900)}`,
-                                  department: scannedTeamInfo.groupName || "Computer Science",
-                                  year: scannedTeamInfo.year || "Year 3",
-                                  program: scannedTeamInfo.program || "Honours",
-                                  checkInTime: timeStr,
-                                  status: rosterAttendance["lead"] || "Present",
-                                  avatar: scannedTeamInfo.avatar || "satoshiImg"
-                                });
+                            await updateDoc(docRef, regUpdates);
 
-                                if (scannedTeamInfo.members && scannedTeamInfo.members.length > 0) {
-                                  scannedTeamInfo.members.forEach((m: any, idx: number) => {
-                                    newStudents.push({
-                                      id: scannedTeamInfo.id + `_member_${idx}`,
-                                      regId: scannedTeamInfo.id,
-                                      isLead: false,
-                                      memberIndex: idx,
-                                      name: m.name || "Unnamed Teammate",
-                                      email: m.email || "",
-                                      studentId: m.studentId || `AI-2026-${Math.floor(100 + Math.random() * 900)}`,
-                                      department: scannedTeamInfo.groupName || "Computer Science",
-                                      year: scannedTeamInfo.year || "Year 3",
-                                      program: scannedTeamInfo.program || "Honours",
-                                      checkInTime: timeStr,
-                                      status: rosterAttendance[`member_${idx}`] || "Present",
-                                      avatar: "sarah"
-                                    });
+                            // Update attendances collection
+                            if (selectedEventId) {
+                              const leadId = `${scannedTeamInfo.id}_lead`;
+                              await setDoc(doc(collection(db, "attendances")), {
+                                eventId: selectedEventId,
+                                participantId: leadId,
+                                name: scannedTeamInfo.teamLeadName || "Participant",
+                                role: "Participant",
+                                session: sessionTab,
+                                status: leadStatus,
+                                checkInTime: timeStr
+                              });
+
+                              if (scannedTeamInfo.members) {
+                                for (let i = 0; i < scannedTeamInfo.members.length; i++) {
+                                  const mem = scannedTeamInfo.members[i];
+                                  const memId = `${scannedTeamInfo.id}_member_${i}`;
+                                  const memStatus = rosterAttendance[`member_${i}`] || "Present";
+                                  await setDoc(doc(collection(db, "attendances")), {
+                                    eventId: selectedEventId,
+                                    participantId: memId,
+                                    name: mem.name || "Teammate",
+                                    role: "Participant",
+                                    session: sessionTab,
+                                    status: memStatus,
+                                    checkInTime: timeStr
                                   });
                                 }
-                                return newStudents;
                               }
-                            });
-
-                            setScanSuccessMsg("Saved successfully!");
-                              setTimeout(() => {
-                                setScanSuccessMsg("");
-                                setScannedTeamInfo(null);
-                                setRosterAttendance({}); // Reset roster attendance
-                                setIsScannerModalOpen(false);
-                              }, 1500);
-                            } catch (err) {
-                              console.error("Check-in error:", err);
-                              alert("Check-in failed. Check connection.");
-                            } finally {
-                              setScanLoading(false);
                             }
-                          }}
-                        className="flex-[2] bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-white font-extrabold text-[11px] py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-900/30 uppercase tracking-widest flex items-center justify-center gap-2 border border-emerald-400/50"
+
+                            // Update local students state
+                            setStudents(prev => prev.map(s => {
+                              if (s.regId !== scannedTeamInfo.id) return s;
+                              if (s.isLead) {
+                                return sessionTab === "morning"
+                                  ? { ...s, morningStatus: leadStatus, morningCheckInTime: timeStr }
+                                  : { ...s, afternoonStatus: leadStatus, afternoonCheckInTime: timeStr };
+                              } else if (s.memberIndex !== undefined) {
+                                const mStatus = rosterAttendance[`member_${s.memberIndex}`] || "Present";
+                                return sessionTab === "morning"
+                                  ? { ...s, morningStatus: mStatus, morningCheckInTime: timeStr }
+                                  : { ...s, afternoonStatus: mStatus, afternoonCheckInTime: timeStr };
+                              }
+                              return s;
+                            }));
+
+                            setScanSuccessMsg(`Checked in for ${sessionTab === "morning" ? "Morning" : "Afternoon"} session!`);
+                            setTimeout(() => {
+                              setScanSuccessMsg("");
+                              setScannedTeamInfo(null);
+                              setRosterAttendance({});
+                              setIsScannerModalOpen(false);
+                            }, 1200);
+                          } catch (err) {
+                            console.error("QR Check-in error:", err);
+                            alert("Check-in failed. Please retry.");
+                          } finally {
+                            setScanLoading(false);
+                          }
+                        }}
+                        className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-extrabold text-xs py-3 rounded-xl flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 cursor-pointer active:scale-95"
                       >
-                        <Check className="h-4 w-4 stroke-[3]" />
-                        Confirm Check-In
+                        <Check className="h-4 w-4" />
+                        <span>Confirm ({sessionTab})</span>
                       </button>
                     </div>
                   </>

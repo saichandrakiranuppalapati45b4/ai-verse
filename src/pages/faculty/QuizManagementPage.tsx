@@ -9,7 +9,6 @@ import {
   doc,
   setDoc,
   updateDoc,
-  onSnapshot,
   query,
   where
 } from "firebase/firestore";
@@ -182,7 +181,13 @@ export const QuizManagementPage: React.FC = () => {
     fetchData();
   }, []);
 
-  // Listen to live sessions & submissions for the selected quiz with automated scoring backfill
+  // Fetch sessions & submissions on-demand when quiz is selected (replaces real-time listeners)
+  // Real-time listeners on 1,500 submissions/sessions would cause a read storm on the admin dashboard.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const _refreshSubmissions = () => setRefreshKey((k) => k + 1);
+  // Expose for use in tab switch and refresh button handlers
+  void _refreshSubmissions;
+
   useEffect(() => {
     if (!selectedQuizId) {
       setSubmissions([]);
@@ -190,82 +195,62 @@ export const QuizManagementPage: React.FC = () => {
       return;
     }
 
-    // Listen to submissions
-    const unsubSubmissions = onSnapshot(
-      query(collection(db, "quizSubmissions"), where("quizId", "==", selectedQuizId)),
-      (snap) => {
+    let isMounted = true;
+    const fetchData = async () => {
+      try {
+        // Fetch submissions
+        const subSnap = await getDocs(
+          query(collection(db, "quizSubmissions"), where("quizId", "==", selectedQuizId))
+        );
         const targetQuiz = quizzes.find((q) => q.id === selectedQuizId);
         const subs: QuizSubmission[] = [];
-        snap.forEach((d) => {
+        const backfillPromises: Promise<void>[] = [];
+
+        subSnap.forEach((d) => {
           const raw = { id: d.id, ...d.data() } as QuizSubmission;
           if ((raw.score === undefined || raw.score === null) && targetQuiz && targetQuiz.questions && targetQuiz.questions.length > 0) {
             const evalData = evaluateQuizAnswers(targetQuiz, raw.answers || {});
             const evaluated = { ...raw, ...evalData, evaluatedAt: Date.now() };
             subs.push(evaluated);
-            // Persist backfill to Firestore
-            updateDoc(doc(db, "quizSubmissions", d.id), {
-              score: evalData.score,
-              maxScore: evalData.maxScore,
-              percentage: evalData.percentage,
-              correctCount: evalData.correctCount,
-              incorrectCount: evalData.incorrectCount,
-              passed: evalData.passed,
-              evaluatedAt: Date.now()
-            }).catch(() => {});
+            // Queue backfill write (fire-and-forget)
+            backfillPromises.push(
+              updateDoc(doc(db, "quizSubmissions", d.id), {
+                score: evalData.score,
+                maxScore: evalData.maxScore,
+                percentage: evalData.percentage,
+                correctCount: evalData.correctCount,
+                incorrectCount: evalData.incorrectCount,
+                passed: evalData.passed,
+                evaluatedAt: Date.now()
+              }).catch(() => {})
+            );
           } else {
             subs.push(raw);
           }
         });
-        setSubmissions(subs);
-      },
-      (err) => console.warn("Submissions listener error:", err)
-    );
 
-    // Listen to sessions
-    const unsubSessions = onSnapshot(
-      query(collection(db, "quizSessions"), where("quizId", "==", selectedQuizId)),
-      (snap) => {
+        // Fetch sessions
+        const sessSnap = await getDocs(
+          query(collection(db, "quizSessions"), where("quizId", "==", selectedQuizId))
+        );
         const sess: QuizSession[] = [];
-        snap.forEach((d) => sess.push({ id: d.id, ...d.data() } as QuizSession));
-        setActiveSessions(sess);
-      },
-      (err) => console.warn("Sessions listener error:", err)
-    );
+        sessSnap.forEach((d) => sess.push({ id: d.id, ...d.data() } as QuizSession));
 
-    return () => {
-      unsubSubmissions();
-      unsubSessions();
-    };
-  }, [selectedQuizId, quizzes]);
+        if (isMounted) {
+          setSubmissions(subs);
+          setActiveSessions(sess);
+        }
 
-  // Ensure all submissions have evaluated scores once quizzes list loads
-  useEffect(() => {
-    if (!selectedQuizId || submissions.length === 0) return;
-    const targetQuiz = quizzes.find((q) => q.id === selectedQuizId);
-    if (!targetQuiz || !targetQuiz.questions || targetQuiz.questions.length === 0) return;
-
-    const hasUnscored = submissions.some((s) => s.score === undefined || s.score === null);
-    if (!hasUnscored) return;
-
-    const evaluatedSubs = submissions.map((sub) => {
-      if (sub.score === undefined || sub.score === null) {
-        const evalData = evaluateQuizAnswers(targetQuiz, sub.answers || {});
-        updateDoc(doc(db, "quizSubmissions", sub.id), {
-          score: evalData.score,
-          maxScore: evalData.maxScore,
-          percentage: evalData.percentage,
-          correctCount: evalData.correctCount,
-          incorrectCount: evalData.incorrectCount,
-          passed: evalData.passed,
-          evaluatedAt: Date.now()
-        }).catch(() => {});
-        return { ...sub, ...evalData };
+        // Fire backfill writes in background (don't await, don't block UI)
+        Promise.all(backfillPromises).catch(() => {});
+      } catch (err) {
+        console.warn("Error fetching submissions/sessions:", err);
       }
-      return sub;
-    });
+    };
 
-    setSubmissions(evaluatedSubs);
-  }, [selectedQuizId, quizzes, submissions]);
+    fetchData();
+    return () => { isMounted = false; };
+  }, [selectedQuizId, quizzes, refreshKey]);
 
   // Open Full-Page Create Mode
   const handleOpenCreateModal = () => {

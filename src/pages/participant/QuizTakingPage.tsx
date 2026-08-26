@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { 
   getQuizById, 
@@ -42,6 +42,7 @@ export const QuizTakingPage: React.FC = () => {
   const [session, setSession] = useState<QuizSession | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Submitting state
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -127,21 +128,42 @@ export const QuizTakingPage: React.FC = () => {
     return () => { isMounted = false; };
   }, [quizId, user, navigate]);
 
-  // Real-time listener for remote admin stop during examination
+  // Poll for remote admin stop during examination (replaces onSnapshot hotspot)
+  // With 1,500 users, a real-time listener on a single quiz document creates a
+  // Firestore hotspot. Polling every 10s uses ~6 reads/min/user instead.
   useEffect(() => {
     if (!quizId || !session || session.status !== "in_progress") return;
 
-    const unsub = onSnapshot(doc(db, "quizzes", quizId), (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      const isStopped = data.status === "completed" || (data.scheduledEndTime && data.scheduledEndTime <= Date.now());
-      if (isStopped && !isSubmitting) {
-        setShowTimeoutModal(true);
-        handleFinalSubmit(true);
+    let isMounted = true;
+    const checkQuizStatus = async () => {
+      try {
+        const snap = await getDoc(doc(db, "quizzes", quizId));
+        if (!snap.exists() || !isMounted) return;
+        const data = snap.data();
+        const isStopped = data.status === "completed" || (data.scheduledEndTime && data.scheduledEndTime <= Date.now());
+        if (isStopped && !isSubmitting && isMounted) {
+          setShowTimeoutModal(true);
+          handleFinalSubmit(true);
+        }
+      } catch {
+        // Silently ignore polling errors — quiz continues with timer
       }
-    });
+    };
 
-    return () => unsub();
+    // Also check on tab becoming visible (user may have been away when admin stopped)
+    const handleVisCheck = () => {
+      if (document.visibilityState === "visible") {
+        checkQuizStatus();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisCheck);
+
+    const pollId = setInterval(checkQuizStatus, 60_000); // 60s for Ultra-Low Free Tier Quota
+    return () => {
+      isMounted = false;
+      clearInterval(pollId);
+      document.removeEventListener("visibilitychange", handleVisCheck);
+    };
   }, [quizId, session, isSubmitting]);
 
   // Fallback safe objects for hooks
@@ -427,7 +449,8 @@ export const QuizTakingPage: React.FC = () => {
     } catch (err: any) {
       console.error("Final submission failed:", err);
       setIsSubmitting(false);
-      alert("Submission error: " + (err.message || "Please check connection and retry."));
+      setSubmitError(err.message || "Network error. Your answers are saved locally. Please retry.");
+      setShowSubmitModal(false);
     }
   }, [quiz, session, isSubmitting, answers, violationsCount, violationLogs, forceSave, navigate]);
 
@@ -491,6 +514,22 @@ export const QuizTakingPage: React.FC = () => {
         title={`Assessment: ${quiz.title} - AI Verse`}
         description="Active examination environment with autosave and authoritative countdown timer." 
       />
+
+      {/* ================= SUBMISSION ERROR BANNER ================= */}
+      {submitError && (
+        <div className="fixed top-0 left-0 right-0 z-[60] bg-red-600 text-white px-4 py-3 flex items-center justify-between gap-4 shadow-lg">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span>{submitError}</span>
+          </div>
+          <button
+            onClick={() => { setSubmitError(null); handleFinalSubmit(false); }}
+            className="bg-white text-red-700 font-bold text-xs px-4 py-2 rounded-lg hover:bg-red-50 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            Retry Submit
+          </button>
+        </div>
+      )}
 
       {/* ================= PROCTORING VIOLATION TOAST ================= */}
       {activeViolationToast && (

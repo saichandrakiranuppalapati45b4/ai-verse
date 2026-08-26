@@ -40,7 +40,6 @@ const DashboardLayout: React.FC = () => {
     { path: "/organizer/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/organizer/events", label: "My Events", icon: Calendar },
     { path: "/organizer/attendance", label: "Attendance", icon: ClipboardCheck },
-    { path: "/organizer/results", label: "Results", icon: BarChart2 },
   ] : [
     { path: "/faculty/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/faculty/events", label: "Events", icon: Calendar },

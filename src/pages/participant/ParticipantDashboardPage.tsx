@@ -5,19 +5,19 @@ import {
   LayoutDashboard,
   Users,
   Upload,
-  BarChart2,
   LogOut,
-  GitFork,
-  Video,
-  ExternalLink,
   Clock,
   ArrowRight,
   CircleCheckBig,
-  FileText,
   HelpCircle,
   Trophy,
   Sparkles,
-  XCircle
+  XCircle,
+  Code,
+  Video,
+  Check,
+  Layers,
+  ChevronRight
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import TeamReviewPage from "./TeamReviewPage";
@@ -27,50 +27,11 @@ import { collection, getDocs, doc, getDoc, query, where } from "firebase/firesto
 import { getAllQuizzes } from "../../services/quizService";
 import type { Quiz, QuizSubmission } from "../../types/quiz";
 
-// Countdown Timer Component
-const CountdownTimer: React.FC = () => {
-  const [timeLeft, setTimeLeft] = useState({ hours: 0, mins: 0, secs: 0 });
-
-  useEffect(() => {
-    // Set deadline to 24 hours from page load (or configure from event data)
-    const deadline = Date.now() + 24 * 60 * 60 * 1000;
-
-    const tick = () => {
-      const diff = Math.max(0, deadline - Date.now());
-      setTimeLeft({
-        hours: Math.floor(diff / (1000 * 60 * 60)),
-        mins: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
-        secs: Math.floor((diff % (1000 * 60)) / 1000)
-      });
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <div className="flex items-center gap-3">
-      {[
-        { val: String(timeLeft.hours).padStart(2, "0"), unit: "HRS" },
-        { val: String(timeLeft.mins).padStart(2, "0"), unit: "MIN" },
-        { val: String(timeLeft.secs).padStart(2, "0"), unit: "SEC" }
-      ].map((t, i) => (
-        <div key={i} className="text-center">
-          <div className="bg-[#0B1528] text-white font-black text-2xl rounded-xl w-14 h-14 flex items-center justify-center tabular-nums tracking-wider shadow-inner border border-blue-900/50">
-            {t.val}
-          </div>
-          <span className="text-[10px] font-bold text-blue-200 mt-1 block tracking-wider">{t.unit}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
-
 export const ParticipantDashboardPage: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "review-team" | "submission" | "status" | "quizzes">("review-team");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "review-team" | "submission" | "quizzes">("review-team");
 
   // Real Database State
   const [targetRegId, setTargetRegId] = useState<string>("");
@@ -79,7 +40,6 @@ export const ParticipantDashboardPage: React.FC = () => {
   const [teamId, setTeamId] = useState<string>("");
   const [leaderName, setLeaderName] = useState<string>("");
   const [members, setMembers] = useState<any[]>([]);
-  const [eventBannerUrl, setEventBannerUrl] = useState<string>("/event-banner.png");
   const [availableQuizzes, setAvailableQuizzes] = useState<Quiz[]>([]);
   const [userSubmissions, setUserSubmissions] = useState<Record<string, QuizSubmission>>({});
 
@@ -92,10 +52,15 @@ export const ParticipantDashboardPage: React.FC = () => {
 
   // Participant Round & Promotion Progression State
   const [currentRound, setCurrentRound] = useState<number>(1);
+  const [totalRounds, setTotalRounds] = useState<number>(2);
+  const [activeRoundName, setActiveRoundName] = useState<string>("Stage Evaluation");
   const [roundStatus, setRoundStatus] = useState<string>("Active");
   const [promotionScore, setPromotionScore] = useState<number | null>(null);
   const [promotionMethod, setPromotionMethod] = useState<string | null>(null);
   const [eliminatedInRound, setEliminatedInRound] = useState<number | null>(null);
+  const [quizScore, setQuizScore] = useState<number | null>(null);
+  const [quizPercentage, setQuizPercentage] = useState<number | null>(null);
+  const [quizMaxScore, setQuizMaxScore] = useState<number | null>(null);
 
   // Team review confirmed state
   const [teamReviewConfirmed, setTeamReviewConfirmed] = useState(false);
@@ -203,39 +168,35 @@ export const ParticipantDashboardPage: React.FC = () => {
           if (targetReg.promotionMethod) setPromotionMethod(targetReg.promotionMethod);
           if (targetReg.eliminatedInRound !== undefined) setEliminatedInRound(targetReg.eliminatedInRound);
 
-          // Fetch event poster/banner from Firestore events collection
-          let foundBanner = "/event-banner.png";
+          // Quiz Performance Data from Registration
+          if (targetReg.quizScore !== undefined && targetReg.quizScore !== null) {
+            setQuizScore(targetReg.quizScore);
+          }
+          if (targetReg.quizPercentage !== undefined && targetReg.quizPercentage !== null) {
+            setQuizPercentage(targetReg.quizPercentage);
+          }
+          if (targetReg.quizMaxScore) {
+            setQuizMaxScore(targetReg.quizMaxScore);
+          }
+
+          // Fetch stage definitions from Firestore events collection
           if (targetReg.eventId) {
             try {
               const evDoc = await getDoc(doc(db, "events", targetReg.eventId));
               if (evDoc.exists()) {
                 const evData = evDoc.data();
-                const img = evData.posterPreview || evData.posterImages?.[0]?.preview || evData.bannerUrl || evData.imageUrl || evData.image;
-                if (img) foundBanner = img;
+                if (Array.isArray(evData.rounds) && evData.rounds.length > 0) {
+                  setTotalRounds(evData.rounds.length);
+                  const currentRDef = evData.rounds.find((r: any) => r.roundNumber === cRound);
+                  if (currentRDef?.name) setActiveRoundName(currentRDef.name);
+                } else if (evData.totalRounds) {
+                  setTotalRounds(evData.totalRounds);
+                }
               }
             } catch (err) {
               console.warn("Error fetching event doc by eventId:", err);
             }
           }
-
-          // Fallback: search events collection by event title match if not found yet
-          if (foundBanner === "/event-banner.png" && currentEventTitle) {
-            try {
-              const eventsSnap = await getDocs(collection(db, "events"));
-              const matchTitle = currentEventTitle.toLowerCase().trim();
-              eventsSnap.forEach((eDoc) => {
-                const eData = eDoc.data();
-                if ((eData.title || "").toLowerCase().trim() === matchTitle) {
-                  const img = eData.posterPreview || eData.posterImages?.[0]?.preview || eData.bannerUrl || eData.imageUrl || eData.image;
-                  if (img) foundBanner = img;
-                }
-              });
-            } catch (err) {
-              console.warn("Error searching events collection by title:", err);
-            }
-          }
-
-          setEventBannerUrl(foundBanner);
         } else {
           setTeamName(user?.teamName || (user?.name ? `${user.name}'s Team` : "My Team"));
           setEventTitle("General Track");
@@ -284,7 +245,6 @@ export const ParticipantDashboardPage: React.FC = () => {
     { id: "quizzes" as const, label: "Online Quiz", icon: HelpCircle },
     { id: "review-team" as const, label: "Team", icon: Users },
     { id: "submission" as const, label: "Submission", icon: Upload },
-    { id: "status" as const, label: "Submission Status", icon: BarChart2 },
   ];
 
   return (
@@ -364,69 +324,83 @@ export const ParticipantDashboardPage: React.FC = () => {
             />
           )}
 
-          {/* ==================== PREMIUM DASHBOARD TAB ==================== */}
+          {/* ==================== CLEAN, MODERN & ATTRACTIVE DASHBOARD ==================== */}
           {activeTab === "dashboard" && (
-            <div className="space-y-8">
+            <div className="space-y-6 animate-in fade-in duration-300">
 
-              {/* Welcome Header */}
-              <div className="flex items-start justify-between">
-                <div>
-                  <h1 className="text-3xl font-extrabold text-[#0F172A] tracking-tight">
-                    Welcome back, {(leaderName || user?.name || "Participant").split(" ")[0]}
-                  </h1>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200/80">Team: {teamName}</span>
-                    <span className="text-slate-300 font-light">|</span>
-                    <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                      Team ID: 
-                      <span className="bg-[#0F172A] text-blue-300 font-mono text-xs px-2.5 py-0.5 rounded-md font-bold border border-slate-800">
-                        {teamId}
-                      </span>
+              {/* 1. HERO GREETING & CONTEXT BAR */}
+              <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5 relative overflow-hidden">
+                <div className="space-y-2 relative z-10">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="text-[11px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 px-3 py-1 rounded-full border border-blue-200/60 flex items-center gap-1.5 shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                      {eventTitle}
+                    </span>
+                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                      Team ID: <span className="font-mono text-slate-800 font-extrabold">{teamId}</span>
+                    </span>
+                    <span className="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                      {roundStatus === "Qualified" || currentRound > 1 ? `Qualified for Round ${currentRound}` : "Round 1 Active"}
                     </span>
                   </div>
+
+                  <h1 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
+                    Welcome back, {(leaderName || user?.name || "Participant").split(" ")[0]}! 👋
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-xl">
+                    Here is your live competition status, assigned assessments, and project deliverables for <span className="font-bold text-slate-700">{eventTitle}</span>.
+                  </p>
                 </div>
 
-                {/* Hackathon Live Badge */}
-                <div className="flex items-center gap-2 bg-[#0F172A] border border-slate-800 text-white rounded-full px-4 py-2 shadow-md">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                  </span>
-                  <span className="text-xs font-bold text-slate-100">{eventTitle} — Live</span>
+                <div className="flex items-center gap-3 relative z-10 flex-wrap">
+                  <button
+                    onClick={() => setActiveTab("quizzes")}
+                    className="px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl border border-purple-200/80 transition-all flex items-center gap-2 cursor-pointer shadow-2xs active:scale-95"
+                  >
+                    <HelpCircle className="w-4 h-4 text-purple-600" />
+                    <span>Online Quizzes</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("submission")}
+                    className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                  >
+                    <Upload className="w-4 h-4 text-white" />
+                    <span>Project Submission</span>
+                  </button>
                 </div>
               </div>
 
-              {/* 🏆 PROMOTION QUALIFICATION BANNER */}
+              {/* 2. 🏆 PROMOTION ANNOUNCEMENT BANNER */}
               {(currentRound > 1 || roundStatus === "Qualified") && (
-                <div className="bg-gradient-to-r from-amber-500 via-emerald-600 to-teal-600 p-0.5 rounded-3xl shadow-xl shadow-emerald-500/10 animate-in fade-in slide-in-from-top-3 duration-300">
-                  <div className="bg-[#0F172A] rounded-[22px] p-5 sm:p-6 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 p-0.5 rounded-3xl shadow-lg shadow-emerald-600/10 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="bg-[#0A1128] rounded-[22px] p-5 sm:p-6 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-600 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-amber-500/30 shrink-0">
                         <Trophy className="w-6 h-6 text-slate-900" />
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                            PROMOTION ANNOUNCEMENT
+                            PROMOTION QUALIFIED
                           </span>
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1">
-                            <Sparkles className="w-3 h-3 text-emerald-300" /> QUALIFIED FOR ROUND {currentRound}
+                            <Sparkles className="w-3 h-3 text-emerald-300" /> STAGE {currentRound} ACTIVE
                           </span>
                         </div>
-                        <h3 className="text-xl font-black text-white mt-1 tracking-tight">
-                          🎉 Congratulations! Your team has advanced to Round {currentRound}
+                        <h3 className="text-lg sm:text-xl font-black text-white tracking-tight">
+                          🎉 Congratulations! Team "{teamName}" has advanced to Round {currentRound}
                         </h3>
-                        <p className="text-xs text-slate-300 font-medium mt-0.5">
-                          Shortlisted via {promotionMethod || "Performance Assessment"} {promotionScore !== null && promotionScore !== undefined ? `• Qualifying Score: ${promotionScore}` : ""} • Proceed with next stage deliverables!
+                        <p className="text-xs text-slate-300 font-medium">
+                          Shortlisted via {promotionMethod || "Performance Assessment"} {promotionScore !== null ? `• Qualifying Score: ${promotionScore} Marks` : ""} • Your team is eligible to submit Round {currentRound} requirements.
                         </p>
                       </div>
                     </div>
-                    
+
                     <button
                       onClick={() => setActiveTab("submission")}
                       className="px-5 py-2.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black rounded-xl text-xs transition-all shadow-md shadow-amber-500/20 shrink-0 active:scale-95 flex items-center gap-1.5 cursor-pointer"
                     >
-                      <span>Stage {currentRound} Tasks</span>
+                      <span>Stage {currentRound} Deliverables</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
@@ -448,256 +422,337 @@ export const ParticipantDashboardPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Main Content Grid */}
+              {/* 3. FOUR ESSENTIAL LIVE METRIC TILES */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                
+                {/* Tile 1: Stage & Round */}
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-2xs space-y-3 hover:border-blue-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Current Stage</span>
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200/60">
+                      <Layers className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-[#0F172A]">Round {currentRound} of {totalRounds}</h3>
+                    <p className="text-xs font-bold text-blue-600 mt-0.5 truncate">{activeRoundName}</p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                    <span>Status</span>
+                    <span className="font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
+                      {roundStatus === "Qualified" || currentRound > 1 ? "✓ Qualified" : "Active"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tile 2: Online Quiz Score */}
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-2xs space-y-3 hover:border-purple-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Online Quiz</span>
+                    <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-200/60">
+                      <HelpCircle className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-[#0F172A]">
+                      {quizScore !== null 
+                        ? `${quizScore} / ${quizMaxScore || 100}` 
+                        : Object.keys(userSubmissions).length > 0 
+                          ? "Submitted ✓" 
+                          : "Assessment Pending"}
+                    </h3>
+                    <p className="text-xs font-bold text-purple-600 mt-0.5">
+                      {quizPercentage !== null ? `${quizPercentage}% Score Achieved` : "Preliminary Round"}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                    <span>Cutoff Result</span>
+                    <button 
+                      onClick={() => setActiveTab("quizzes")}
+                      className="font-extrabold text-purple-600 hover:text-purple-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>{quizScore !== null ? "View Details" : "Take Exam"}</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tile 3: Team Squad */}
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-2xs space-y-3 hover:border-emerald-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Team Squad</span>
+                    <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200/60">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-[#0F172A]">{members.length + 1} Member(s)</h3>
+                    <p className="text-xs font-bold text-emerald-700 mt-0.5 truncate">Team: {teamName}</p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                    <span>Lead: {leaderName.split(" ")[0]}</span>
+                    <button 
+                      onClick={() => setActiveTab("review-team")}
+                      className="font-extrabold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Manage</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tile 4: Project Submission */}
+                <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-2xs space-y-3 hover:border-amber-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Submission</span>
+                    <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200/60">
+                      <Upload className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-[#0F172A]">
+                      {submissionStatus === "Submitted" ? "Submitted ✓" : `${submissionProgress}% Complete`}
+                    </h3>
+                    <p className="text-xs font-bold text-amber-700 mt-0.5 truncate">
+                      {projectTitle ? projectTitle : "Draft in Progress"}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                    <span>{submissionStatus === "Submitted" ? "In Queue" : "Editable"}</span>
+                    <button 
+                      onClick={() => setActiveTab("submission")}
+                      className="font-extrabold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>{submissionStatus === "Submitted" ? "Review" : "Upload"}</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* 4. MAIN 2-COLUMN SECTION: DELIVERABLES HUB & SIDEBAR WIDGETS */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* Left Column: Submission Status Card with Event Banner */}
-                <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-3xl shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
-                  {/* Top: Full-bleed Event Banner */}
-                  <div className="relative h-48 sm:h-56 w-full overflow-hidden bg-[#0A1128] flex items-end p-6 sm:p-8">
-                    {/* Banner Background Image */}
-                    <img
-                      src={eventBannerUrl || "/event-banner.png"}
-                      alt="Event Banner"
-                      className="absolute inset-0 w-full h-full object-cover opacity-85"
-                    />
-                    {/* Gradient Overlay for text readability & visual depth */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0B132B] via-[#0F172A]/50 to-transparent" />
-
-                    {/* Event Banner Overlay Content */}
-                    <div className="relative z-10 w-full flex items-end justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="bg-gradient-to-r from-blue-600 to-indigo-600 backdrop-blur-md text-white text-[11px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full shadow-md shadow-blue-500/20">
-                            AI VERSE HACKATHON
-                          </span>
-                          <span className="bg-emerald-500/90 backdrop-blur-md text-white text-[11px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> LIVE TRACK
-                          </span>
-                        </div>
-                        <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight drop-shadow-md">
-                          {eventTitle || "AI Verse Hackathon"}
-                        </h2>
+                {/* LEFT 2-COLS: PROJECT DELIVERABLES COMMAND CENTER */}
+                <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-xs space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-100">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/60">
+                          DELIVERABLES HUB
+                        </span>
                       </div>
+                      <h3 className="text-xl font-black text-[#0F172A] mt-1 tracking-tight">
+                        Project & Submission Checklist
+                      </h3>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Complete all deliverables for your track to ensure eligibility for jury scoring.
+                      </p>
+                    </div>
 
-                      <div className="hidden sm:block text-right">
-                        <span className="text-xs font-semibold text-blue-200 block">Team Entry</span>
-                        <span className="text-lg font-extrabold text-white">{teamName}</span>
+                    <span className={`self-start sm:self-auto font-bold text-xs px-3.5 py-1.5 rounded-full ${
+                      submissionStatus === "Submitted"
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        : "bg-amber-50 text-amber-700 border border-amber-200"
+                    }`}>
+                      {submissionStatus === "Submitted" ? "✓ Final Submitted" : "Draft Status"}
+                    </span>
+                  </div>
+
+                  {/* Project Summary Banner */}
+                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Project Title</span>
+                      {submittedAt && (
+                        <span className="text-[11px] text-slate-400 font-medium">
+                          Submitted on {new Date(submittedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="text-base font-extrabold text-[#0F172A]">
+                      {projectTitle || "No Project Title Set Yet"}
+                    </h4>
+                    <div className="flex items-center gap-3 pt-2 border-t border-slate-200/60 text-xs flex-wrap">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-600">
+                        <Code className="w-4 h-4 text-blue-600" />
+                        <span>GitHub:</span>
+                        {githubUrl ? (
+                          <a href={githubUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate max-w-xs font-semibold">
+                            Connected ✓
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 font-medium">Not provided</span>
+                        )}
+                      </div>
+                      <span className="text-slate-300">•</span>
+                      <div className="flex items-center gap-1.5 font-bold text-slate-600">
+                        <Video className="w-4 h-4 text-indigo-600" />
+                        <span>Demo Video:</span>
+                        {demoVideoUrl ? (
+                          <a href={demoVideoUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate max-w-xs font-semibold">
+                            Attached ✓
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 font-medium">Not provided</span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Bottom: Submission Status & Controls (Below Event Banner) */}
-                  <div className="p-6 sm:p-8 space-y-5 bg-white flex-1 flex flex-col justify-between">
-                    <div className="space-y-4">
-                      {/* Badge & Timestamp */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <span className={`text-xs font-extrabold px-3 py-1 rounded-full ${submissionStatus === "Submitted"
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              : "bg-amber-50 text-amber-700 border border-amber-200"
-                            }`}>
-                            {submissionStatus === "Submitted" ? "SUBMITTED" : "DRAFT PHASE"}
-                          </span>
-                          {submittedAt && (
-                            <span className="text-xs text-slate-400 font-medium">
-                              Last edited {new Date(submittedAt).toLocaleDateString()} at {new Date(submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
+                  {/* Live Deliverables Checklist */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-slate-500">
+                      Stage Milestone Checklist
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Step 1 */}
+                      <div className="p-4 rounded-2xl border bg-emerald-50/50 border-emerald-200/80 flex items-start gap-3">
+                        <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                          <Check className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold text-[#0F172A]">1. Team Roster Verified</p>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">{members.length + 1} Member(s) Registered</p>
+                        </div>
+                      </div>
+
+                      {/* Step 2 */}
+                      <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
+                        quizScore !== null || Object.keys(userSubmissions).length > 0
+                          ? "bg-emerald-50/50 border-emerald-200/80"
+                          : "bg-slate-50 border-slate-200"
+                      }`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-2xs ${
+                          quizScore !== null || Object.keys(userSubmissions).length > 0
+                            ? "bg-emerald-500 text-white"
+                            : "bg-slate-200 text-slate-500"
+                        }`}>
+                          {quizScore !== null || Object.keys(userSubmissions).length > 0 ? (
+                            <Check className="w-3.5 h-3.5" />
+                          ) : (
+                            <span className="text-[10px] font-bold">2</span>
                           )}
                         </div>
-
-                        <span className="text-xs font-extrabold text-blue-700 bg-blue-50 px-3.5 py-1 rounded-full border border-blue-200/70">
-                          {submissionProgress}% COMPLETE
-                        </span>
-                      </div>
-
-                      {/* Title & Description */}
-                      <div>
-                        <h3 className="text-2xl font-extrabold text-[#0F172A] tracking-tight">
-                          Submission Status: {submissionProgress}% Complete
-                        </h3>
-                        <p className="text-sm text-slate-500 font-medium mt-1.5 leading-relaxed">
-                          {submissionProgress === 100
-                            ? "Great work! Your project has been submitted successfully. You can still update it before the deadline."
-                            : submissionProgress >= 60
-                              ? "Good progress! Complete the remaining steps and upload your demo video to finalize your entry."
-                              : "Get started by reviewing your team details and submitting your project information."
-                          }
-                        </p>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="space-y-2 pt-1">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-600">
-                          <span className="text-[#0F172A] tracking-wider uppercase text-[11px]">Submission Progress</span>
-                          <span className="text-blue-600 font-extrabold">{submissionProgress}%</span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold text-[#0F172A]">2. Online Assessment</p>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                            {quizScore !== null ? `Score: ${quizScore}/${quizMaxScore || 100} (${quizPercentage}%)` : "Complete Track Quiz"}
+                          </p>
                         </div>
-                        <div className="h-3.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 rounded-full transition-all duration-700 ease-out shadow-xs"
-                            style={{ width: `${submissionProgress}%` }}
-                          />
+                      </div>
+
+                      {/* Step 3 */}
+                      <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
+                        githubUrl ? "bg-emerald-50/50 border-emerald-200/80" : "bg-slate-50 border-slate-200"
+                      }`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-2xs ${
+                          githubUrl ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-500"
+                        }`}>
+                          {githubUrl ? <Check className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">3</span>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold text-[#0F172A]">3. Code Repository</p>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                            {githubUrl ? "GitHub Repo Linked" : "Add Public Repo URL"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Step 4 */}
+                      <div className={`p-4 rounded-2xl border flex items-start gap-3 ${
+                        submissionStatus === "Submitted" ? "bg-emerald-50/50 border-emerald-200/80" : "bg-slate-50 border-slate-200"
+                      }`}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-2xs ${
+                          submissionStatus === "Submitted" ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-500"
+                        }`}>
+                          {submissionStatus === "Submitted" ? <Check className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">4</span>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-extrabold text-[#0F172A]">4. Final Submission</p>
+                          <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                            {submissionStatus === "Submitted" ? "Locked for Judging" : "Review & Confirm"}
+                          </p>
                         </div>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
-                      <button
-                        onClick={() => setActiveTab("submission")}
-                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-md shadow-blue-600/25 transition-all flex items-center gap-2 cursor-pointer"
-                      >
-                        {submissionStatus === "Submitted" ? "Update Submission" : "Continue Submission"}
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setActiveTab("status")}
-                        className="bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm px-6 py-3 rounded-xl border border-slate-200 hover:border-slate-300 transition-all cursor-pointer shadow-xs"
-                      >
-                        Preview Draft
-                      </button>
-                    </div>
+                  {/* Action Button Row */}
+                  <div className="pt-3 flex items-center justify-between flex-wrap gap-3 border-t border-slate-100">
+                    <button
+                      onClick={() => setActiveTab("review-team")}
+                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                    >
+                      Review Team Squad
+                    </button>
+
+                    <button
+                      onClick={() => setActiveTab("submission")}
+                      className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                    >
+                      <span>{submissionStatus === "Submitted" ? "Edit Project Submission" : "Proceed with Submission"}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 
-                {/* Right Column: Steps + Deadline */}
+                {/* RIGHT 1-COL: TEAM SQUAD ROSTER */}
                 <div className="space-y-6">
-                  {/* Step 1: Team Review */}
-                  <div className="bg-white border border-slate-200/90 border-t-4 border-t-emerald-500 rounded-2xl p-5 shadow-sm space-y-2 hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">STEP 1</span>
-                      <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                        <CircleCheckBig className="w-4.5 h-4.5" />
+
+                  {/* Team Squad Summary Widget */}
+                  <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div>
+                        <h3 className="text-sm font-black text-[#0F172A]">Team Squad</h3>
+                        <p className="text-[11px] text-slate-400 font-medium">{members.length + 1} Registered</p>
                       </div>
+                      <button
+                        onClick={() => setActiveTab("review-team")}
+                        className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
+                      >
+                        Manage
+                      </button>
                     </div>
-                    <h3 className="text-base font-extrabold text-[#0F172A]">Team Review</h3>
-                    <p className="text-xs text-slate-500 font-medium">All members verified</p>
-                    <span className="text-xs font-bold text-emerald-600 block pt-1">Completed</span>
-                  </div>
 
-                  {/* Step 2: Project Details */}
-                  <div className="bg-white border border-slate-200/90 border-t-4 border-t-blue-600 rounded-2xl p-5 shadow-sm space-y-2 hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">STEP 2</span>
-                      <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                        <FileText className="w-4.5 h-4.5" />
-                      </div>
-                    </div>
-                    <h3 className="text-base font-extrabold text-[#0F172A]">Project Details</h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      {submissionStatus === "Submitted" ? "100% Complete" : `${submissionProgress}% Complete`}
-                    </p>
-                    <button onClick={() => setActiveTab("submission")} className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer pt-1">
-                      Go to page <ExternalLink className="w-3 h-3" />
-                    </button>
-                  </div>
-
-                  {/* Final Deadline - Dark Blue / Navy Accent with Glowing Elements */}
-                  <div className="bg-gradient-to-br from-[#0A1128] via-[#0F172A] to-[#1E1B4B] border border-slate-800 rounded-2xl p-5 shadow-xl shadow-slate-900/10 text-white space-y-4 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-[radial-gradient(circle,rgba(37,99,235,0.18)_0%,transparent_70%)] pointer-events-none transform-gpu -z-0" />
-                    <div className="relative z-10">
-                      <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-base font-extrabold text-white">Final Deadline</h3>
-                        <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
-                          TIME CRITICAL
-                        </span>
-                      </div>
-                      <p className="text-xs text-blue-200/75 font-medium mt-1">Make sure to submit before the timer runs out to be eligible for prizes.</p>
-                    </div>
-                    <div className="relative z-10">
-                      <CountdownTimer />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bottom Grid: Team Progress + Milestones */}
-              <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-
-                {/* Team Progress Section */}
-                <div className="lg:col-span-3 bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm space-y-5">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-extrabold text-[#0F172A]">Team Progress</h3>
-                    <button onClick={() => setActiveTab("review-team")} className="text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer">
-                      Manage Team
-                    </button>
-                  </div>
-
-                  {/* Leader Card */}
-                  <div className="flex items-center gap-4 py-3 bg-blue-50/40 rounded-2xl px-4 border border-blue-100/60">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-md shadow-blue-500/20 ring-2 ring-white">
-                      {getInitials(leaderName)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-bold text-[#0F172A]">{leaderName}</p>
-                        <span className="text-[10px] font-bold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-md">Team Lead</span>
-                      </div>
-                      <div className="mt-2 h-2 bg-slate-200/80 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full" style={{ width: `${submissionProgress}%` }} />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Member Cards */}
-                  {members.length > 0 ? members.map((m: any, i: number) => {
-                    const colors = [
-                      "from-amber-500 to-orange-600",
-                      "from-emerald-500 to-teal-600",
-                      "from-violet-500 to-purple-600",
-                      "from-pink-500 to-rose-600"
-                    ];
-                    return (
-                      <div key={i} className="flex items-center gap-4 py-3 border-t border-slate-100">
-                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colors[i % colors.length]} text-white font-bold flex items-center justify-center text-xs shadow-sm`}>
-                          {getInitials(m.name || "TM")}
+                    <div className="space-y-3">
+                      {/* Leader Card */}
+                      <div className="flex items-center gap-3 p-3 rounded-2xl bg-blue-50/60 border border-blue-100/80">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs">
+                          {getInitials(leaderName)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-bold text-[#0F172A]">{m.name || "Team Member"}</p>
-                            <span className="text-[11px] font-semibold text-slate-500">{m.role || "Developer"}</span>
-                          </div>
-                          <div className="mt-2 h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div className={`h-full bg-gradient-to-r ${colors[i % colors.length]} rounded-full`} style={{ width: `${30 + Math.random() * 50}%` }} />
-                          </div>
+                          <p className="text-xs font-bold text-[#0F172A] truncate">{leaderName}</p>
+                          <p className="text-[10px] text-blue-600 font-extrabold">Team Lead</p>
                         </div>
                       </div>
-                    );
-                  }) : (
-                    <div className="text-center py-6 text-sm text-slate-400 font-medium border-t border-slate-100">
-                      No additional team members registered
+
+                      {/* Members List */}
+                      {members.map((m: any, i: number) => (
+                        <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-colors">
+                          <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs">
+                            {getInitials(m.name || "M")}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-[#0F172A] truncate">{m.name || "Member"}</p>
+                            <p className="text-[10px] text-slate-400 font-medium truncate">{m.role || "Developer"}</p>
+                          </div>
+                        </div>
+                      ))}
+
+                      {members.length === 0 && (
+                        <div className="text-center py-4 text-xs text-slate-400 font-medium">
+                          No additional members added yet
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-
-                {/* Upcoming Milestones */}
-                <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm space-y-5">
-                  <h3 className="text-lg font-extrabold text-[#0F172A]">Upcoming Milestones</h3>
-
-                  <div className="space-y-5">
-                    {[
-                      { color: "bg-emerald-500", title: "Team Review", desc: "Completed", done: true },
-                      { color: "bg-blue-600", title: "Project Submission", desc: submissionStatus === "Submitted" ? "Submitted" : "In Progress", done: submissionStatus === "Submitted" },
-                      { color: "bg-amber-500", title: "Final Submission Window", desc: "Deadline approaching", done: false },
-                      { color: "bg-slate-400", title: "Grand Finale Ceremony", desc: eventTitle, done: false },
-                    ].map((milestone, i) => (
-                      <div key={i} className="flex items-start gap-3">
-                        <div className="flex flex-col items-center">
-                          <div className={`w-3 h-3 rounded-full ${milestone.color} ${milestone.done ? "ring-4 ring-blue-500/20" : "opacity-60"} mt-0.5`} />
-                          {i < 3 && <div className="w-px h-8 bg-slate-200 mt-1" />}
-                        </div>
-                        <div>
-                          <p className={`text-sm font-bold ${milestone.done ? "text-[#0F172A]" : "text-slate-600"}`}>
-                            {milestone.title}
-                          </p>
-                          <p className="text-xs text-slate-400 font-medium mt-0.5">{milestone.desc}</p>
-                        </div>
-                      </div>
-                    ))}
                   </div>
+
                 </div>
 
               </div>
+
             </div>
           )}
 
@@ -717,78 +772,6 @@ export const ParticipantDashboardPage: React.FC = () => {
               }}
               embedded={true}
             />
-          )}
-
-          {/* Submission Status Tab */}
-          {activeTab === "status" && (
-            <div className="space-y-6">
-              <div>
-                <h1 className="text-3xl font-extrabold text-[#0F172A] tracking-tight">Submission Status</h1>
-                <p className="text-sm text-slate-500 font-medium mt-1">Track evaluation scores, project links, and feedback from jury panelists.</p>
-              </div>
-
-              <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
-                  <div>
-                    <h3 className="text-xl font-extrabold text-[#0F172A]">{teamName} Submission Entry</h3>
-                    <p className="text-xs text-slate-500 font-medium mt-1">Event Track: <span className="font-semibold text-blue-600">{eventTitle}</span></p>
-                  </div>
-
-                  <span className={`self-start sm:self-auto font-bold text-xs px-4 py-1.5 rounded-full ${submissionStatus === "Submitted"
-                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                      : "bg-amber-50 text-amber-700 border border-amber-200"
-                    }`}>
-                    {submissionStatus === "Submitted" ? "Submitted & In Queue" : "Draft / Registered"}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                  <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-5 space-y-3">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Project Title</span>
-                    <h4 className="text-base font-extrabold text-[#0F172A]">{projectTitle || "Not Submitted Yet"}</h4>
-                    {submittedAt && (
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500 pt-2 border-t border-slate-200/60">
-                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                        <span>Submitted on {new Date(submittedAt).toLocaleDateString()}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-5 space-y-3">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Submission Links</span>
-                    <div className="space-y-2.5 text-xs">
-                      {githubUrl ? (
-                        <a href={githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-bold">
-                          <GitFork className="w-4 h-4 text-blue-500" /> View GitHub Repository <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ) : (
-                        <span className="text-slate-400 font-medium">No GitHub link provided</span>
-                      )}
-
-                      {demoVideoUrl ? (
-                        <a href={demoVideoUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-bold">
-                          <Video className="w-4 h-4 text-blue-500" /> Watch Demo Video <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ) : (
-                        <span className="text-slate-400 font-medium block">No Demo Video URL provided</span>
-                      )}
-                    </div>
-                  </div>
-
-                </div>
-                <div className="pt-4 flex justify-end">
-                  <button
-                    onClick={() => setActiveTab("submission")}
-                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow-md shadow-blue-600/20 transition-all cursor-pointer"
-                  >
-                    Edit Project Submission
-                  </button>
-                </div>
-
-              </div>
-            </div>
           )}
 
           {/* TAB 5: ONLINE QUIZ & ASSESSMENTS */}

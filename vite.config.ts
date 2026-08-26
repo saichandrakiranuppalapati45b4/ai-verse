@@ -21,7 +21,13 @@ export default defineConfig({
           req.on('end', async () => {
             try {
               const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
-              const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+              const RESEND_API_KEY = process.env.RESEND_API_KEY;
+              if (!RESEND_API_KEY) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: false, error: 'RESEND_API_KEY not set in environment' }));
+                return;
+              }
               const recipients = Array.isArray(to) ? to : [to];
               const rawSender = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
               const rawReplyTo = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
@@ -83,7 +89,13 @@ export default defineConfig({
           req.on('end', async () => {
             try {
               const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
-              const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+              const RESEND_API_KEY = process.env.RESEND_API_KEY;
+              if (!RESEND_API_KEY) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ success: false, error: 'RESEND_API_KEY not set in environment' }));
+                return;
+              }
               const recipients = Array.isArray(to) ? to : [to];
               const rawSender = from || process.env.RESEND_FROM_EMAIL || "AI Verse <events@aiversevitb.dpdns.org>";
               const rawReplyTo = reply_to || process.env.RESEND_REPLY_TO || "aiverse@vishnu.edu.in";
@@ -129,4 +141,26 @@ export default defineConfig({
       }
     }
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          // Split heavy vendor libraries into separate chunks
+          // so participants never download admin-only dependencies
+          if (id.includes('node_modules/firebase/') || id.includes('node_modules/@firebase/')) {
+            return 'vendor-firebase';
+          }
+          if (id.includes('node_modules/@supabase/')) {
+            return 'vendor-supabase';
+          }
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router')) {
+            return 'vendor-react';
+          }
+          if (id.includes('node_modules/three/')) {
+            return 'vendor-three';
+          }
+        }
+      }
+    }
+  }
 })
