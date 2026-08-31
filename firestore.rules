@@ -2,104 +2,82 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
 
-    function isStaff() {
-      return isAuthenticated() && request.auth.token.role in ['faculty', 'organizer'];
-    }
-
-    // Quizzes Collection: Anyone authenticated can read active quizzes, only staff can write
+    // Quizzes & Examinations
     match /quizzes/{quizId} {
-      allow read: if isAuthenticated();
-      allow write: if isStaff();
+      allow read, write: if true;
     }
 
-    // Quiz Sessions: Users can read and write only their own session
     match /quizSessions/{sessionId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isStaff());
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
-      allow delete: if isStaff();
+      allow read, write: if true;
     }
 
-    // Quiz Answers (Draft autosaves): Strictly user's own session
     match /quizAnswers/{sessionId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isStaff());
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || isStaff());
-      allow delete: if isStaff();
+      allow read, write: if true;
     }
 
-    // Quiz Submissions: Users can submit once; immutable once marked final
     match /quizSubmissions/{submissionId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid || isStaff());
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isStaff();
-      allow delete: if isStaff();
+      allow read, write: if true;
     }
 
-    // Events Collection: Public read, staff write
+    // Events & Registrations
     match /events/{eventId} {
-      allow read: if true;
-      allow write: if isStaff();
+      allow read, write: if true;
     }
 
-    // Registrations: Authenticated read own, staff read all, authenticated create own
     match /registrations/{registrationId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if isAuthenticated();
-      allow delete: if isStaff();
+      allow read, write: if true;
     }
 
-    // Users Collection: Read own profile, staff can manage
+    // Users & Team Members
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && (request.auth.uid == userId || isStaff());
-      allow delete: if isStaff();
+      allow read, write: if true;
     }
 
-    // Settings Collection: Staff read/write, authenticated read
-    match /settings/{settingId} {
-      allow read: if isAuthenticated();
-      allow write: if isStaff();
+    match /organizers/{organizerId} {
+      allow read, write: if true;
     }
 
-    // Announcements: Authenticated read, staff write
-    match /announcements/{announcementId} {
-      allow read: if isAuthenticated();
-      allow write: if isStaff();
+    // Media & Gallery
+    match /albums/{albumId} {
+      allow read, write: if true;
     }
 
-    // Gallery: Public read, staff write
     match /gallery/{itemId} {
-      allow read: if true;
-      allow write: if isStaff();
+      allow read, write: if true;
     }
 
-    // Evaluations (Jury): Authenticated read, authenticated write
-    match /evaluations/{evalId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-    }
-
-    // Content: Public read, staff write
-    match /content/{contentId} {
-      allow read: if true;
-      allow write: if isStaff();
-    }
-
-    // Attendance: Authenticated read, staff write
+    // Attendance Management
     match /attendance/{recordId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow read, write: if true;
     }
 
-    // Default deny — no wildcard allow
+    match /attendances/{recordId} {
+      allow read, write: if true;
+    }
+
+    // Contact & Enquiries
+    match /contact_queries/{queryId} {
+      allow read, write: if true;
+    }
+
+    // Settings & Announcements
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    match /announcements/{announcementId} {
+      allow read, write: if true;
+    }
+
+    // Evaluations & Submissions
+    match /evaluations/{evalId} {
+      allow read, write: if true;
+    }
+
+    match /content/{contentId} {
+      allow read, write: if true;
+    }
+
   }
 }

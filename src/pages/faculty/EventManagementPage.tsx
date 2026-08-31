@@ -211,6 +211,7 @@ const EventManagementPage: React.FC = () => {
 
   // Event Access Modal State & Handlers
   const [isEventAccessModalOpen, setIsEventAccessModalOpen] = useState(false);
+  const [isEventRosterModalOpen, setIsEventRosterModalOpen] = useState(false);
   const [eventAccessEvent, setEventAccessEvent] = useState<any | null>(null);
   const [eventAccessRegistrations, setEventAccessRegistrations] = useState<any[]>([]);
   const [loadingEventAccessRegs, setLoadingEventAccessRegs] = useState(false);
@@ -5073,7 +5074,7 @@ const EventManagementPage: React.FC = () => {
                   EVENT ACCESS
                 </span>
                 <span className="text-blue-200/50 font-bold text-xs hidden sm:inline">•</span>
-                <span className="text-xs text-blue-200/90 font-bold truncate hidden md:inline">Live Registered Roster</span>
+                <span className="text-xs text-blue-200/90 font-bold truncate hidden md:inline">Event Control Center</span>
                 <span className="text-blue-200/50 font-bold text-xs hidden md:inline">•</span>
                 <h2 className="text-base sm:text-lg font-black tracking-tight text-white truncate max-w-[250px] sm:max-w-md">
                   {eventAccessEvent?.title || "Event Access"}
@@ -5153,126 +5154,57 @@ const EventManagementPage: React.FC = () => {
               </div>
             )}
 
-            {/* TOP 4 ACTION CARDS SECTION (Give Problem Statements, Submissions, Quiz Management, Round Management) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+            {/* TOP 5 ACTION CARDS GRID SECTION (Balanced 3 + 2 Grid Layout) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6 items-stretch w-full">
 
-              {/* CARD 1: Give Problem Statements */}
+              {/* CARD 1: Registrations (Row 1 - Span 2 of 6) */}
               <div
-                onClick={handleOpenMultiProblemModal}
-                className="bg-gradient-to-br from-white via-blue-50/70 to-indigo-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-blue-500/5 relative overflow-hidden border border-blue-200/80 hover:border-blue-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-500/15 transform-gpu"
+                onClick={() => {
+                  setIsEventRosterModalOpen(true);
+                }}
+                className="lg:col-span-2 bg-white p-6 rounded-3xl text-slate-800 shadow-sm relative overflow-hidden border border-slate-200/90 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-200 group flex flex-col justify-between h-full min-h-[280px] cursor-pointer hover:-translate-y-1 transform-gpu"
               >
-                <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_70%)] pointer-events-none" />
+                <div className="absolute right-0 top-0 w-48 h-48 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.06),transparent_70%)] pointer-events-none" />
 
-                <div className="relative z-10 space-y-3.5 text-left">
+                <div className="relative z-10 space-y-4 text-left">
                   {/* Top Tags */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-100/80 text-blue-700 border border-blue-200/80">
-                      PROBLEM STATEMENTS
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-100">
+                      REGISTRATIONS
                     </span>
-                    {(eventAccessEvent?.problemStatements?.length > 0 || eventAccessEvent?.problemStatementTitle) ? (
-                      <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        {eventAccessEvent?.problemStatements?.length || 1} ACTIVE
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
-                        READY TO ADD
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Title & Icon */}
-                  <div className="flex items-center gap-3 pt-1">
-                    <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Sparkles className="w-5 h-5 text-white" />
-                    </div>
-                    <h3 className="text-lg font-black tracking-tight text-slate-900 line-clamp-1">
-                      Problem Statements
-                    </h3>
-                  </div>
-
-                  {/* Description */}
-                  <p className="text-xs text-slate-600 font-medium leading-relaxed line-clamp-2 min-h-[34px]">
-                    {eventAccessEvent?.problemStatements?.length > 0
-                      ? `Active: ${eventAccessEvent.problemStatements.map((p: any) => p.code || p.title).slice(0, 2).join(", ")}${eventAccessEvent.problemStatements.length > 2 ? "..." : ""}`
-                      : eventAccessEvent?.problemStatementTitle
-                        ? `Active: ${eventAccessEvent.problemStatementTitle}`
-                        : "Create, manage, and broadcast challenge tracks & problem statements."}
-                  </p>
-                </div>
-
-                {/* Bottom Section: Stat Pills + Full Width Button */}
-                <div className="relative z-10 pt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-blue-700 border border-blue-200 shadow-xs text-[11px] font-black text-center truncate">
-                      Active: {eventAccessEvent?.problemStatements?.length || (eventAccessEvent?.problemStatementTitle ? 1 : 0)}
-                    </div>
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-slate-700 border border-slate-200 shadow-xs text-[11px] font-black text-center truncate">
-                      {eventAccessEvent?.problemStatementTrack || "Multi-Track"}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenMultiProblemModal();
-                    }}
-                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30"
-                  >
-                    <FileCode className="w-4 h-4 shrink-0" />
-                    <span className="truncate">
-                      {eventAccessEvent?.problemStatementTitle || eventAccessEvent?.problemStatements?.length
-                        ? "Manage Statements"
-                        : "+ Give Problem Statements"}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {/* CARD 2: Submissions */}
-              <div
-                onClick={handleOpenSubmissionsModal}
-                className="bg-gradient-to-br from-white via-sky-50/70 to-blue-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-sky-500/5 relative overflow-hidden border border-sky-200/80 hover:border-sky-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-sky-500/15 transform-gpu"
-              >
-                <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.18),transparent_70%)] pointer-events-none" />
-
-                <div className="relative z-10 space-y-3.5 text-left">
-                  {/* Top Tags */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-sky-100/80 text-sky-700 border border-sky-200/80">
-                      SUBMISSIONS MONITOR
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length} / {eventAccessRegistrations.length}
+                      {eventAccessRegistrations.length} REGISTERED
                     </span>
                   </div>
 
                   {/* Title & Icon */}
-                  <div className="flex items-center gap-3 pt-1">
-                    <div className="w-10 h-10 rounded-2xl bg-sky-600 text-white shadow-md shadow-sky-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <FileText className="w-5 h-5 text-white" />
+                  <div className="flex items-center gap-3.5 pt-1">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100/80 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+                      <Users className="w-6 h-6" />
                     </div>
-                    <h3 className="text-lg font-black tracking-tight text-slate-900 line-clamp-1">
-                      Submissions
-                    </h3>
+                    <div>
+                      <h3 className="text-lg font-black tracking-tight text-slate-900 leading-tight">
+                        Registrations
+                      </h3>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Live Participant Directory</p>
+                    </div>
                   </div>
 
                   {/* Description */}
-                  <p className="text-xs text-slate-600 font-medium leading-relaxed line-clamp-2 min-h-[34px]">
-                    Monitor team deliverables, SRS specifications, PPT pitch decks, and GitHub repos.
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed min-h-[36px]">
+                    Manage enrollments, verify student credentials, and inspect registered team rosters.
                   </p>
                 </div>
 
                 {/* Bottom Section: Stat Pills + Full Width Button */}
-                <div className="relative z-10 pt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-emerald-700 border border-emerald-200 shadow-xs text-[11px] font-black text-center truncate">
-                      Submitted: {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length}
+                <div className="relative z-10 pt-5 space-y-3.5">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      Group: <span className="text-blue-600 font-black">{eventAccessRegistrations.filter(r => r.groupName && r.groupName !== "Individual RSVP").length}</span>
                     </div>
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-amber-700 border border-amber-200 shadow-xs text-[11px] font-black text-center truncate">
-                      Drafts: {eventAccessRegistrations.filter(r => r.submissionStatus === "Draft" || (r.problemStatement && r.submissionStatus !== "Submitted")).length}
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      Individual: <span className="text-slate-900 font-black">{eventAccessRegistrations.filter(r => !r.groupName || r.groupName === "Individual RSVP").length}</span>
                     </div>
                   </div>
 
@@ -5280,59 +5212,62 @@ const EventManagementPage: React.FC = () => {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleOpenSubmissionsModal();
+                      setIsEventRosterModalOpen(true);
                     }}
-                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-sky-500/25 flex items-center justify-center gap-2 cursor-pointer border border-sky-400/30"
+                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs sm:text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/20"
                   >
-                    <Eye className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Monitor Submissions</span>
+                    <Users className="w-4 h-4 shrink-0" />
+                    <span>View Registered Members</span>
                   </button>
                 </div>
               </div>
 
-              {/* CARD 3: Quiz Management */}
+              {/* CARD 2: Quiz Management (Row 1 - Span 2 of 6) */}
               <div
                 onClick={() => navigate(`/faculty/quizzes?eventId=${eventAccessEvent?.id || ""}`)}
-                className="bg-gradient-to-br from-white via-indigo-50/70 to-blue-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-indigo-500/5 relative overflow-hidden border border-indigo-200/80 hover:border-indigo-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/15 transform-gpu"
+                className="lg:col-span-2 bg-white p-6 rounded-3xl text-slate-800 shadow-sm relative overflow-hidden border border-slate-200/90 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-200 group flex flex-col justify-between h-full min-h-[280px] cursor-pointer hover:-translate-y-1 transform-gpu"
               >
-                <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.18),transparent_70%)] pointer-events-none" />
+                <div className="absolute right-0 top-0 w-48 h-48 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.06),transparent_70%)] pointer-events-none" />
 
-                <div className="relative z-10 space-y-3.5 text-left">
+                <div className="relative z-10 space-y-4 text-left">
                   {/* Top Tags */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-100/80 text-indigo-700 border border-indigo-200/80">
-                      QUIZ & TEST ENGINE
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-100">
+                      QUIZ ENGINE
                     </span>
-                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       LIVE READY
                     </span>
                   </div>
 
                   {/* Title & Icon */}
-                  <div className="flex items-center gap-3 pt-1">
-                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white shadow-md shadow-indigo-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <HelpCircle className="w-5 h-5 text-white" />
+                  <div className="flex items-center gap-3.5 pt-1">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100/80 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+                      <HelpCircle className="w-6 h-6" />
                     </div>
-                    <h3 className="text-lg font-black tracking-tight text-slate-900 line-clamp-1">
-                      Quiz Management
-                    </h3>
+                    <div>
+                      <h3 className="text-lg font-black tracking-tight text-slate-900 leading-tight">
+                        Quiz Management
+                      </h3>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Test & Screening Hub</p>
+                    </div>
                   </div>
 
                   {/* Description */}
-                  <p className="text-xs text-slate-600 font-medium leading-relaxed line-clamp-2 min-h-[34px]">
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed min-h-[36px]">
                     Start interactive tests, configure AI/custom questions, and view live leaderboards.
                   </p>
                 </div>
 
                 {/* Bottom Section: Stat Pills + Full Width Button */}
-                <div className="relative z-10 pt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-indigo-700 border border-indigo-200 shadow-xs text-[11px] font-black text-center truncate">
-                      AI Questions
+                <div className="relative z-10 pt-5 space-y-3.5">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      <span className="text-blue-600 font-black">AI Questions</span>
                     </div>
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-blue-700 border border-blue-200 shadow-xs text-[11px] font-black text-center truncate">
-                      Live Monitor
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      <span className="text-emerald-600 font-black">Live Monitor</span>
                     </div>
                   </div>
 
@@ -5342,58 +5277,60 @@ const EventManagementPage: React.FC = () => {
                       e.stopPropagation();
                       navigate(`/faculty/quizzes?eventId=${eventAccessEvent?.id || ""}`);
                     }}
-                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-700 hover:from-indigo-500 hover:to-blue-600 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-indigo-500/25 flex items-center justify-center gap-2 cursor-pointer border border-indigo-400/30"
+                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs sm:text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/20"
                   >
                     <HelpCircle className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Start & Manage Quiz</span>
+                    <span>Start & Manage Quiz</span>
                   </button>
                 </div>
               </div>
 
-              {/* CARD 4: Round Promotion & Stages */}
+              {/* CARD 3: Round Promotion & Stages (Row 1 - Span 2 of 6) */}
               <div
                 onClick={handleOpenEventRoundsModal}
-                className="bg-gradient-to-br from-white via-cyan-50/70 to-blue-100/60 p-5 sm:p-6 rounded-3xl text-slate-800 shadow-lg shadow-cyan-500/5 relative overflow-hidden border border-cyan-200/80 hover:border-cyan-400 transition-all duration-300 group flex flex-col justify-between h-full min-h-[300px] cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-cyan-500/15 transform-gpu"
+                className="lg:col-span-2 bg-white p-6 rounded-3xl text-slate-800 shadow-sm relative overflow-hidden border border-slate-200/90 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-200 group flex flex-col justify-between h-full min-h-[280px] cursor-pointer hover:-translate-y-1 transform-gpu"
               >
-                <div className="absolute right-0 top-0 w-56 h-56 bg-[radial-gradient(circle_at_top_right,rgba(6,182,212,0.18),transparent_70%)] pointer-events-none" />
+                <div className="absolute right-0 top-0 w-48 h-48 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.06),transparent_70%)] pointer-events-none" />
 
-                <div className="relative z-10 space-y-3.5 text-left">
+                <div className="relative z-10 space-y-4 text-left">
                   {/* Top Tags */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-cyan-100/80 text-cyan-700 border border-cyan-200/80 flex items-center gap-1">
-                      <Trophy className="w-3 h-3 text-amber-500" />
-                      ROUND PROMOTION ENGINE
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-100">
+                      ROUND PROMOTION
                     </span>
-                    <span className="px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       STAGE {eventAccessEvent?.currentRound || 1} ACTIVE
                     </span>
                   </div>
 
                   {/* Title & Icon */}
-                  <div className="flex items-center gap-3 pt-1">
-                    <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white shadow-md shadow-cyan-500/25 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      <Trophy className="w-5 h-5 text-white" />
+                  <div className="flex items-center gap-3.5 pt-1">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100/80 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+                      <Trophy className="w-6 h-6" />
                     </div>
-                    <h3 className="text-lg font-black tracking-tight text-slate-900 line-clamp-1">
-                      Round Promotion & Stages
-                    </h3>
+                    <div>
+                      <h3 className="text-lg font-black tracking-tight text-slate-900 leading-tight">
+                        Round Promotion & Stages
+                      </h3>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Advancement Pipeline</p>
+                    </div>
                   </div>
 
                   {/* Description */}
-                  <p className="text-xs text-slate-600 font-medium leading-relaxed line-clamp-2 min-h-[34px]">
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed min-h-[36px]">
                     Promote participants to next rounds via Quiz & Submission scores, and configure stage deadlines.
                   </p>
                 </div>
 
                 {/* Bottom Section: Stat Pills + Full Width Button */}
-                <div className="relative z-10 pt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-cyan-700 border border-cyan-200 shadow-xs text-[11px] font-black text-center truncate">
-                      Stage {eventAccessEvent?.currentRound || 1} Active
+                <div className="relative z-10 pt-5 space-y-3.5">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      Stage <span className="text-blue-600 font-black">{eventAccessEvent?.currentRound || 1}</span> Active
                     </div>
-                    <div className="px-2.5 py-1.5 rounded-xl bg-white/90 text-emerald-700 border border-emerald-200 shadow-xs text-[11px] font-black text-center truncate">
-                      Promoted: {eventAccessRegistrations.filter(r => (r.currentRound || 1) > 1 || r.roundStatus === "Qualified").length} Teams
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      Promoted: <span className="text-emerald-600 font-black">{eventAccessRegistrations.filter(r => (r.currentRound || 1) > 1 || r.roundStatus === "Qualified").length}</span>
                     </div>
                   </div>
 
@@ -5403,290 +5340,491 @@ const EventManagementPage: React.FC = () => {
                       e.stopPropagation();
                       handleOpenEventRoundsModal();
                     }}
-                    className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 active:scale-95 text-white font-black text-xs transition-all shadow-md shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer border border-cyan-400/30"
+                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs sm:text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/20"
                   >
                     <Trophy className="w-4 h-4 shrink-0 text-amber-300" />
-                    <span className="truncate">Promote Participants & Stages</span>
+                    <span>Promote Participants & Stages</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD 4: Problem Statements (Row 2 - Span 3 of 6) */}
+              <div
+                onClick={handleOpenMultiProblemModal}
+                className="lg:col-span-3 bg-white p-6 rounded-3xl text-slate-800 shadow-sm relative overflow-hidden border border-slate-200/90 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-200 group flex flex-col justify-between h-full min-h-[280px] cursor-pointer hover:-translate-y-1 transform-gpu"
+              >
+                <div className="absolute right-0 top-0 w-48 h-48 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.06),transparent_70%)] pointer-events-none" />
+
+                <div className="relative z-10 space-y-4 text-left">
+                  {/* Top Tags */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-100">
+                      PROBLEM STATEMENTS
+                    </span>
+                    {(eventAccessEvent?.problemStatements?.length > 0 || eventAccessEvent?.problemStatementTitle) ? (
+                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        {eventAccessEvent?.problemStatements?.length || 1} ACTIVE
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                        READY TO ADD
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Title & Icon */}
+                  <div className="flex items-center gap-3.5 pt-1">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100/80 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black tracking-tight text-slate-900 leading-tight">
+                        Problem Statements
+                      </h3>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tracks & Challenge Statements</p>
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed min-h-[36px]">
+                    {eventAccessEvent?.problemStatements?.length > 0
+                      ? `Active: ${eventAccessEvent.problemStatements.map((p: any) => p.code || p.title).slice(0, 2).join(", ")}${eventAccessEvent.problemStatements.length > 2 ? "..." : ""}`
+                      : eventAccessEvent?.problemStatementTitle
+                        ? `Active: ${eventAccessEvent.problemStatementTitle}`
+                        : "Create, manage, and broadcast challenge tracks & problem statements."}
+                  </p>
+                </div>
+
+                {/* Bottom Section: Stat Pills + Full Width Button */}
+                <div className="relative z-10 pt-5 space-y-3.5">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      Active Statements: <span className="text-blue-600 font-black">{eventAccessEvent?.problemStatements?.length || (eventAccessEvent?.problemStatementTitle ? 1 : 0)}</span>
+                    </div>
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      Track: <span className="text-slate-900 font-black">{eventAccessEvent?.problemStatementTrack || "Multi-Track"}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenMultiProblemModal();
+                    }}
+                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs sm:text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/20"
+                  >
+                    <FileCode className="w-4 h-4 shrink-0" />
+                    <span>
+                      {eventAccessEvent?.problemStatementTitle || eventAccessEvent?.problemStatements?.length
+                        ? "Manage Problem Statements"
+                        : "+ Give Problem Statements"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD 5: Submissions (Row 2 - Span 3 of 6) */}
+              <div
+                onClick={handleOpenSubmissionsModal}
+                className="lg:col-span-3 bg-white p-6 rounded-3xl text-slate-800 shadow-sm relative overflow-hidden border border-slate-200/90 hover:border-blue-500 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-200 group flex flex-col justify-between h-full min-h-[280px] cursor-pointer hover:-translate-y-1 transform-gpu"
+              >
+                <div className="absolute right-0 top-0 w-48 h-48 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.06),transparent_70%)] pointer-events-none" />
+
+                <div className="relative z-10 space-y-4 text-left">
+                  {/* Top Tags */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-100">
+                      SUBMISSIONS
+                    </span>
+                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      {eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length} / {eventAccessRegistrations.length}
+                    </span>
+                  </div>
+
+                  {/* Title & Icon */}
+                  <div className="flex items-center gap-3.5 pt-1">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100/80 flex items-center justify-center shrink-0 group-hover:scale-105 group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black tracking-tight text-slate-900 leading-tight">
+                        Submissions Monitor
+                      </h3>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Deliverables & Reviews</p>
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-xs text-slate-500 font-medium leading-relaxed min-h-[36px]">
+                    Monitor team deliverables, SRS specifications, PPT pitch decks, and GitHub repos.
+                  </p>
+                </div>
+
+                {/* Bottom Section: Stat Pills + Full Width Button */}
+                <div className="relative z-10 pt-5 space-y-3.5">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      Submitted: <span className="text-emerald-600 font-black">{eventAccessRegistrations.filter(r => r.submissionStatus === "Submitted" || r.submittedAt).length}</span>
+                    </div>
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/70 text-xs font-bold text-center shadow-2xs">
+                      Drafts: <span className="text-amber-600 font-black">{eventAccessRegistrations.filter(r => r.submissionStatus === "Draft" || (r.problemStatement && r.submissionStatus !== "Submitted")).length}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenSubmissionsModal();
+                    }}
+                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-black text-xs sm:text-sm transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer border border-blue-400/20"
+                  >
+                    <Eye className="w-4 h-4 shrink-0" />
+                    <span>Monitor Submissions</span>
                   </button>
                 </div>
               </div>
 
             </div>
 
-            {/* Sub-Header Toolbar (Search & Quick Stats) */}
-            <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-              {/* Quick Search Input */}
-              <div className="relative w-full sm:w-96">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search participants by name, student ID, email..."
-                  value={eventAccessSearchQuery}
-                  onChange={(e) => setEventAccessSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-[#2563EB] transition-all"
-                />
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 👥 REGISTERED MEMBERS & LOGIN ACCESS MODAL */}
+      {isEventRosterModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999999] bg-slate-50 flex flex-col w-screen h-screen overflow-hidden animate-in fade-in duration-200 text-left font-sans">
+          <div
+            className="bg-white w-full h-full flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Top Header */}
+            <div className="bg-[#1E3A8A] text-white px-6 sm:px-8 py-3.5 flex items-center justify-between gap-4 shrink-0 shadow-md border-b border-blue-900/50">
+              {/* Left: Brand Logo & Title Metadata */}
+              <div className="flex items-center gap-3.5 min-w-0">
+                <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-lg object-contain shrink-0" />
+                <div className="h-6 w-px bg-white/20 hidden sm:block shrink-0"></div>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-500/30 text-blue-100 border border-blue-400/30 shrink-0">
+                    EVENT REGISTRATIONS & ACCESS
+                  </span>
+                  <span className="text-blue-200/50 font-bold text-xs hidden sm:inline">•</span>
+                  <span className="text-xs text-blue-200/90 font-bold shrink-0 hidden sm:inline">
+                    {filteredEventAccessRegistrations.length} Participants Listed
+                  </span>
+                  <span className="text-blue-200/50 font-bold text-xs hidden sm:inline">•</span>
+                  <h3 className="text-base sm:text-lg font-black text-white tracking-tight truncate max-w-[250px] sm:max-w-md">
+                    {eventAccessEvent?.title || "Event Registrations"}
+                  </h3>
+                </div>
               </div>
 
-              {/* Stat Pills */}
-              <div className="flex items-center gap-3.5 w-full sm:w-auto justify-between sm:justify-end">
-                <div className="px-4 py-2.5 bg-blue-50/80 border border-blue-100/80 rounded-2xl flex items-center gap-3 shadow-2xs">
-                  <div className="w-8 h-8 rounded-xl bg-blue-100 text-[#2563EB] flex items-center justify-center font-bold">
-                    <Users className="h-4.5 w-4.5" />
-                  </div>
-                  <div className="text-left">
-                    <span className="text-[9px] font-extrabold text-slate-400 uppercase block leading-none tracking-wider">REGISTERED PARTICIPANTS</span>
-                    <span className="text-xs font-black text-blue-700 mt-0.5 block">
-                      {eventAccessRegistrations.length} Seats
-                    </span>
-                  </div>
-                </div>
+              {/* Right: Export CSV & Close Button */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  onClick={handleExportEventAccessCsv}
+                  className="px-3.5 py-2 bg-white/15 hover:bg-white/25 active:scale-95 text-white font-bold rounded-xl text-xs transition-all border border-white/20 backdrop-blur-md flex items-center gap-2 shadow-xs cursor-pointer"
+                  title="Export Participants CSV"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Export CSV</span>
+                </button>
 
-                <div className="px-4 py-2.5 bg-emerald-50/80 border border-emerald-100/80 rounded-2xl flex items-center gap-3 shadow-2xs">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                    <ShieldCheck className="h-4.5 w-4.5" />
-                  </div>
-                  <div className="text-left">
-                    <span className="text-[9px] font-extrabold text-slate-400 uppercase block leading-none tracking-wider">ACCESS STATUS</span>
-                    <span className="text-xs font-black text-emerald-700 mt-0.5 block">Live Access</span>
-                  </div>
-                </div>
+                <button
+                  onClick={() => setIsEventRosterModalOpen(false)}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center gap-2 transition-all cursor-pointer font-bold text-xs border border-white/20 shadow-xs"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Close Full View</span>
+                </button>
               </div>
             </div>
 
-            {/* TWO COLUMN GRID CONTENT */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-
-              {/* LEFT COLUMN: Participants Table Roster (Span 8) */}
-              <div className="lg:col-span-8 space-y-6">
-                {loadingEventAccessRegs ? (
-                  <div className="py-24 text-center flex flex-col items-center justify-center gap-3 bg-white rounded-3xl border border-slate-200/90 shadow-sm">
-                    <Loader2 className="h-8 w-8 text-[#2563EB] animate-spin" />
-                    <p className="text-xs font-bold text-slate-500">Fetching registered participants from database...</p>
+            {/* Modal Body: Split 2 Columns with Toolbar */}
+            <div className="p-6 sm:p-8 lg:p-10 overflow-y-auto flex-1 bg-slate-50/60 pb-24 space-y-6">
+              
+              {/* Feedback toast if provisioned */}
+              {loginAccessSuccessMsg && (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-between shadow-sm animate-in slide-in-from-top-2">
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                    <span>{loginAccessSuccessMsg}</span>
                   </div>
-                ) : filteredEventAccessRegistrations.length > 0 ? (
-                  <div className="border border-slate-200/90 rounded-3xl overflow-hidden shadow-sm bg-white">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse min-w-[700px]">
-                        <thead>
-                          <tr className="bg-slate-50/90 border-b border-slate-200/80 text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                            <th className="py-3.5 px-4 w-[28%]">Team / Lead</th>
-                            <th className="py-3.5 px-3 w-[16%]">Roll No.</th>
-                            <th className="py-3.5 px-3 w-[22%]">Contact Details</th>
-                            <th className="py-3.5 px-3 w-[12%]">Branch</th>
-                            <th className="py-3.5 px-3 w-[10%]">Type</th>
-                            <th className="py-3.5 px-4 w-[12%] text-right">Login Access</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {filteredEventAccessRegistrations.map((reg, idx) => {
-                            const isGroup = reg.groupName && reg.groupName !== "Individual RSVP";
-                            const isProvisioned = provisionedTeamIds.includes(reg.id);
-                            const displayTeamName = isGroup ? reg.groupName : (reg.teamLeadName || reg.name || "Individual Participant");
+                  <button
+                    onClick={() => setLoginAccessSuccessMsg(null)}
+                    className="text-emerald-700 hover:text-emerald-900 font-extrabold text-xs cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
 
-                            return (
-                              <tr key={reg.id || idx} className="hover:bg-blue-50/30 transition-colors">
-                                {/* Team Name / Lead */}
-                                <td className="py-3.5 px-4">
-                                  <div className="flex items-center gap-3">
-                                    <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
-                                      {displayTeamName.charAt(0).toUpperCase()}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <span className="font-extrabold text-slate-900 text-xs block truncate max-w-[150px]">
-                                        {displayTeamName}
-                                      </span>
-                                      <span className="text-[10px] font-semibold text-slate-400 block mt-0.5 truncate max-w-[150px]">
-                                        {isGroup ? `Lead: ${reg.teamLeadName || reg.name}` : "Individual"}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </td>
+              {/* Sub-Header Toolbar (Search & Quick Stats) */}
+              <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200/90 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                {/* Quick Search Input */}
+                <div className="relative w-full sm:w-96">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search participants by name, student ID, email..."
+                    value={eventAccessSearchQuery}
+                    onChange={(e) => setEventAccessSearchQuery(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-[#2563EB] transition-all"
+                  />
+                </div>
 
-                                {/* Student Roll ID */}
-                                <td className="py-3.5 px-3">
-                                  <span className="font-mono font-extrabold text-slate-800 bg-slate-100/90 px-2.5 py-0.5 rounded-lg text-[11px] border border-slate-200/80 inline-block shadow-2xs">
-                                    {reg.teamLeadStudentId || reg.studentId || "N/A"}
-                                  </span>
-                                </td>
-
-                                {/* Contact Email & Phone */}
-                                <td className="py-3.5 px-3 space-y-0.5">
-                                  <span className="font-bold text-slate-800 text-xs block truncate max-w-[170px]" title={reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email}>
-                                    {reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email || "N/A"}
-                                  </span>
-                                  {reg.teamLeadCollegeEmail && reg.teamLeadCollegeEmail !== (reg.teamLeadPersonalEmail || reg.personalEmail) && (
-                                    <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[170px]" title={`College: ${reg.teamLeadCollegeEmail}`}>
-                                      🏛️ {reg.teamLeadCollegeEmail}
-                                    </span>
-                                  )}
-                                  {reg.phoneNumber && (
-                                    <span className="text-[10px] text-slate-400 font-semibold block">
-                                      {reg.phoneNumber}
-                                    </span>
-                                  )}
-                                </td>
-
-                                {/* Branch & Sec */}
-                                <td className="py-3.5 px-3 font-bold text-slate-700">
-                                  <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[11px] font-extrabold border border-slate-200/60 inline-block">
-                                    {reg.branch || "CSE"} {reg.section ? `• ${reg.section}` : ""}
-                                  </span>
-                                </td>
-
-                                {/* Registration Type / Members */}
-                                <td className="py-3.5 px-3">
-                                  <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase whitespace-nowrap inline-flex items-center gap-1 shadow-2xs ${isGroup ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-sky-100 text-sky-800 border border-sky-200"}`}>
-                                    {isGroup ? `GROUP (${reg.teamSize || (reg.members?.length || 1)})` : "INDIVIDUAL"}
-                                  </span>
-                                </td>
-
-                                {/* Login Access Status */}
-                                <td className="py-3.5 px-4 text-right">
-                                  {isProvisioned ? (
-                                    <div className="inline-flex items-center gap-1.5 justify-end">
-                                      <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
-                                        <Check className="h-3 w-3 text-emerald-600" />
-                                        GRANTED
-                                      </span>
-                                      <button
-                                        onClick={() => handleRevokeSingleTeamAccess(reg.id, displayTeamName)}
-                                        disabled={isProvisioningLoginAccess}
-                                        className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-all cursor-pointer active:scale-95 shadow-2xs"
-                                        title="Revoke portal access for this team"
-                                      >
-                                        Revoke
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1 shadow-2xs">
-                                      <Lock className="h-3 w-3 text-amber-600" />
-                                      PENDING
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                {/* Stat Pills */}
+                <div className="flex items-center gap-3.5 w-full sm:w-auto justify-between sm:justify-end">
+                  <div className="px-4 py-2.5 bg-blue-50/80 border border-blue-100/80 rounded-2xl flex items-center gap-3 shadow-2xs">
+                    <div className="w-8 h-8 rounded-xl bg-blue-100 text-[#2563EB] flex items-center justify-center font-bold">
+                      <Users className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="text-left">
+                      <span className="text-[9px] font-extrabold text-slate-400 uppercase block leading-none tracking-wider">REGISTERED PARTICIPANTS</span>
+                      <span className="text-xs font-black text-blue-700 mt-0.5 block">
+                        {eventAccessRegistrations.length} Seats
+                      </span>
                     </div>
                   </div>
-                ) : (
-                  <div className="py-24 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8 space-y-3 shadow-xs">
-                    <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center mx-auto shadow-inner">
-                      <Users className="h-7 w-7" />
+
+                  <div className="px-4 py-2.5 bg-emerald-50/80 border border-emerald-100/80 rounded-2xl flex items-center gap-3 shadow-2xs">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                      <ShieldCheck className="h-4.5 w-4.5" />
                     </div>
-                    <h4 className="text-base font-extrabold text-slate-800">No Participants Registered Yet</h4>
-                    <p className="text-xs text-slate-400 font-medium max-w-sm mx-auto">
-                      {eventAccessSearchQuery
-                        ? `No registered participants match your search "${eventAccessSearchQuery}".`
-                        : `No participant records found in the database for "${eventAccessEvent?.title || "this event"}".`}
+                    <div className="text-left">
+                      <span className="text-[9px] font-extrabold text-slate-400 uppercase block leading-none tracking-wider">ACCESS STATUS</span>
+                      <span className="text-xs font-black text-emerald-700 mt-0.5 block">Live Access</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TWO COLUMN GRID: Left = Participants Roster (Span 8), Right = Login Access Card (Span 4) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+                {/* LEFT COLUMN: Participants Table Roster (Span 8) */}
+                <div className="lg:col-span-8 space-y-6">
+                  {loadingEventAccessRegs ? (
+                    <div className="py-24 text-center flex flex-col items-center justify-center gap-3 bg-white rounded-3xl border border-slate-200/90 shadow-sm">
+                      <Loader2 className="h-8 w-8 text-[#2563EB] animate-spin" />
+                      <p className="text-xs font-bold text-slate-500">Fetching registered participants from database...</p>
+                    </div>
+                  ) : filteredEventAccessRegistrations.length > 0 ? (
+                    <div className="border border-slate-200/90 rounded-3xl overflow-hidden shadow-sm bg-white">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+                          <thead>
+                            <tr className="bg-slate-50/90 border-b border-slate-200/80 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                              <th className="py-3.5 px-4 w-[28%]">Team / Lead</th>
+                              <th className="py-3.5 px-3 w-[16%]">Roll No.</th>
+                              <th className="py-3.5 px-3 w-[22%]">Contact Details</th>
+                              <th className="py-3.5 px-3 w-[12%]">Branch</th>
+                              <th className="py-3.5 px-3 w-[10%]">Type</th>
+                              <th className="py-3.5 px-4 w-[12%] text-right">Login Access</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredEventAccessRegistrations.map((reg, idx) => {
+                              const isGroup = reg.groupName && reg.groupName !== "Individual RSVP";
+                              const isProvisioned = provisionedTeamIds.includes(reg.id);
+                              const displayTeamName = isGroup ? reg.groupName : (reg.teamLeadName || reg.name || "Individual Participant");
+
+                              return (
+                                <tr key={reg.id || idx} className="hover:bg-blue-50/30 transition-colors">
+                                  {/* Team Name / Lead */}
+                                  <td className="py-3.5 px-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-8.5 h-8.5 rounded-xl bg-blue-50 text-[#2563EB] border border-blue-200/80 font-mono font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                                        {String(reg.teamNumber || reg.teamNo || (idx + 1)).padStart(2, "0")}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <span className="font-extrabold text-slate-900 text-xs block truncate max-w-[150px]">
+                                          {displayTeamName}
+                                        </span>
+                                        <span className="text-[10px] font-semibold text-slate-400 block mt-0.5 truncate max-w-[150px]">
+                                          {isGroup ? `Lead: ${reg.teamLeadName || reg.name}` : "Individual"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* Student Roll ID */}
+                                  <td className="py-3.5 px-3">
+                                    <span className="font-mono font-extrabold text-slate-800 bg-slate-100/90 px-2.5 py-0.5 rounded-lg text-[11px] border border-slate-200/80 inline-block shadow-2xs">
+                                      {reg.teamLeadStudentId || reg.studentId || "N/A"}
+                                    </span>
+                                  </td>
+
+                                  {/* Contact Email & Phone */}
+                                  <td className="py-3.5 px-3 space-y-0.5">
+                                    <span className="font-bold text-slate-800 text-xs block truncate max-w-[170px]" title={reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email}>
+                                      {reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email || "N/A"}
+                                    </span>
+                                    {reg.teamLeadCollegeEmail && reg.teamLeadCollegeEmail !== (reg.teamLeadPersonalEmail || reg.personalEmail) && (
+                                      <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[170px]" title={`College: ${reg.teamLeadCollegeEmail}`}>
+                                        🏛️ {reg.teamLeadCollegeEmail}
+                                      </span>
+                                    )}
+                                    {reg.phoneNumber && (
+                                      <span className="text-[10px] text-slate-400 font-semibold block">
+                                        {reg.phoneNumber}
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  {/* Branch & Sec */}
+                                  <td className="py-3.5 px-3 font-bold text-slate-700">
+                                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[11px] font-extrabold border border-slate-200/60 inline-block">
+                                      {reg.branch || "CSE"} {reg.section ? `• ${reg.section}` : ""}
+                                    </span>
+                                  </td>
+
+                                  {/* Registration Type / Members */}
+                                  <td className="py-3.5 px-3">
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase whitespace-nowrap inline-flex items-center gap-1 shadow-2xs ${isGroup ? "bg-purple-100 text-purple-800 border border-purple-200" : "bg-sky-100 text-sky-800 border border-sky-200"}`}>
+                                      {isGroup ? `GROUP (${reg.teamSize || (reg.members?.length || 1)})` : "INDIVIDUAL"}
+                                    </span>
+                                  </td>
+
+                                  {/* Login Access Status */}
+                                  <td className="py-3.5 px-4 text-right">
+                                    {isProvisioned ? (
+                                      <div className="inline-flex items-center gap-1.5 justify-end">
+                                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
+                                          <Check className="h-3 w-3 text-emerald-600" />
+                                          GRANTED
+                                        </span>
+                                        <button
+                                          onClick={() => handleRevokeSingleTeamAccess(reg.id, displayTeamName)}
+                                          disabled={isProvisioningLoginAccess}
+                                          className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                                          title="Revoke portal access for this team"
+                                        >
+                                          Revoke
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1 shadow-2xs">
+                                        <Lock className="h-3 w-3 text-amber-600" />
+                                        PENDING
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-24 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8 space-y-3 shadow-xs">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center mx-auto shadow-inner">
+                        <Users className="h-7 w-7" />
+                      </div>
+                      <h4 className="text-base font-extrabold text-slate-800">No Participants Registered Yet</h4>
+                      <p className="text-xs text-slate-400 font-medium max-w-sm mx-auto">
+                        {eventAccessSearchQuery
+                          ? `No registered participants match your search "${eventAccessSearchQuery}".`
+                          : `No participant records found in the database for "${eventAccessEvent?.title || "this event"}".`}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* RIGHT COLUMN: LOGIN ACCESS SIDEBAR CARD (Span 4) */}
+                <div className="lg:col-span-4 space-y-6">
+
+                  {/* 🔑 LOGIN ACCESS CARD */}
+                  <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-sm space-y-5 text-left">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 text-[#2563EB] border border-blue-100/80 flex items-center justify-center font-bold shadow-2xs">
+                          <Key className="h-5.5 w-5.5 text-[#2563EB]" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-black text-slate-900 tracking-tight">
+                            Login Access
+                          </h3>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Authentication Control</p>
+                        </div>
+                      </div>
+                      <span className="text-[9px] font-black text-blue-700 bg-blue-50 border border-blue-100 px-3 py-1 rounded-full uppercase tracking-wider">
+                        TEAM AUTH
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                      Grant team portal authentication credentials, generate passkeys, and send instant login access links to all registered team leads and members.
+                    </p>
+
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2.5 text-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Target Event</span>
+                        <span className="font-extrabold text-slate-800 truncate max-w-[150px]">{eventAccessEvent?.title || "Active Event"}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Total Teams / Seats</span>
+                        <span className="font-extrabold text-blue-600">{eventAccessRegistrations.length} Teams</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Access Granted</span>
+                        <span className="font-extrabold text-emerald-600">{provisionedTeamIds.length} / {eventAccessRegistrations.length}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <button
+                        onClick={handleOpenPasswordModal}
+                        disabled={isProvisioningLoginAccess || eventAccessRegistrations.length === 0}
+                        className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-300 disabled:to-slate-300 text-white font-black rounded-2xl text-xs sm:text-sm transition-all shadow-md shadow-blue-500/25 active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center leading-snug border border-blue-400/30"
+                      >
+                        {isProvisioningLoginAccess ? (
+                          <>
+                            <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                            Provisioning Access...
+                          </>
+                        ) : (
+                          <>
+                            <UserCheck className="h-5 w-5" />
+                            {provisionedTeamIds.length > 0 ? "Update / Re-grant Login Access" : "Provide the login access to their team"}
+                          </>
+                        )}
+                      </button>
+
+                      {provisionedTeamIds.length > 0 && (
+                        <button
+                          onClick={handleRevokeAllTeamsLoginAccess}
+                          disabled={isProvisioningLoginAccess}
+                          className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/80 font-bold rounded-2xl text-xs transition-all shadow-xs active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center"
+                        >
+                          <Lock className="h-4 w-4 text-red-500" />
+                          Revoke All Teams Login Access
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Additional Info Card */}
+                  <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-6 rounded-3xl text-white space-y-3 shadow-md border border-indigo-900/50 text-left">
+                    <div className="flex items-center gap-2 text-blue-300">
+                      <Lock className="h-4 w-4 text-blue-400" />
+                      <h4 className="text-xs font-black uppercase tracking-wider">Secure Team SSO Access</h4>
+                    </div>
+                    <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                      All generated team credentials are encrypted. Team leads will receive automated access emails with one-click magic links.
                     </p>
                   </div>
-                )}
-              </div>
 
-              {/* RIGHT COLUMN: LOGIN ACCESS SIDEBAR CARD (Span 4) */}
-              <div className="lg:col-span-4 space-y-6">
-
-                {/* 🔑 LOGIN ACCESS CARD */}
-                <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200/90 shadow-sm space-y-5 text-left">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 text-[#2563EB] border border-blue-100/80 flex items-center justify-center font-bold shadow-2xs">
-                        <Key className="h-5.5 w-5.5 text-[#2563EB]" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-black text-slate-900 tracking-tight">
-                          Login Access
-                        </h3>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Authentication Control</p>
-                      </div>
-                    </div>
-                    <span className="text-[9px] font-black text-blue-700 bg-blue-50 border border-blue-100 px-3 py-1 rounded-full uppercase tracking-wider">
-                      TEAM AUTH
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                    Grant team portal authentication credentials, generate passkeys, and send instant login access links to all registered team leads and members.
-                  </p>
-
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2.5 text-xs">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">Target Event</span>
-                      <span className="font-extrabold text-slate-800 truncate max-w-[150px]">{eventAccessEvent?.title || "Active Event"}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">Total Teams / Seats</span>
-                      <span className="font-extrabold text-blue-600">{eventAccessRegistrations.length} Teams</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">Access Granted</span>
-                      <span className="font-extrabold text-emerald-600">{provisionedTeamIds.length} / {eventAccessRegistrations.length}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <button
-                      onClick={handleOpenPasswordModal}
-                      disabled={isProvisioningLoginAccess || eventAccessRegistrations.length === 0}
-                      className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-300 disabled:to-slate-300 text-white font-black rounded-2xl text-xs sm:text-sm transition-all shadow-md shadow-blue-500/25 active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center leading-snug border border-blue-400/30"
-                    >
-                      {isProvisioningLoginAccess ? (
-                        <>
-                          <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                          Provisioning Access...
-                        </>
-                      ) : (
-                        <>
-                          <UserCheck className="h-5 w-5" />
-                          {provisionedTeamIds.length > 0 ? "Update / Re-grant Login Access" : "Provide the login access to their team"}
-                        </>
-                      )}
-                    </button>
-
-                    {provisionedTeamIds.length > 0 && (
-                      <button
-                        onClick={handleRevokeAllTeamsLoginAccess}
-                        disabled={isProvisioningLoginAccess}
-                        className="w-full py-3 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/80 font-bold rounded-2xl text-xs transition-all shadow-xs active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center"
-                      >
-                        <Lock className="h-4 w-4 text-red-500" />
-                        Revoke All Teams Login Access
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Additional Info Card */}
-                <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 p-6 rounded-3xl text-white space-y-3 shadow-md border border-indigo-900/50 text-left">
-                  <div className="flex items-center gap-2 text-blue-300">
-                    <Lock className="h-4 w-4 text-blue-400" />
-                    <h4 className="text-xs font-black uppercase tracking-wider">Secure Team SSO Access</h4>
-                  </div>
-                  <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                    All generated team credentials are encrypted. Team leads will receive automated access emails with one-click magic links.
-                  </p>
                 </div>
 
               </div>
 
             </div>
-
-            {/* Footer Summary Bar */}
-            <div className="p-4 sm:px-6 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between shadow-xs">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Showing {filteredEventAccessRegistrations.length} of {eventAccessRegistrations.length} registered seats
-              </span>
-              <button
-                onClick={() => setIsEventAccessModalOpen(false)}
-                className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold rounded-xl text-xs transition-colors shadow-xs active:scale-95 cursor-pointer"
-              >
-                Close Full Page
-              </button>
-            </div>
-
           </div>
         </div>,
         document.body
