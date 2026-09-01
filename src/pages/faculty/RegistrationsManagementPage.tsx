@@ -282,9 +282,9 @@ const RegistrationsManagementPage: React.FC = () => {
         const rawPaymentStatus = (data.paymentStatus || "").trim();
         
         let resolvedStatus: "Confirmed" | "Not Confirmed" | "Waitlisted" = "Not Confirmed";
-        if (rawStatus === "Confirmed" || rawPaymentStatus === "Confirmed" || data.confirmedAt) {
+        if (data.confirmedAt || (rawStatus.toLowerCase() === "confirmed" && rawPaymentStatus.toLowerCase() === "confirmed")) {
           resolvedStatus = "Confirmed";
-        } else if (rawStatus === "Waitlisted") {
+        } else if (rawStatus.toLowerCase() === "waitlisted") {
           resolvedStatus = "Waitlisted";
         } else {
           resolvedStatus = "Not Confirmed";

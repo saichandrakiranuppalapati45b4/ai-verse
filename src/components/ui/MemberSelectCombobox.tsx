@@ -150,17 +150,6 @@ export const MemberSelectCombobox: React.FC<MemberSelectComboboxProps> = ({
     }
   }, [isOpen]);
 
-  // Find currently selected user object if any
-  const selectedUser = useMemo(() => {
-    if (!value) return null;
-    const cleanVal = value.toLowerCase().trim();
-    return users.find(u => {
-      const uName = (u.name || u.displayName || "").toLowerCase().trim();
-      const uEmail = (u.email || "").toLowerCase().trim();
-      return uName === cleanVal || uEmail === cleanVal || u.id === value;
-    }) || null;
-  }, [value, users]);
-
   // Check if a member matches recommended/target role
   const isUserRecommended = (u: MemberItem): boolean => {
     if (roleFilter) return roleFilter(u);
@@ -183,6 +172,35 @@ export const MemberSelectCombobox: React.FC<MemberSelectComboboxProps> = ({
     }
     return users;
   }, [users, strictFilter, roleFilter, recommendedRole]);
+
+  // Find currently selected user object if any (prioritizing eligible list to avoid same-name collision)
+  const selectedUser = useMemo(() => {
+    if (!value) return null;
+    const cleanVal = value.toLowerCase().trim();
+
+    const findMatch = (list: MemberItem[]) => {
+      // 1. Exact ID or Email match first
+      const exactMatch = list.find(u => u.id === value || (u.email && u.email.toLowerCase().trim() === cleanVal));
+      if (exactMatch) return exactMatch;
+
+      // 2. Exact Name match
+      return list.find(u => {
+        const uName = (u.name || u.displayName || "").toLowerCase().trim();
+        return uName === cleanVal;
+      });
+    };
+
+    // First search in eligible users pool
+    const matchInEligible = findMatch(eligibleUsers);
+    if (matchInEligible) return matchInEligible;
+
+    // Fallback to all users only if not in strict mode
+    if (!strictFilter) {
+      return findMatch(users) || null;
+    }
+
+    return null;
+  }, [value, users, eligibleUsers, strictFilter]);
 
   // Filtered users based on search and active category tab
   const filteredUsers = useMemo(() => {

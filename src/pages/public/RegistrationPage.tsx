@@ -20,10 +20,7 @@ import {
   Eye,
   X,
   Receipt,
-  ZoomIn,
-  Utensils,
-  Sun,
-  Moon
+  ZoomIn
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import Button from "../../components/ui/Button";
@@ -81,10 +78,6 @@ const RegistrationPage: React.FC = () => {
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [confirmedInfo, setConfirmedInfo] = useState(false);
 
-  // Food & Hospitality Preferences (for vishnu.edu.in institutional domain)
-  const [needsFood, setNeedsFood] = useState<boolean | null>(null);
-  const [foodSlot, setFoodSlot] = useState<"both" | "morning_only" | "evening_only">("both");
-
   // Step 3 Payment Proof States
   const [paymentProofPreview, setPaymentProofPreview] = useState("");
   const [paymentProofFilename, setPaymentProofFilename] = useState("");
@@ -99,29 +92,19 @@ const RegistrationPage: React.FC = () => {
 
   // Dynamic fee calculation per person
   const perPersonFee = React.useMemo(() => {
-    const baseFee = Number(event?.registrationFee) || 0;
     if (isVishnuDomain) {
-      if (needsFood === false) {
-        return 0; // Free for Vishnu students when no food is required
-      }
-      if (needsFood === true) {
-        if (foodSlot === "both") {
-          return baseFee; // Full amount
-        }
-        if (foodSlot === "morning_only" || foodSlot === "evening_only") {
-          return Math.round(baseFee / 2); // Half amount
-        }
-      }
-      return 0; // Default when not selected
+      return 0; // 100% Free for Vishnu Educational Society students regardless of food preference
     }
-    return baseFee; // Standard event fee for all other colleges
-  }, [event, isVishnuDomain, needsFood, foodSlot]);
+    return Number(event?.registrationFee) || 0; // Standard event fee for all other colleges
+  }, [event, isVishnuDomain]);
 
   const totalTeamMembers = members.length + 1;
-  const totalRegistrationFee = isPricingPerTeam
-    ? (isVishnuDomain && needsFood === false ? 0 : (Number(event?.registrationFee) || 0))
-    : perPersonFee * totalTeamMembers;
-  const requiresPaymentProof = totalRegistrationFee > 0;
+  const totalRegistrationFee = isVishnuDomain
+    ? 0
+    : isPricingPerTeam
+      ? (Number(event?.registrationFee) || 0)
+      : perPersonFee * totalTeamMembers;
+  const requiresPaymentProof = !isVishnuDomain && totalRegistrationFee > 0;
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -255,11 +238,6 @@ const RegistrationPage: React.FC = () => {
       }
     }
 
-    if (isVishnuDomain && needsFood === null) {
-      alert("Please select whether you and your team members need food during the event.");
-      return false;
-    }
-
     return true;
   };
 
@@ -351,18 +329,7 @@ const RegistrationPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      let foodPreferenceText = "Standard Event Entry";
-      if (isVishnuDomain) {
-        if (needsFood === false) {
-          foodPreferenceText = "No Food (Free Entry)";
-        } else if (foodSlot === "both") {
-          foodPreferenceText = "Both Morning & Evening (Full Day Pass)";
-        } else if (foodSlot === "morning_only") {
-          foodPreferenceText = "Morning Only (Half Day Pass)";
-        } else if (foodSlot === "evening_only") {
-          foodPreferenceText = "Evening Only (Half Day Pass)";
-        }
-      }
+      const foodPreferenceText = "Standard Entry";
 
       // Ensure payment proof is well compressed before writing to Firestore document (safely under 1MB limit)
       let compressedProof = "";
@@ -392,8 +359,8 @@ const RegistrationPage: React.FC = () => {
         teamSize: members.length + 1,
         // Food preferences
         isVishnuStudent: isVishnuDomain,
-        needsFood: isVishnuDomain ? Boolean(needsFood) : false,
-        foodOption: isVishnuDomain && needsFood ? foodSlot : "none",
+        needsFood: false,
+        foodOption: "none",
         foodPreference: foodPreferenceText,
         // Payment proof fields
         isPaidEvent: Boolean(requiresPaymentProof),
@@ -404,9 +371,8 @@ const RegistrationPage: React.FC = () => {
         paymentProofFilename: requiresPaymentProof ? (paymentProofFilename || "") : "",
         paymentProof: compressedProof,
         transactionId: requiresPaymentProof ? transactionId.trim() : "EXEMPT_VISHNU_FREE",
-        utrNumber: requiresPaymentProof ? transactionId.trim() : "EXEMPT_VISHNU_FREE",
-        paymentStatus: requiresPaymentProof ? "Submitted (Pending Verification)" : "Free / Internal Confirmed",
-        status: requiresPaymentProof ? "Pending" : "Confirmed",
+        paymentStatus: requiresPaymentProof ? "Submitted (Pending Verification)" : "Free (Pending Review)",
+        status: "Pending",
         createdAt: Date.now()
       };
 
@@ -941,25 +907,19 @@ const RegistrationPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Vishnu Domain Status & Food Summary Badge */}
+                  {/* Vishnu Domain Status Badge */}
                   {isVishnuDomain && (
-                    <div className="bg-indigo-50/50 p-3.5 rounded-2xl border border-indigo-100/60 space-y-1 text-left">
+                    <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200/70 space-y-1 text-left">
                       <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-extrabold text-indigo-700 uppercase tracking-wider">Campus Privilege</span>
-                        <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800">
+                        <span className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-wider">Campus Privilege</span>
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
                           @vishnu.edu.in
                         </span>
                       </div>
-                      <div className="text-xs font-black text-slate-800 flex items-center justify-between pt-1">
-                        <span>Food Option:</span>
-                        <span className="text-indigo-700 font-extrabold">
-                          {needsFood === null ? "Not Selected" : needsFood === false ? "No Food (Free)" : foodSlot === "both" ? "Full Pass" : "Half Pass"}
-                        </span>
-                      </div>
                       <div className="text-xs font-black text-slate-800 flex items-center justify-between pt-0.5">
-                        <span>Total Payable:</span>
+                        <span>Registration Fee:</span>
                         <span className="text-emerald-600 font-extrabold">
-                          ₹{totalRegistrationFee}
+                          ₹0 (100% Free)
                         </span>
                       </div>
                     </div>
@@ -1072,204 +1032,7 @@ const RegistrationPage: React.FC = () => {
                     </button>
                   )}
 
-                  {/* 🍽️ Food & Hospitality Preferences (Only for vishnu.edu.in students) */}
-                  {isVishnuDomain && (
-                    <div className="p-5 sm:p-6 bg-gradient-to-br from-indigo-50/70 via-blue-50/40 to-slate-50 border-2 border-indigo-200/80 rounded-3xl space-y-4 text-left shadow-2xs animate-in fade-in duration-200">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100/90 pb-3.5">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                            <Utensils className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-sm font-extrabold text-slate-900 tracking-tight">
-                                Food & Hospitality Preference
-                              </h4>
-                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-800 border border-indigo-200/80">
-                                @vishnu.edu.in
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
-                              Campus dining arrangement for you and your team members.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
 
-                      <div className="space-y-3.5">
-                        <label className="text-xs font-black text-slate-800 block">
-                          Do you and your team members need food during the event? <span className="text-red-500">*</span>
-                        </label>
-
-                        {/* Yes / No Toggle Options */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {/* Option: No Food */}
-                          <div
-                            onClick={() => {
-                              setNeedsFood(false);
-                            }}
-                            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between select-none ${
-                              needsFood === false
-                                ? "border-emerald-500 bg-emerald-50/80 text-emerald-950 shadow-xs ring-2 ring-emerald-500/20"
-                                : "border-slate-200 bg-white hover:border-slate-300 text-slate-700 hover:bg-slate-50/50"
-                            }`}
-                          >
-                            <div className="space-y-1 text-left">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-black text-slate-850">No, Food Not Needed</span>
-                                <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[9px] font-black">
-                                  100% FREE
-                                </span>
-                              </div>
-                              <p className="text-[10.5px] text-slate-500 font-medium">
-                                No payment required & no payment screenshot needed.
-                              </p>
-                            </div>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                              needsFood === false ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300 bg-white"
-                            }`}>
-                              {needsFood === false && <Check className="w-3 h-3 stroke-[3]" />}
-                            </div>
-                          </div>
-
-                          {/* Option: Yes Food */}
-                          <div
-                            onClick={() => {
-                              setNeedsFood(true);
-                              if (!foodSlot) setFoodSlot("both");
-                            }}
-                            className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between select-none ${
-                              needsFood === true
-                                ? "border-indigo-600 bg-indigo-50/80 text-indigo-950 shadow-xs ring-2 ring-indigo-600/20"
-                                : "border-slate-200 bg-white hover:border-slate-300 text-slate-700 hover:bg-slate-50/50"
-                            }`}
-                          >
-                            <div className="space-y-1 text-left">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-black text-slate-850">Yes, Food Required</span>
-                                <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[9px] font-black">
-                                  DINING PASS
-                                </span>
-                              </div>
-                              <p className="text-[10.5px] text-slate-500 font-medium">
-                                Choose morning, evening, or full day meal passes below.
-                              </p>
-                            </div>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                              needsFood === true ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white"
-                            }`}>
-                              {needsFood === true && <Check className="w-3 h-3 stroke-[3]" />}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Nested Sub-options if Yes */}
-                        {needsFood === true && (
-                          <div className="pt-3 border-t border-indigo-100/80 space-y-3 animate-in slide-in-from-top-2 duration-200">
-                            <label className="text-[11px] font-extrabold text-slate-700 block">
-                              Select Meal Slot for Your Team:
-                            </label>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                              {/* Both Morning & Evening */}
-                              <div
-                                onClick={() => setFoodSlot("both")}
-                                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between select-none ${
-                                  foodSlot === "both"
-                                    ? "border-indigo-600 bg-white shadow-xs ring-2 ring-indigo-500/20 text-indigo-950"
-                                    : "border-slate-200 bg-white/80 hover:bg-white text-slate-600 hover:border-slate-300"
-                                }`}
-                              >
-                                <div>
-                                  <div className="flex items-center justify-between mb-1.5">
-                                    <span className="text-xs font-black">Both Morning & Evening</span>
-                                    <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">
-                                      FULL PASS
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 font-semibold leading-tight">
-                                    Complete full day breakfast, lunch & snacks pass.
-                                  </p>
-                                </div>
-                                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                                  <span className="text-[10px] text-slate-400 font-bold">Per person:</span>
-                                  <span className="text-xs font-black text-indigo-700">₹{event.registrationFee || 0}</span>
-                                </div>
-                              </div>
-
-                              {/* Morning Only */}
-                              <div
-                                onClick={() => setFoodSlot("morning_only")}
-                                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between select-none ${
-                                  foodSlot === "morning_only"
-                                    ? "border-indigo-600 bg-white shadow-xs ring-2 ring-indigo-500/20 text-indigo-950"
-                                    : "border-slate-200 bg-white/80 hover:bg-white text-slate-600 hover:border-slate-300"
-                                }`}
-                              >
-                                <div>
-                                  <div className="flex items-center justify-between mb-1.5">
-                                    <div className="flex items-center gap-1">
-                                      <Sun className="w-3.5 h-3.5 text-amber-500" />
-                                      <span className="text-xs font-black">Morning Only</span>
-                                    </div>
-                                    <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">
-                                      HALF PASS (50%)
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 font-semibold leading-tight">
-                                    Morning session breakfast & refreshments.
-                                  </p>
-                                </div>
-                                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                                  <span className="text-[10px] text-slate-400 font-bold">Per person:</span>
-                                  <span className="text-xs font-black text-amber-700">₹{Math.round((event.registrationFee || 0) / 2)}</span>
-                                </div>
-                              </div>
-
-                              {/* Evening Only */}
-                              <div
-                                onClick={() => setFoodSlot("evening_only")}
-                                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between select-none ${
-                                  foodSlot === "evening_only"
-                                    ? "border-indigo-600 bg-white shadow-xs ring-2 ring-indigo-500/20 text-indigo-950"
-                                    : "border-slate-200 bg-white/80 hover:bg-white text-slate-600 hover:border-slate-300"
-                                }`}
-                              >
-                                <div>
-                                  <div className="flex items-center justify-between mb-1.5">
-                                    <div className="flex items-center gap-1">
-                                      <Moon className="w-3.5 h-3.5 text-purple-500" />
-                                      <span className="text-xs font-black">Evening Only</span>
-                                    </div>
-                                    <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
-                                      HALF PASS (50%)
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 font-semibold leading-tight">
-                                    Evening dinner & night session refreshments.
-                                  </p>
-                                </div>
-                                <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between">
-                                  <span className="text-[10px] text-slate-400 font-bold">Per person:</span>
-                                  <span className="text-xs font-black text-purple-700">₹{Math.round((event.registrationFee || 0) / 2)}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Summary strip inside card */}
-                            <div className="p-3 bg-white rounded-xl border border-indigo-100 flex items-center justify-between text-xs">
-                              <span className="font-bold text-slate-600">
-                                Total for {members.length + 1} {members.length === 0 ? "Person" : "Team Members"} {isPricingPerTeam ? `(₹${event.registrationFee} Flat per Team)` : `(₹${perPersonFee}/person)`}:
-                              </span>
-                              <span className="font-black text-emerald-600 text-sm">
-                                ₹{totalRegistrationFee}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
 
                   <div className="pt-4 flex justify-between">
                     <button
@@ -1358,25 +1121,7 @@ const RegistrationPage: React.FC = () => {
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Lead Student ID</span>
                     <span className="text-xs font-black text-slate-800 block">{leadStudentId}</span>
                   </div>
-                  {isVishnuDomain && (
-                    <div className="space-y-1 md:col-span-2 pt-2 border-t border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Food & Hospitality Option</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-extrabold text-indigo-700">
-                          {needsFood === false
-                            ? "No Food Needed (Free Entry)"
-                            : foodSlot === "both"
-                            ? "Both Morning & Evening (Full Day Pass • ₹" + perPersonFee + "/person)"
-                            : foodSlot === "morning_only"
-                            ? "Morning Only (Half Day Pass • ₹" + perPersonFee + "/person)"
-                            : "Evening Only (Half Day Pass • ₹" + perPersonFee + "/person)"}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          @vishnu.edu.in
-                        </span>
-                      </div>
-                    </div>
-                  )}
+
                 </div>
               </div>
 
@@ -1586,12 +1331,12 @@ const RegistrationPage: React.FC = () => {
                       <Check className="w-4 h-4 stroke-[3]" />
                     </div>
                     <span>No Payment Proof Required</span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-200/80 text-emerald-900 ml-auto">
+                    <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-200/80 text-emerald-900 ml-auto">
                       100% Free Entry
                     </span>
                   </div>
                   <p className="text-xs text-emerald-850 font-semibold leading-relaxed">
-                    You selected <strong>"No Food Needed"</strong> as a Vishnu Educational Society student (@vishnu.edu.in). Your team registration is completely free. You can submit directly without any payment screenshot or UTR number.
+                    As a Vishnu Educational Society student (@vishnu.edu.in), your team registration is completely free (₹0) whether food or no food is chosen. You can submit directly without any payment screenshot or UTR number.
                   </p>
                 </div>
               ) : null}
@@ -1653,18 +1398,11 @@ const RegistrationPage: React.FC = () => {
                       <span className="text-slate-400 font-semibold">Total Team Size</span>
                       <span className="text-slate-800 font-bold">{members.length + 1} Attendees</span>
                     </div>
-                    {isVishnuDomain && (
-                      <div className="flex justify-between items-center">
-                        <span>Meal Pass</span>
-                        <span className="text-indigo-700 font-bold">
-                          {needsFood === false ? "None (Free)" : foodSlot === "both" ? "Full Pass" : "Half Pass"}
-                        </span>
-                      </div>
-                    )}
+
                     <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-xs">
                       <span className="text-slate-700 font-black">Total Registration Fee</span>
-                      <span className={`font-black text-sm ${totalRegistrationFee > 0 ? "text-emerald-600" : "text-slate-700"}`}>
-                        {totalRegistrationFee > 0 ? `₹${totalRegistrationFee}` : "₹0 (Free)"}
+                      <span className="font-black text-sm text-emerald-600">
+                        {totalRegistrationFee > 0 ? `₹${totalRegistrationFee}` : "₹0 (100% Free)"}
                       </span>
                     </div>
                   </div>

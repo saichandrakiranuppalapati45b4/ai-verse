@@ -5,23 +5,38 @@ import {
   Clock, 
   MapPin, 
   ArrowRight, 
-  ChevronRight,
-  ChevronLeft,
-  SlidersHorizontal,
-  Bookmark,
-  IndianRupee,
-  Layers
+  ChevronRight, 
+  ChevronLeft, 
+  SlidersHorizontal, 
+  Bookmark, 
+  IndianRupee, 
+  Layers, 
+  Users, 
+  GraduationCap, 
+  Sparkles, 
+  Award, 
+  Mail 
 } from "lucide-react";
 import SEO from "../../components/layout/SEO";
 import Button from "../../components/ui/Button";
 import { db } from "../../config/firebase";
 import { doc, getDoc, collection, getDocs, query, limit } from "firebase/firestore";
+import { userService } from "../../services/userService";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
 import hackathonImg from "../../assets/images/hackathon.png";
 import seminarImg from "../../assets/images/seminar.png";
 import elenaImg from "../../assets/images/elena.png";
+
+const getInitials = (name: string): string => {
+  if (!name) return "U";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
 
 interface DetailedEvent {
   id: string;
@@ -48,6 +63,13 @@ interface DetailedEvent {
   speakerLinkedin?: string;
   speakerTwitter?: string;
   speakerImagePreview?: string;
+  facultyCoordinator?: string;
+  studentCoordinator?: string;
+  juryName?: string;
+  juryRole?: string;
+  juryBio?: string;
+  juryLinkedin?: string;
+  juryImagePreview?: string;
   minTeamSize?: number;
   maxTeamSize?: number;
   registrationFee?: number;
@@ -87,6 +109,24 @@ const EventDetailsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
+  const [facultyProfile, setFacultyProfile] = useState<{
+    name: string;
+    role?: string;
+    position?: string;
+    image?: string;
+    email?: string;
+    phone?: string;
+  } | null>(null);
+
+  const [studentProfile, setStudentProfile] = useState<{
+    name: string;
+    role?: string;
+    position?: string;
+    image?: string;
+    email?: string;
+    phone?: string;
+  } | null>(null);
+
   useEffect(() => {
     if (!id) return;
     
@@ -124,6 +164,127 @@ const EventDetailsPage: React.FC = () => {
             if (data.endTime) timeText += ` - ${data.endTime}`;
           }
 
+          const facName = data.facultyCoordinator || "";
+          const stuName = data.studentCoordinator || "";
+
+          // Query user database to enrich coordinator profiles
+          let matchedFac: any = null;
+          let matchedStu: any = null;
+
+          try {
+            const allPeople: any[] = [];
+            
+            // 1. Supabase users
+            try {
+              const supaUsers = await userService.getUsers();
+              if (supaUsers && supaUsers.length > 0) {
+                supaUsers.forEach(u => allPeople.push(u));
+              }
+            } catch (e) {
+              // ignore
+            }
+
+            // 2. Firestore users
+            try {
+              const uSnap = await getDocs(collection(db, "users"));
+              uSnap.forEach(d => allPeople.push({ id: d.id, ...d.data() }));
+            } catch (e) {
+              // ignore
+            }
+
+            // 3. Firestore organizers
+            try {
+              const oSnap = await getDocs(collection(db, "organizers"));
+              oSnap.forEach(d => allPeople.push({ id: d.id, ...d.data() }));
+            } catch (e) {
+              // ignore
+            }
+
+            const facEmail = (data.facultyCoordinatorEmail || "").toLowerCase().trim();
+            const stuEmail = (data.studentCoordinatorEmail || "").toLowerCase().trim();
+
+            if (facName || facEmail) {
+              const facLower = facName.toLowerCase().trim();
+              const found = allPeople.find(p => {
+                const pEmail = (p.email || "").toLowerCase().trim();
+                if (facEmail && pEmail === facEmail) return true;
+                const pRole = (p.role || p.position || "").toLowerCase();
+                const isFaculty = pRole.includes("faculty") || pEmail.startsWith("facultycoordinator@");
+                const pName = (p.name || p.displayName || "").toLowerCase().trim();
+                return isFaculty && (pName === facLower || pEmail === facLower);
+              }) || allPeople.find(p => {
+                const pEmail = (p.email || "").toLowerCase().trim();
+                const pRole = (p.role || p.position || "").toLowerCase();
+                const isFaculty = pRole.includes("faculty") || pEmail.startsWith("facultycoordinator@");
+                const pName = (p.name || p.displayName || "").toLowerCase().trim();
+                return isFaculty && (pName.includes(facLower) || facLower.includes(pName));
+              });
+
+              if (found) {
+                matchedFac = {
+                  name: found.name || found.displayName || facName,
+                  role: found.role || "Faculty Coordinator",
+                  position: found.position || "Faculty Coordinator",
+                  image: found.image || "",
+                  email: found.email || facEmail || "",
+                  phone: found.phone || found.phoneNumber || ""
+                };
+              } else {
+                matchedFac = {
+                  name: facName,
+                  role: "Faculty Coordinator",
+                  position: "Faculty Coordinator",
+                  image: "",
+                  email: facEmail || "",
+                  phone: ""
+                };
+              }
+            }
+
+            if (stuName || stuEmail) {
+              const stuLower = stuName.toLowerCase().trim();
+              const found = allPeople.find(p => {
+                const pEmail = (p.email || "").toLowerCase().trim();
+                if (stuEmail && pEmail === stuEmail) return true;
+                const pRole = (p.role || p.position || "").toLowerCase();
+                const isNotFaculty = !pRole.includes("faculty") && !pEmail.startsWith("facultycoordinator@");
+                const pName = (p.name || p.displayName || "").toLowerCase().trim();
+                return isNotFaculty && (pName === stuLower || pEmail === stuLower);
+              }) || allPeople.find(p => {
+                const pEmail = (p.email || "").toLowerCase().trim();
+                const pRole = (p.role || p.position || "").toLowerCase();
+                const isNotFaculty = !pRole.includes("faculty") && !pEmail.startsWith("facultycoordinator@");
+                const pName = (p.name || p.displayName || "").toLowerCase().trim();
+                return isNotFaculty && (pName.includes(stuLower) || stuLower.includes(pName));
+              });
+
+              if (found) {
+                matchedStu = {
+                  name: found.name || found.displayName || stuName,
+                  role: found.role || "Student Organizer",
+                  position: found.position || "Student Coordinator",
+                  image: found.image || "",
+                  email: found.email || stuEmail || "",
+                  phone: found.phone || found.phoneNumber || ""
+                };
+              } else {
+                matchedStu = {
+                  name: stuName,
+                  role: "Student Organizer",
+                  position: "Student Coordinator",
+                  image: "",
+                  email: stuEmail || "",
+                  phone: ""
+                };
+              }
+            }
+          } catch (err) {
+            console.warn("Notice enriching coordinator details:", err);
+          }
+
+          setFacultyProfile(matchedFac);
+          setStudentProfile(matchedStu);
+
           setEvent({
             id: docSnap.id,
             title: data.title || "",
@@ -143,12 +304,19 @@ const EventDetailsPage: React.FC = () => {
             startTime: data.startTime || "",
             endTime: data.endTime || "",
             isVirtual: data.isVirtual !== undefined ? data.isVirtual : true,
-            speakerName: data.speakerName || "Dr. Elena Vos",
-            speakerRole: data.speakerRole || "Lead Research Scientist @ AI Verse",
-            speakerBio: data.speakerBio || '"The limits of our models are the limits of our imagination. We aren\'t just building software, we are architecting thought."',
+            speakerName: data.speakerName || "",
+            speakerRole: data.speakerRole || "",
+            speakerBio: data.speakerBio || "",
             speakerLinkedin: data.speakerLinkedin || "#",
             speakerTwitter: data.speakerTwitter || "#",
             speakerImagePreview: data.speakerImagePreview || "",
+            facultyCoordinator: data.facultyCoordinator || "",
+            studentCoordinator: data.studentCoordinator || "",
+            juryName: data.juryName || "",
+            juryRole: data.juryRole || "",
+            juryBio: data.juryBio || "",
+            juryLinkedin: data.juryLinkedin || "#",
+            juryImagePreview: data.juryImagePreview || "",
             minTeamSize: data.minTeamSize || null,
             maxTeamSize: data.maxTeamSize || null,
             registrationFee: data.registrationFee !== undefined ? Number(data.registrationFee) : 0,
@@ -549,48 +717,283 @@ const EventDetailsPage: React.FC = () => {
               </div>
             )}
 
+            {/* Event Organizing Leadership & Coordinators (Main Column) */}
+            {(event.facultyCoordinator || event.studentCoordinator || facultyProfile || studentProfile) && (
+              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] space-y-6 text-left">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                    <Users className="h-4.5 w-4.5 text-blue-600" />
+                    Event Coordinators & Organizing Team
+                  </h2>
+                  <span className="text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-100 px-3 py-1 rounded-full uppercase tracking-wider">
+                    Leadership
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Faculty Coordinator Card */}
+                  {(event.facultyCoordinator || facultyProfile) && (
+                    <div className="p-5 rounded-2xl bg-gradient-to-br from-purple-50/60 via-purple-50/20 to-indigo-50/30 border border-purple-100/90 shadow-xs flex flex-col justify-between space-y-3">
+                      <div className="flex items-start gap-3.5">
+                        <div className="relative">
+                          {facultyProfile?.image ? (
+                            <img
+                              src={facultyProfile.image}
+                              alt="Faculty Coordinator"
+                              className="w-14 h-14 rounded-2xl object-cover border-2 border-purple-200 shadow-sm"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-black text-base flex items-center justify-center shadow-sm">
+                              {getInitials(facultyProfile?.name || event.facultyCoordinator || "FC")}
+                            </div>
+                          )}
+                          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-sm">
+                            <GraduationCap className="w-3 h-3" />
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[9px] font-black text-purple-700 bg-purple-100/90 border border-purple-200/70 px-2 py-0.5 rounded-md uppercase tracking-wider inline-block mb-1">
+                            Faculty Coordinator
+                          </span>
+                          <h4 className="text-sm font-black text-slate-850 truncate">
+                            {facultyProfile?.name || event.facultyCoordinator}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                            {facultyProfile?.position || "Department Coordinator"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {facultyProfile?.email && (
+                        <div className="pt-2 border-t border-purple-100/60 flex items-center gap-1.5 text-xs text-purple-700 font-semibold truncate">
+                          <Mail className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{facultyProfile.email}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Student Coordinator Card */}
+                  {(event.studentCoordinator || studentProfile) && (
+                    <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50/60 via-amber-50/20 to-orange-50/30 border border-amber-100/90 shadow-xs flex flex-col justify-between space-y-3">
+                      <div className="flex items-start gap-3.5">
+                        <div className="relative">
+                          {studentProfile?.image ? (
+                            <img
+                              src={studentProfile.image}
+                              alt="Student Coordinator"
+                              className="w-14 h-14 rounded-2xl object-cover border-2 border-amber-200 shadow-sm"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 text-white font-black text-base flex items-center justify-center shadow-sm">
+                              {getInitials(studentProfile?.name || event.studentCoordinator || "SC")}
+                            </div>
+                          )}
+                          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center shadow-sm">
+                            <Sparkles className="w-3 h-3" />
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[9px] font-black text-amber-800 bg-amber-100/90 border border-amber-200/70 px-2 py-0.5 rounded-md uppercase tracking-wider inline-block mb-1">
+                            Student Organizer
+                          </span>
+                          <h4 className="text-sm font-black text-slate-850 truncate">
+                            {studentProfile?.name || event.studentCoordinator}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                            {studentProfile?.position || "Student Lead / Organizer"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {studentProfile?.email && (
+                        <div className="pt-2 border-t border-amber-100/60 flex items-center gap-1.5 text-xs text-amber-700 font-semibold truncate">
+                          <Mail className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{studentProfile.email}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* Right Column (span 4) */}
           <div className="lg:col-span-4 space-y-6">
             
+            {/* Event Coordinators & Organizing Team (Sidebar Card) */}
+            {(event.facultyCoordinator || event.studentCoordinator || facultyProfile || studentProfile) && (
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-blue-600" />
+                  Event Coordinators
+                </h3>
+
+                <div className="space-y-3.5">
+                  {/* Faculty Coordinator Item */}
+                  {(event.facultyCoordinator || facultyProfile) && (
+                    <div className="p-3.5 rounded-2xl bg-purple-50/40 border border-purple-100/80 hover:bg-purple-50/70 transition-colors">
+                      <div className="flex items-start gap-3">
+                        <div className="relative shrink-0">
+                          {facultyProfile?.image ? (
+                            <img
+                              src={facultyProfile.image}
+                              alt="Faculty Coordinator"
+                              className="w-11 h-11 rounded-xl object-cover border border-purple-200 shadow-xs"
+                            />
+                          ) : (
+                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-700 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                              {getInitials(facultyProfile?.name || event.facultyCoordinator || "FC")}
+                            </div>
+                          )}
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-purple-600 text-white flex items-center justify-center shadow-xs" title="Faculty Coordinator">
+                            <GraduationCap className="w-2.5 h-2.5" />
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-xs font-black text-slate-850 truncate">
+                            {facultyProfile?.name || event.facultyCoordinator}
+                          </h4>
+                          <span className="inline-flex items-center gap-1 text-[9px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-md mt-1 border border-purple-200/50">
+                            <GraduationCap className="w-3 h-3" />
+                            Faculty Coordinator
+                          </span>
+                          {facultyProfile?.email && (
+                            <div className="flex items-center gap-1 text-[10px] text-slate-500 font-medium mt-1 truncate">
+                              <Mail className="w-3 h-3 text-purple-400 shrink-0" />
+                              <span className="truncate">{facultyProfile.email}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Student Coordinator Item */}
+                  {(event.studentCoordinator || studentProfile) && (
+                    <div className="p-3.5 rounded-2xl bg-amber-50/40 border border-amber-100/80 hover:bg-amber-50/70 transition-colors">
+                      <div className="flex items-start gap-3">
+                        <div className="relative shrink-0">
+                          {studentProfile?.image ? (
+                            <img
+                              src={studentProfile.image}
+                              alt="Student Coordinator"
+                              className="w-11 h-11 rounded-xl object-cover border border-amber-200 shadow-xs"
+                            />
+                          ) : (
+                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                              {getInitials(studentProfile?.name || event.studentCoordinator || "SC")}
+                            </div>
+                          )}
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-amber-600 text-white flex items-center justify-center shadow-xs" title="Student Organizer">
+                            <Sparkles className="w-2.5 h-2.5" />
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-xs font-black text-slate-850 truncate">
+                            {studentProfile?.name || event.studentCoordinator}
+                          </h4>
+                          <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md mt-1 border border-amber-200/50">
+                            <Sparkles className="w-3 h-3" />
+                            Student Organizer
+                          </span>
+                          {studentProfile?.email && (
+                            <div className="flex items-center gap-1 text-[10px] text-slate-500 font-medium mt-1 truncate">
+                              <Mail className="w-3 h-3 text-amber-500 shrink-0" />
+                              <span className="truncate">{studentProfile.email}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* 1. Meet the Speaker */}
-            <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
-              <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50">
-                Meet the Speaker
-              </h3>
-              
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-slate-100 shadow-inner">
-                  <img src={event.speakerImagePreview || elenaImg} alt="Speaker" className="w-full h-full object-cover" />
+            {event.speakerName && (
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50">
+                  Meet the Speaker
+                </h3>
+                
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-slate-100 shadow-inner">
+                    <img src={event.speakerImagePreview || elenaImg} alt="Speaker" className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-800">{event.speakerName}</h4>
+                    <span className="text-[10px] text-blue-600 font-bold block">{event.speakerRole || "Speaker & Guest"}</span>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-extrabold text-slate-800">{event.speakerName}</h4>
-                  <span className="text-[10px] text-blue-600 font-bold block">{event.speakerRole}</span>
+
+                {event.speakerBio && (
+                  <p className="text-xs text-slate-550 leading-relaxed font-semibold">
+                    {event.speakerBio}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-3.5 pt-3 border-t border-slate-50 text-slate-450">
+                  {event.speakerLinkedin && event.speakerLinkedin !== "#" && (
+                    <a href={event.speakerLinkedin} target="_blank" rel="noreferrer" className="hover:text-blue-600 transition-colors" title="LinkedIn">
+                      <svg className="h-4.5 w-4.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                      </svg>
+                    </a>
+                  )}
+                  {event.speakerTwitter && event.speakerTwitter !== "#" && (
+                    <a href={event.speakerTwitter} target="_blank" rel="noreferrer" className="hover:text-sky-500 transition-colors" title="Twitter">
+                      <svg className="h-4.5 w-4.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
+                      </svg>
+                    </a>
+                  )}
                 </div>
               </div>
+            )}
 
-              <p className="text-xs text-slate-550 leading-relaxed font-semibold">
-                {event.speakerBio}
-              </p>
+            {/* Meet the Jury */}
+            {event.juryName && (
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50 flex items-center gap-2">
+                  <Award className="w-4 h-4 text-indigo-600" />
+                  Meet the Jury
+                </h3>
+                
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-slate-100 shadow-inner">
+                    <img src={event.juryImagePreview || elenaImg} alt="Jury" className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-800">{event.juryName}</h4>
+                    <span className="text-[10px] text-indigo-600 font-bold block">{event.juryRole || "Grand Jury Evaluator"}</span>
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-3.5 pt-3 border-t border-slate-50 text-slate-450">
-                {event.speakerLinkedin && event.speakerLinkedin !== "#" && (
-                  <a href={event.speakerLinkedin} target="_blank" rel="noreferrer" className="hover:text-blue-600 transition-colors" title="LinkedIn">
-                    <svg className="h-4.5 w-4.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                    </svg>
-                  </a>
+                {event.juryBio && (
+                  <p className="text-xs text-slate-550 leading-relaxed font-semibold">
+                    {event.juryBio}
+                  </p>
                 )}
-                {event.speakerTwitter && event.speakerTwitter !== "#" && (
-                  <a href={event.speakerTwitter} target="_blank" rel="noreferrer" className="hover:text-sky-500 transition-colors" title="Twitter">
-                    <svg className="h-4.5 w-4.5 fill-current" viewBox="0 0 24 24">
-                      <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
-                    </svg>
-                  </a>
+
+                {event.juryLinkedin && event.juryLinkedin !== "#" && (
+                  <div className="flex items-center gap-3.5 pt-3 border-t border-slate-50 text-slate-450">
+                    <a href={event.juryLinkedin} target="_blank" rel="noreferrer" className="hover:text-blue-600 transition-colors" title="LinkedIn">
+                      <svg className="h-4.5 w-4.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                      </svg>
+                    </a>
+                  </div>
                 )}
               </div>
-            </div>
+            )}
 
             {/* 2. Venue */}
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">

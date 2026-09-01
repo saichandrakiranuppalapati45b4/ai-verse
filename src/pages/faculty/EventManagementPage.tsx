@@ -92,64 +92,187 @@ const EventManagementPage: React.FC = () => {
   const paymentQrFileInputRef = React.useRef<HTMLInputElement>(null);
   const ticketBgFileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleTicketBgFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Client-side image compression utility to keep Firestore documents well below the 1MB limit
+  const compressImageFile = (
+    file: File,
+    maxWidth = 1200,
+    maxHeight = 1200,
+    quality = 0.75
+  ): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!file) {
+        resolve("");
+        return;
+      }
+      if (file.type === "image/svg+xml") {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string) || "");
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth || height > maxHeight) {
+            if (width / maxWidth > height / maxHeight) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            } else {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          canvas.width = Math.max(1, width);
+          canvas.height = Math.max(1, height);
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const compressedDataUrl = canvas.toDataURL("image/jpeg", quality);
+            resolve(compressedDataUrl);
+          } else {
+            resolve((e.target?.result as string) || "");
+          }
+        };
+        img.onerror = () => resolve((e.target?.result as string) || "");
+        img.src = (e.target?.result as string) || "";
+      };
+      reader.onerror = () => resolve("");
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const compressBase64String = (
+    dataUrl: string,
+    maxWidth = 1200,
+    maxHeight = 1200,
+    quality = 0.75
+  ): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!dataUrl || !dataUrl.startsWith("data:image")) {
+        resolve(dataUrl || "");
+        return;
+      }
+      if (dataUrl.length < 100000) {
+        resolve(dataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width / maxWidth > height / maxHeight) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } else {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
+  const handleTicketBgFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setFormTicketBgFilename(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormTicketBgPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImageFile(file, 1200, 1200, 0.75);
+        setFormTicketBgPreview(compressed);
+      } catch {
+        const reader = new FileReader();
+        reader.onloadend = () => setFormTicketBgPreview(reader.result as string);
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  const handlePaymentQrFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePaymentQrFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setFormPaymentQrImageFilename(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormPaymentQrImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImageFile(file, 600, 600, 0.8);
+        setFormPaymentQrImagePreview(compressed);
+      } catch {
+        const reader = new FileReader();
+        reader.onloadend = () => setFormPaymentQrImagePreview(reader.result as string);
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  const handleSpeakerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSpeakerFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setFormSpeakerImageFilename(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormSpeakerImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImageFile(file, 400, 400, 0.75);
+        setFormSpeakerImagePreview(compressed);
+      } catch {
+        const reader = new FileReader();
+        reader.onloadend = () => setFormSpeakerImagePreview(reader.result as string);
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  const handleJuryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleJuryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setFormJuryImageFilename(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormJuryImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImageFile(file, 400, 400, 0.75);
+        setFormJuryImagePreview(compressed);
+      } catch {
+        const reader = new FileReader();
+        reader.onloadend = () => setFormJuryImagePreview(reader.result as string);
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      Array.from(files).forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setFormPosterImages(prev => [...prev, { filename: file.name, preview: reader.result as string }]);
-        };
-        reader.readAsDataURL(file);
-      });
+      for (const file of Array.from(files)) {
+        try {
+          const compressed = await compressImageFile(file, 1200, 1200, 0.75);
+          setFormPosterImages(prev => [...prev, { filename: file.name, preview: compressed }]);
+        } catch {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setFormPosterImages(prev => [...prev, { filename: file.name, preview: reader.result as string }]);
+          };
+          reader.readAsDataURL(file);
+        }
+      }
     }
   };
 
@@ -1766,7 +1889,9 @@ const EventManagementPage: React.FC = () => {
   const [formPosterImages, setFormPosterImages] = useState<{ filename: string, preview: string }[]>([]);
   const [formWhatsGroupLink, setFormWhatsGroupLink] = useState("");
   const [formFacultyCoordinator, setFormFacultyCoordinator] = useState("");
+  const [formFacultyCoordinatorEmail, setFormFacultyCoordinatorEmail] = useState("");
   const [formStudentCoordinator, setFormStudentCoordinator] = useState("");
+  const [formStudentCoordinatorEmail, setFormStudentCoordinatorEmail] = useState("");
 
   const [formJuryName, setFormJuryName] = useState("");
   const [formJuryRole, setFormJuryRole] = useState("");
@@ -1968,6 +2093,20 @@ const EventManagementPage: React.FC = () => {
       }
     }
 
+    // Compress any large preview strings to guarantee document stays under 100KB - 200KB
+    const safePosterPreview = await compressBase64String(formPosterImages[0]?.preview || "", 1200, 1200, 0.75);
+    const safeTicketBgPreview = await compressBase64String(formTicketBgPreview, 1200, 1200, 0.75);
+    const safeSpeakerPreview = await compressBase64String(formSpeakerImagePreview, 400, 400, 0.75);
+    const safeJuryPreview = await compressBase64String(formJuryImagePreview, 400, 400, 0.75);
+    const safePaymentQrPreview = await compressBase64String(formPaymentQrImagePreview, 600, 600, 0.8);
+
+    const safePosterImages = await Promise.all(
+      formPosterImages.slice(0, 3).map(async (img) => ({
+        filename: img.filename,
+        preview: await compressBase64String(img.preview, 1200, 1200, 0.75)
+      }))
+    );
+
     const payload = {
       title: formTitle,
       date: displayDate,
@@ -1986,8 +2125,8 @@ const EventManagementPage: React.FC = () => {
       regDeadline: formRegDeadline,
       enableWaitlist: formEnableWaitlist,
       posterFilename: formPosterImages[0]?.filename || "",
-      posterPreview: formPosterImages[0]?.preview || "",
-      posterImages: formPosterImages,
+      posterPreview: safePosterPreview,
+      posterImages: safePosterImages,
       visibility: formVisibility,
       isFeatured: formIsFeatured,
       sendEmail: formSendEmail,
@@ -1995,7 +2134,7 @@ const EventManagementPage: React.FC = () => {
       speakerRole: formSpeakerRole,
       speakerBio: formSpeakerBio,
       speakerLinkedin: formSpeakerLinkedin,
-      speakerImagePreview: formSpeakerImagePreview,
+      speakerImagePreview: safeSpeakerPreview,
       hasAgenda: formHasAgenda,
       agendaItems: formHasAgenda ? formAgendaItems : [],
       agendaTime1: formAgendaItems[0]?.time || "",
@@ -2014,27 +2153,29 @@ const EventManagementPage: React.FC = () => {
       pricingModel: formIsPaidEvent ? formPricingType : "per_person",
       registrationFee: formIsPaidEvent && formRegistrationFee ? Number(formRegistrationFee) : 0,
       paymentQrImageFilename: formIsPaidEvent ? formPaymentQrImageFilename : "",
-      paymentQrImagePreview: formIsPaidEvent ? formPaymentQrImagePreview : "",
-      paymentQr: formIsPaidEvent ? formPaymentQrImagePreview : "",
+      paymentQrImagePreview: formIsPaidEvent ? safePaymentQrPreview : "",
+      paymentQr: formIsPaidEvent ? safePaymentQrPreview : "",
       upiId: formIsPaidEvent ? formUpiId.trim() : "",
       status: formStatus,
       whatsGroupLink: formWhatsGroupLink,
       facultyCoordinator: formFacultyCoordinator,
+      facultyCoordinatorEmail: formFacultyCoordinatorEmail,
       studentCoordinator: formStudentCoordinator,
+      studentCoordinatorEmail: formStudentCoordinatorEmail,
       juryName: formJuryName,
       juryRole: formJuryRole,
       juryBio: formJuryBio,
       juryLinkedin: formJuryLinkedin,
       jurySameAsSpeaker: formJurySameAsSpeaker,
       juryImageFilename: formJuryImageFilename,
-      juryImagePreview: formJuryImagePreview,
+      juryImagePreview: safeJuryPreview,
       company: formCategory === "Alumni Meetup" ? formCompany : "",
       batch: formCategory === "Alumni Meetup" ? formBatch : "",
       customRegLink: formCategory !== "Hackathon" ? formCustomRegLink : "",
       regType: formCategory !== "Hackathon" ? formRegType : "Open",
       preRegisteredEmails: formCategory !== "Hackathon" ? formPreRegisteredEmails : "",
       bulkRegCsvFilename: formCategory !== "Hackathon" ? bulkRegCsvFilename : "",
-      bulkRegCsvData: formCategory !== "Hackathon" ? bulkRegCsvData : [],
+      bulkRegCsvCount: (formCategory !== "Hackathon" && bulkRegCsvData) ? bulkRegCsvData.length : 0,
       isPastEvent: formIsPastEvent,
       allowRegistrations: formAllowRegistrations,
       allowLoginAccess: formAllowLoginAccess,
@@ -2047,7 +2188,7 @@ const EventManagementPage: React.FC = () => {
       currentRound: formCurrentRound,
       rounds: formRounds,
       ticketDesign: {
-        bgPreview: formTicketBgPreview,
+        bgPreview: safeTicketBgPreview,
         bgFilename: formTicketBgFilename,
         qrPosition: formTicketQrPosition,
         qrX: formTicketQrX,
@@ -2179,7 +2320,9 @@ const EventManagementPage: React.FC = () => {
       setFormUpiId("");
       setFormWhatsGroupLink("");
       setFormFacultyCoordinator("");
+      setFormFacultyCoordinatorEmail("");
       setFormStudentCoordinator("");
+      setFormStudentCoordinatorEmail("");
       setFormJuryName("");
       setFormJuryRole("");
       setFormJuryBio("");
@@ -2325,7 +2468,9 @@ const EventManagementPage: React.FC = () => {
         setFormUpiId(data.upiId || "");
         setFormWhatsGroupLink(data.whatsGroupLink || "");
         setFormFacultyCoordinator(data.facultyCoordinator || "");
+        setFormFacultyCoordinatorEmail(data.facultyCoordinatorEmail || "");
         setFormStudentCoordinator(data.studentCoordinator || "");
+        setFormStudentCoordinatorEmail(data.studentCoordinatorEmail || "");
         setFormJuryName(data.juryName || "");
         setFormJuryRole(data.juryRole || "");
         setFormJuryBio(data.juryBio || "");
@@ -2496,6 +2641,10 @@ const EventManagementPage: React.FC = () => {
                   setFormJurySameAsSpeaker(false);
                   setFormJuryImageFilename("");
                   setFormJuryImagePreview("");
+                  setFormFacultyCoordinator("");
+                  setFormFacultyCoordinatorEmail("");
+                  setFormStudentCoordinator("");
+                  setFormStudentCoordinatorEmail("");
                   setFormCompany("");
                   setFormBatch("");
                   setFormIsPastEvent(false);
@@ -3401,8 +3550,11 @@ const EventManagementPage: React.FC = () => {
                     <div>
                       <MemberSelectCombobox
                         label="Coordinator Name"
-                        value={formFacultyCoordinator}
-                        onChange={(val) => setFormFacultyCoordinator(val)}
+                        value={formFacultyCoordinatorEmail || formFacultyCoordinator}
+                        onChange={(val, user) => {
+                          setFormFacultyCoordinator(user?.name || user?.displayName || val);
+                          setFormFacultyCoordinatorEmail(user?.email || "");
+                        }}
                         users={allUsers}
                         placeholder="Search or select Faculty Coordinator..."
                         themeColor="purple"
@@ -3439,8 +3591,11 @@ const EventManagementPage: React.FC = () => {
                     <div>
                       <MemberSelectCombobox
                         label="Coordinator Name"
-                        value={formStudentCoordinator}
-                        onChange={(val) => setFormStudentCoordinator(val)}
+                        value={formStudentCoordinatorEmail || formStudentCoordinator}
+                        onChange={(val, user) => {
+                          setFormStudentCoordinator(user?.name || user?.displayName || val);
+                          setFormStudentCoordinatorEmail(user?.email || "");
+                        }}
                         users={allUsers}
                         placeholder="Search or select Student Coordinator..."
                         themeColor="orange"
@@ -3807,53 +3962,78 @@ const EventManagementPage: React.FC = () => {
                       </span>
                     </div>
 
-                    {/* Interactive Canvas Box */}
-                    <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/95 border border-slate-800 flex justify-center items-center overflow-hidden">
+                    {/* Interactive Ticket Preview (Clean display with no outer dark box) */}
+                    <div className="flex justify-center items-center py-2">
                       <div
-                        onClick={(e) => {
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const clickX = e.clientX - rect.left;
-                          const clickY = e.clientY - rect.top;
-                          const pctX = Math.round(Math.max(8, Math.min(92, (clickX / rect.width) * 100)));
-                          const pctY = Math.round(Math.max(8, Math.min(92, (clickY / rect.height) * 100)));
-                          setFormTicketQrX(pctX);
-                          setFormTicketQrY(pctY);
-                          setFormTicketQrPosition("custom");
+                        onMouseDown={(e) => {
+                          const container = e.currentTarget;
+                          const updatePos = (clientX: number, clientY: number) => {
+                            const rect = container.getBoundingClientRect();
+                            if (rect.width === 0 || rect.height === 0) return;
+                            const clickX = clientX - rect.left;
+                            const clickY = clientY - rect.top;
+                            const pctX = Math.round(Math.max(5, Math.min(95, (clickX / rect.width) * 100)));
+                            const pctY = Math.round(Math.max(5, Math.min(95, (clickY / rect.height) * 100)));
+                            setFormTicketQrX(pctX);
+                            setFormTicketQrY(pctY);
+                            setFormTicketQrPosition("custom");
+                          };
+
+                          updatePos(e.clientX, e.clientY);
+
+                          const handleMouseMove = (moveEvt: MouseEvent) => {
+                            updatePos(moveEvt.clientX, moveEvt.clientY);
+                          };
+
+                          const handleMouseUp = () => {
+                            window.removeEventListener("mousemove", handleMouseMove);
+                            window.removeEventListener("mouseup", handleMouseUp);
+                          };
+
+                          window.addEventListener("mousemove", handleMouseMove);
+                          window.addEventListener("mouseup", handleMouseUp);
                         }}
-                        className="relative w-full max-w-[420px] rounded-2xl overflow-hidden shadow-2xl cursor-crosshair group select-none border border-slate-700 bg-slate-800"
-                        style={{
-                          aspectRatio: formTicketBgPreview ? undefined : "16/9",
-                          minHeight: "260px"
+                        onTouchStart={(e) => {
+                          const container = e.currentTarget;
+                          const updatePos = (clientX: number, clientY: number) => {
+                            const rect = container.getBoundingClientRect();
+                            if (rect.width === 0 || rect.height === 0) return;
+                            const clickX = clientX - rect.left;
+                            const clickY = clientY - rect.top;
+                            const pctX = Math.round(Math.max(5, Math.min(95, (clickX / rect.width) * 100)));
+                            const pctY = Math.round(Math.max(5, Math.min(95, (clickY / rect.height) * 100)));
+                            setFormTicketQrX(pctX);
+                            setFormTicketQrY(pctY);
+                            setFormTicketQrPosition("custom");
+                          };
+
+                          if (e.touches.length > 0) {
+                            updatePos(e.touches[0].clientX, e.touches[0].clientY);
+                          }
+
+                          const handleTouchMove = (moveEvt: TouchEvent) => {
+                            if (moveEvt.touches.length > 0) {
+                              updatePos(moveEvt.touches[0].clientX, moveEvt.touches[0].clientY);
+                            }
+                          };
+
+                          const handleTouchEnd = () => {
+                            window.removeEventListener("touchmove", handleTouchMove);
+                            window.removeEventListener("touchend", handleTouchEnd);
+                          };
+
+                          window.addEventListener("touchmove", handleTouchMove);
+                          window.addEventListener("touchend", handleTouchEnd);
                         }}
+                        className="relative rounded-2xl overflow-hidden shadow-xl border border-slate-200 cursor-crosshair select-none w-fit max-w-full inline-block group"
                       >
                         {/* Background Template Image */}
-                        {formTicketBgPreview ? (
+                        {formTicketBgPreview && (
                           <img
                             src={formTicketBgPreview}
                             alt="Ticket Template"
-                            className="w-full h-auto object-contain block pointer-events-none"
+                            className="w-full max-w-2xl h-auto object-contain block pointer-events-none rounded-2xl"
                           />
-                        ) : (
-                          <div className="w-full h-[280px] bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 p-6 flex flex-col justify-between text-white border-2 border-dashed border-indigo-500/40 pointer-events-none">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block">AI Verse 2026</span>
-                                <h4 className="text-lg font-black">{formTitle || "Official Event Pass"}</h4>
-                              </div>
-                              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-300 text-[9px] font-bold border border-indigo-400/40">
-                                ALL ACCESS
-                              </span>
-                            </div>
-                            <div className="text-center py-4">
-                              <span className="text-xs font-bold text-slate-400">
-                                (Upload your JPG or PNG ticket image above)
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-[10px] text-slate-400">
-                              <span>TEAM ID: AV-89210</span>
-                              <span>ADMIT ONE</span>
-                            </div>
-                          </div>
                         )}
 
                         {/* Drag/Click Dynamic QR Code Placeholder */}
@@ -3864,7 +4044,7 @@ const EventManagementPage: React.FC = () => {
                             width: `${formTicketQrWidthPercent}%`,
                             transform: "translate(-50%, -50%)"
                           }}
-                          className={`absolute z-20 aspect-square rounded-xl flex flex-col items-center justify-center p-1.5 transition-transform hover:scale-105 shadow-2xl ${
+                          className={`absolute z-20 aspect-square rounded-xl flex flex-col items-center justify-center p-1.5 transition-transform shadow-2xl pointer-events-none ${
                             formTicketQrBg === "white"
                               ? "bg-white border-2 border-blue-500 shadow-blue-500/30"
                               : formTicketQrBg === "glow"
