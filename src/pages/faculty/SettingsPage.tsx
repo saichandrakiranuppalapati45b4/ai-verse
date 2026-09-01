@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import SEO from "../../components/layout/SEO";
 import Button from "../../components/ui/Button";
 import { db } from "../../config/firebase";
+import { supabase } from "../../config/supabase";
+import { useAuth } from "../../context/AuthContext";
 import { doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
 import { 
   Globe, 
@@ -20,7 +22,11 @@ import {
   Settings2,
   FileArchive,
   ChevronDown,
-  Award
+  Award,
+  Eye,
+  EyeOff,
+  Key,
+  ShieldCheck
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -116,6 +122,15 @@ const SettingsPage: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   
+  // Authentication & Password Change State
+  const { user, updateUserPassword } = useAuth();
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+
   // Modals state
   const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
@@ -131,6 +146,70 @@ const SettingsPage: React.FC = () => {
     setTimeout(() => {
       setToastQueue(prev => prev.filter(t => t.id !== id));
     }, 4000);
+  };
+
+  // Password update handler for Super Admin
+  const handleUpdatePassword = async () => {
+    setPasswordError("");
+
+    if (!newPassword) {
+      setPasswordError("Please enter a new password.");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters long.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match. Please re-check.");
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      // 1. Update through AuthContext helper
+      if (updateUserPassword) {
+        await updateUserPassword(newPassword);
+      }
+
+      // 2. Direct Supabase Auth update
+      try {
+        await supabase.auth.updateUser({ password: newPassword });
+      } catch (err) {
+        console.warn("Supabase auth direct password update:", err);
+      }
+
+      // 3. Update Firestore users collection for the admin email
+      const adminEmail = (user?.email || "admin@aiverse.in").toLowerCase().trim();
+      const docId = adminEmail.replace(/[^a-z0-9]/g, '_');
+      await setDoc(doc(db, "users", docId), {
+        password: newPassword,
+        requiresPasswordChange: false,
+        updatedAt: Date.now()
+      }, { merge: true });
+
+      // Also update mock user in localStorage
+      const savedUserStr = localStorage.getItem("aether_mock_user");
+      if (savedUserStr) {
+        try {
+          const u = JSON.parse(savedUserStr);
+          u.requiresPasswordChange = false;
+          localStorage.setItem("aether_mock_user", JSON.stringify(u));
+        } catch (e) {}
+      }
+
+      setNewPassword("");
+      setConfirmPassword("");
+      addToast("Super Admin password updated successfully!", "success");
+    } catch (err: any) {
+      console.error("Error updating password:", err);
+      setPasswordError(err?.message || "Failed to update password. Please try again.");
+      addToast(err?.message || "Failed to update password.", "error");
+    } finally {
+      setIsUpdatingPassword(false);
+    }
   };
 
   // Fetch settings from Firestore on mount
@@ -338,7 +417,7 @@ const SettingsPage: React.FC = () => {
       </div>
 
       {/* Main Grid: Portal Configuration (Two Columns) */}
-      <form onSubmit={(e) => { e.preventDefault(); handleSaveConfig(); }} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* LEFT COLUMN: General, Operations, Notifications (7 / 12) */}
         <div className="lg:col-span-7 space-y-6">
@@ -816,6 +895,133 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Card: Super Admin Security & Password Change */}
+          <div className="bg-white p-6 rounded-card border border-slate-100 shadow-card text-left space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Key className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-800">Change Password</h2>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                    Update security credentials for your administrator account.
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-600 border border-indigo-100">
+                <ShieldCheck className="w-3 h-3" />
+                {user?.role === "faculty" ? "Super Admin" : "Admin"}
+              </span>
+            </div>
+
+            <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-100 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Admin Account</span>
+                <span className="text-xs font-bold text-slate-800 truncate block">{user?.email || "admin@aiverse.in"}</span>
+              </div>
+              <span className="text-[10px] font-semibold text-slate-500 bg-white px-2.5 py-1 rounded-lg border border-slate-200/60 shadow-2xs">
+                Active
+              </span>
+            </div>
+
+            {passwordError && (
+              <div className="p-3 bg-red-50 border border-red-200/80 rounded-xl flex items-center gap-2 text-xs font-bold text-red-700 animate-in fade-in duration-200">
+                <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
+                <span>{passwordError}</span>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {/* New Password Input */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      setPasswordError("");
+                    }}
+                    placeholder="Enter at least 6 characters"
+                    className="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 bg-slate-50/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password Input */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      setPasswordError("");
+                    }}
+                    placeholder="Re-enter your new password"
+                    className="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 bg-slate-50/40 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Password Match Status helper */}
+              {newPassword && confirmPassword && (
+                <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                  {newPassword === confirmPassword ? (
+                    <span className="text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Passwords match
+                    </span>
+                  ) : (
+                    <span className="text-rose-500 flex items-center gap-1">
+                      <AlertCircle className="h-3.5 w-3.5" /> Passwords do not match
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Update Password Button */}
+              <button
+                type="button"
+                onClick={handleUpdatePassword}
+                disabled={isUpdatingPassword || !newPassword || !confirmPassword}
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs rounded-xl shadow-md shadow-indigo-600/20 hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+              >
+                {isUpdatingPassword ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Updating Password...</span>
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-3.5 w-3.5" />
+                    <span>Update Super Admin Password</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
           {/* Card 5: Social Ecosystem */}
           <div className="bg-white p-6 rounded-card border border-slate-100 shadow-card text-left space-y-5">
             <div className="flex items-center gap-3 border-b border-slate-50 pb-3">
@@ -929,7 +1135,7 @@ const SettingsPage: React.FC = () => {
 
         </div>
 
-      </form>
+      </div>
 
       {/* FOOTER ACTIONS BAR */}
       <div className="border-t border-slate-200 pt-6 mt-6 flex flex-col sm:flex-row items-center justify-end gap-3.5">

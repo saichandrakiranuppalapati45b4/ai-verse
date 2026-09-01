@@ -279,55 +279,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const login = async (email: string, roleOrPassword: string) => {
+  const login = async (email: string, passwordInput: string) => {
     setLoading(true);
     const cleanEmail = email.toLowerCase().trim();
+    const cleanPassword = passwordInput ? passwordInput.trim() : "";
+
+    if (!cleanEmail || !cleanPassword) {
+      setLoading(false);
+      throw new Error("Please enter both email and password.");
+    }
 
     try {
-      const isMockRole = ["faculty", "organizer", "member", "jury", "participant"].includes(roleOrPassword);
-      if (isMockRole) {
-        // Developer Quick Login for testing
-        let role: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty";
-        let displayRole = "Super Admin";
-        let name = "System Admin";
-
-        if (cleanEmail === "facultycoordinator@aiverse.in") {
-          role = "faculty";
-          displayRole = "Faculty Coordinator";
-          name = "Faculty Coordinator";
-        } else if (cleanEmail === "studentorganizer@aiverse.in") {
-          role = "organizer";
-          displayRole = "Student Organizer";
-          name = "Student Organizer";
-        } else if (cleanEmail === "jury@aiverse.in" || cleanEmail === "jurry@aiverse.in") {
-          role = "jury";
-          displayRole = "Jury Evaluator";
-          name = "Jury Panelist";
-        } else if (cleanEmail === "participant@aiverse.in" || roleOrPassword === "participant") {
-          role = "participant";
-          displayRole = "Participant";
-          name = "Alex Rivera";
-        }
-
-        const mockUser: UserProfile = {
-          uid: `mock-uid-${cleanEmail}`,
-          email: cleanEmail,
-          name,
-          role,
-          displayRole,
-          requiresPasswordChange: true
-        };
-        setUser(mockUser);
-        localStorage.setItem("aether_mock_user", JSON.stringify(mockUser));
-        setLoading(false);
-        return;
-      }
-
       // 1. Try Supabase Auth sign in
       try {
         const { data: supaAuthData, error: supaAuthError } = await supabase.auth.signInWithPassword({
           email: cleanEmail,
-          password: roleOrPassword
+          password: cleanPassword
         });
         if (!supaAuthError && supaAuthData.user) {
           const supaUserRecord = await userService.getUserByEmail(cleanEmail);
@@ -353,35 +320,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log("[AuthContext] Supabase Auth sign-in notice:", supaErr);
       }
 
-      // 2. Try Supabase users table lookup
-      try {
-        const supaUserRecord = await userService.getUserByEmail(cleanEmail);
-        if (supaUserRecord) {
-          const rawRole = supaUserRecord.role || "faculty";
-          const role = normalizeRole(rawRole, "faculty");
-          const customUser: UserProfile = {
-            uid: supaUserRecord.id,
-            email: cleanEmail,
-            name: supaUserRecord.name || supaUserRecord.display_name || cleanEmail.split("@")[0],
-            role,
-            displayRole: supaUserRecord.position || (role === "faculty" ? "Super Admin" : role),
-            requiresPasswordChange: false,
-            teamName: supaUserRecord.team_name || undefined,
-            eventTitle: supaUserRecord.event_title || undefined,
-            registrationId: supaUserRecord.registration_id || undefined
-          };
-          setUser(customUser);
-          localStorage.setItem("aether_mock_user", JSON.stringify(customUser));
-          setLoading(false);
-          return;
-        }
-      } catch (supaProfileErr) {
-        console.log("[AuthContext] Supabase profile lookup notice:", supaProfileErr);
-      }
-
-      // 3. Query Firestore users collection for legacy participant credentials
-
-      // 4. Query Firestore `users` collection for participant credentials (e.g. alphaa_aiverse_in)
+      // 2. Query Firestore `users` collection for credentials
       const docId = cleanEmail.replace(/[^a-z0-9]/g, '_');
       const userDocRef = doc(db, "users", docId);
       const userSnap = await getDoc(userDocRef);
@@ -392,25 +331,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (userSnap.exists()) {
         foundDocData = userSnap.data();
       } else {
-        // Fallback query where email == cleanEmail
-        const q = query(collection(db, "users"), where("email", "==", cleanEmail));
-        const querySnap = await getDocs(q);
-        if (!querySnap.empty) {
-          foundDocData = querySnap.docs[0].data();
-          foundDocId = querySnap.docs[0].id;
+        // Direct ID check
+        const directSnap = await getDoc(doc(db, "users", cleanEmail));
+        if (directSnap.exists()) {
+          foundDocData = directSnap.data();
+          foundDocId = cleanEmail;
+        } else {
+          // Fallback query where email == cleanEmail
+          const q = query(collection(db, "users"), where("email", "==", cleanEmail));
+          const querySnap = await getDocs(q);
+          if (!querySnap.empty) {
+            foundDocData = querySnap.docs[0].data();
+            foundDocId = querySnap.docs[0].id;
+          }
         }
       }
 
+      const DEFAULT_ADMIN_PASSWORDS = ["password123", "admin123", "aiverse123", "aiverse@123"];
+      const PREDEFINED_EMAILS = [
+        "admin@aiverse.in",
+        "facultycoordinator@aiverse.in",
+        "studentorganizer@aiverse.in",
+        "jury@aiverse.in",
+        "jurry@aiverse.in",
+        "participant@aiverse.in"
+      ];
+
       if (foundDocData) {
-        // Verify password if present in Firestore document
-        if (foundDocData.password && foundDocData.password !== roleOrPassword) {
-          setLoading(false);
-          throw new Error("Invalid password. Please check your credentials.");
+        // Document exists in Firestore
+        if (foundDocData.password) {
+          // Stored password exists — MUST MATCH EXACTLY
+          if (foundDocData.password !== cleanPassword) {
+            setLoading(false);
+            throw new Error("Invalid password. Please check your credentials.");
+          }
+        } else {
+          // Document exists but no password field set yet
+          if (PREDEFINED_EMAILS.includes(cleanEmail)) {
+            if (!DEFAULT_ADMIN_PASSWORDS.includes(cleanPassword)) {
+              setLoading(false);
+              throw new Error("Invalid password. Please check your credentials.");
+            }
+            // Save initial password into Firestore
+            await setDoc(doc(db, "users", foundDocId), { 
+              password: cleanPassword,
+              updatedAt: Date.now() 
+            }, { merge: true });
+          } else {
+            setLoading(false);
+            throw new Error("Invalid password. Please check your credentials.");
+          }
         }
 
-        const role = (foundDocData.role as "faculty" | "organizer" | "member" | "jury" | "participant") || "participant";
-        const name = foundDocData.teamLeadName || foundDocData.name || foundDocData.teamName || cleanEmail.split('@')[0];
-        const displayRole = role === "participant" ? "Participant" : (foundDocData.displayRole || role);
+        const rawRole = foundDocData.role || (cleanEmail.includes("organizer") ? "organizer" : (cleanEmail.includes("jury") ? "jury" : (cleanEmail.includes("participant") ? "participant" : "faculty")));
+        const role = normalizeRole(rawRole, "faculty");
+        const name = foundDocData.name || foundDocData.displayName || foundDocData.teamLeadName || cleanEmail.split('@')[0];
+        const displayRole = foundDocData.displayRole || (role === "faculty" ? "Super Admin" : role);
 
         const customUser: UserProfile = {
           uid: foundDocId,
@@ -418,7 +394,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           name,
           role,
           displayRole,
-          requiresPasswordChange: foundDocData.requiresPasswordChange !== false,
+          requiresPasswordChange: foundDocData.requiresPasswordChange === true,
           teamName: foundDocData.teamName,
           eventTitle: foundDocData.eventTitle,
           registrationId: foundDocData.registrationId
@@ -426,6 +402,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setUser(customUser);
         localStorage.setItem("aether_mock_user", JSON.stringify(customUser));
+        setLoading(false);
+        return;
+      }
+
+      // If document does NOT exist in Firestore yet:
+      if (PREDEFINED_EMAILS.includes(cleanEmail)) {
+        if (!DEFAULT_ADMIN_PASSWORDS.includes(cleanPassword)) {
+          setLoading(false);
+          throw new Error("Invalid password. Please check your credentials.");
+        }
+
+        let role: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty";
+        let displayRole = "Super Admin";
+        let name = "Super Admin";
+
+        if (cleanEmail === "facultycoordinator@aiverse.in") {
+          role = "faculty";
+          displayRole = "Faculty Coordinator";
+          name = "Faculty Coordinator";
+        } else if (cleanEmail === "studentorganizer@aiverse.in") {
+          role = "organizer";
+          displayRole = "Student Organizer";
+          name = "Student Organizer";
+        } else if (cleanEmail === "jury@aiverse.in" || cleanEmail === "jurry@aiverse.in") {
+          role = "jury";
+          displayRole = "Jury Evaluator";
+          name = "Jury Panelist";
+        } else if (cleanEmail === "participant@aiverse.in") {
+          role = "participant";
+          displayRole = "Participant";
+          name = "Participant User";
+        }
+
+        const newUserProfile: UserProfile = {
+          uid: docId,
+          email: cleanEmail,
+          name,
+          role,
+          displayRole,
+          requiresPasswordChange: false
+        };
+
+        // Create the user document with the validated password in Firestore
+        await setDoc(doc(db, "users", docId), {
+          uid: docId,
+          email: cleanEmail,
+          name,
+          role,
+          displayRole,
+          password: cleanPassword,
+          status: "Active",
+          requiresPasswordChange: false,
+          createdAt: Date.now()
+        });
+
+        setUser(newUserProfile);
+        localStorage.setItem("aether_mock_user", JSON.stringify(newUserProfile));
         setLoading(false);
         return;
       }

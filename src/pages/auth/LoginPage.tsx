@@ -19,41 +19,28 @@ const LoginPage: React.FC = () => {
 
   const navigate = useNavigate();
 
-  const ALLOWED_ACCOUNTS = [
-    { email: "admin@aiverse.in", label: "Full Admin", role: "faculty", target: "/faculty/dashboard" },
-    { email: "facultycoordinator@aiverse.in", label: "Faculty Coordinator", role: "faculty", target: "/faculty/dashboard" },
-    { email: "studentorganizer@aiverse.in", label: "Student Organizer", role: "organizer", target: "/organizer/attendance" },
-    { email: "jury@aiverse.in", label: "Jury Evaluator", role: "jury", target: "/jury" },
-    { email: "jurry@aiverse.in", label: "Jury Evaluator", role: "jury", target: "/jury" },
-    { email: "participant@aiverse.in", label: "Participant Portal", role: "participant", target: "/participant/set-password" },
-  ];
-
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) {
-      setError("Please enter email address");
+    if (!email.trim()) {
+      setError("Please enter your email address.");
+      return;
+    }
+
+    if (!password) {
+      setError("Please enter your password.");
       return;
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const matchedAccount = ALLOWED_ACCOUNTS.find(acc => acc.email === cleanEmail);
-
     setIsLoading(true);
     setError("");
 
     try {
-      if (password) {
-        await login(cleanEmail, password);
-      } else if (matchedAccount) {
-        await login(cleanEmail, matchedAccount.role);
-      } else {
-        // Default quick-login attempt as participant if no password provided
-        await login(cleanEmail, "participant");
-      }
+      await login(cleanEmail, password);
       
       // Check user session for destination
       const savedUserStr = localStorage.getItem("aether_mock_user");
-      let activeRole = matchedAccount?.role || "participant";
+      let activeRole = "faculty";
       if (savedUserStr) {
         try {
           const parsed = JSON.parse(savedUserStr);
@@ -151,6 +138,7 @@ const LoginPage: React.FC = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full pl-11 pr-11 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-aether-blue-500/20 focus:border-aether-blue-500 transition-all font-sans text-sm text-slate-800 placeholder-slate-400"
+                required
               />
               <button
                 type="button"
