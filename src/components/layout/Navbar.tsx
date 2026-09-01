@@ -46,7 +46,7 @@ export const Navbar: React.FC = () => {
       return "/faculty/dashboard";
     }
     if (r === "organizer" || String(r).toLowerCase().includes("organizer")) {
-      return "/organizer/dashboard";
+      return "/organizer/attendance";
     }
     if (r === "jury") return "/jury";
     if (r === "participant") return "/participant/dashboard";

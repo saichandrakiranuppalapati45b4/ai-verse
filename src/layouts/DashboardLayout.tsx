@@ -28,6 +28,8 @@ const DashboardLayout: React.FC = () => {
 
   if (!user) return null;
 
+  const isOrganizer = user.role === "organizer";
+
   const handleLogout = async () => {
     await logout();
     navigate("/login");
@@ -36,10 +38,6 @@ const DashboardLayout: React.FC = () => {
   let menuItems = user.role === "participant" ? [
     { path: "/participant/dashboard", label: "Participant Portal", icon: LayoutDashboard },
     { path: "/participant/set-password", label: "Change Password", icon: Settings },
-  ] : user.role === "organizer" ? [
-    { path: "/organizer/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { path: "/organizer/events", label: "My Events", icon: Calendar },
-    { path: "/organizer/attendance", label: "Attendance", icon: ClipboardCheck },
   ] : [
     { path: "/faculty/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/faculty/events", label: "Events", icon: Calendar },
@@ -62,153 +60,154 @@ const DashboardLayout: React.FC = () => {
   return (
     <div className="h-screen bg-slate-50 flex font-sans overflow-hidden">
       {/* Mobile Menu Backdrop */}
-      {isMobileOpen && (
+      {!isOrganizer && isMobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden"
           onClick={() => setIsMobileOpen(false)}
         ></div>
       )}
 
-      {/* Sidebar Container - Polished Clean Modern Sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-white text-slate-600 border-r border-slate-200/90 transition-all duration-300 h-full shadow-xs
-          ${isSidebarOpen ? "w-64" : "w-20"} 
-          ${isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"} 
-          lg:relative`}
-      >
-        {/* Sidebar Header with AI Club Logo */}
-        <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100/90 bg-white shrink-0">
-          <Link to="/" className="flex items-center gap-2.5 font-black text-[#2563EB] text-xl">
-            <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-xl object-contain shrink-0 shadow-xs" />
-            {isSidebarOpen && (
-              user.role === "organizer" ? (
-                <div className="leading-tight text-left">
-                  <span className="tracking-tight font-sans font-black block text-sm text-slate-900">AI Verse Club</span>
-                  <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Operational Hub</span>
-                </div>
-              ) : (
+      {/* Sidebar Container (Hidden for Student Organizer) */}
+      {!isOrganizer && (
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-white text-slate-600 border-r border-slate-200/90 transition-all duration-300 h-full shadow-xs
+            ${isSidebarOpen ? "w-64" : "w-20"} 
+            ${isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"} 
+            lg:relative`}
+        >
+          {/* Sidebar Header with AI Club Logo */}
+          <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100/90 bg-white shrink-0">
+            <Link to="/" className="flex items-center gap-2.5 font-black text-[#2563EB] text-xl">
+              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-xl object-contain shrink-0 shadow-xs" />
+              {isSidebarOpen && (
                 <span className="tracking-tight font-sans text-slate-900 font-extrabold">AI Verse</span>
-              )
-            )}
-          </Link>
-          <button
-            onClick={() => setIsMobileOpen(false)}
-            className="lg:hidden text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+              )}
+            </Link>
+            <button
+              onClick={() => setIsMobileOpen(false)}
+              className="lg:hidden text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-        {/* Sidebar Navigation - Clean, scrollbar-free & comfortably spaced */}
-        <nav className="flex-grow py-4 px-3 space-y-1 overflow-y-auto no-scrollbar">
-          {menuItems.map((item, index) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path;
-            return (
-              <Link
-                key={index}
-                to={item.path}
-                onClick={() => setIsMobileOpen(false)}
-                className={`flex items-center gap-3 py-2.5 px-3.5 rounded-xl font-semibold text-sm transition-all duration-150 group relative z-0
-                  ${isActive
-                    ? "text-white font-bold"
-                    : "text-slate-500 hover:bg-blue-50/60 hover:text-blue-700"
-                  }`}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTabIndicator"
-                    className="absolute inset-0 bg-[#2563EB] rounded-xl shadow-md shadow-blue-600/25 -z-10"
-                    initial={false}
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  />
-                )}
-                <Icon className={`relative z-10 h-4.5 w-4.5 shrink-0 transition-colors duration-150 ${isActive ? "text-white" : "text-slate-400 group-hover:text-blue-600"}`} />
-                {isSidebarOpen ? (
-                  <span className="relative z-10 text-[13px]">{item.label}</span>
-                ) : (
-                  <span className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-md">
-                    {item.label}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
+          {/* Sidebar Navigation */}
+          <nav className="flex-grow py-4 px-3 space-y-1 overflow-y-auto no-scrollbar">
+            {menuItems.map((item, index) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.path;
+              return (
+                <Link
+                  key={index}
+                  to={item.path}
+                  onClick={() => setIsMobileOpen(false)}
+                  className={`flex items-center gap-3 py-2.5 px-3.5 rounded-xl font-semibold text-sm transition-all duration-150 group relative z-0
+                    ${isActive
+                      ? "text-white font-bold"
+                      : "text-slate-500 hover:bg-blue-50/60 hover:text-blue-700"
+                    }`}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTabIndicator"
+                      className="absolute inset-0 bg-[#2563EB] rounded-xl shadow-md shadow-blue-600/25 -z-10"
+                      initial={false}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    />
+                  )}
+                  <Icon className={`relative z-10 h-4.5 w-4.5 shrink-0 transition-colors duration-150 ${isActive ? "text-white" : "text-slate-400 group-hover:text-blue-600"}`} />
+                  {isSidebarOpen ? (
+                    <span className="relative z-10 text-[13px]">{item.label}</span>
+                  ) : (
+                    <span className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-md">
+                      {item.label}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
 
-        {/* Sidebar Footer with user profile card */}
-        <div className="p-3.5 border-t border-slate-100/90 space-y-2 bg-white shrink-0">
-          <Link
-            to={user.role === "faculty" ? "/faculty/profile" : "/organizer/profile"}
-            className="flex items-center gap-3 p-2.5 bg-slate-50/80 rounded-2xl border border-slate-100 hover:bg-blue-50/50 hover:border-blue-200/60 cursor-pointer transition-all duration-200 block"
-          >
-            {user.image ? (
-              <img
-                src={user.image}
-                alt={user.name || "User Avatar"}
-                className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-xs shadow-sm border border-slate-200 shrink-0 font-sans">
-                {(() => {
-                  if (!user.name) return "AV";
-                  const parts = user.name.trim().split(/\s+/);
-                  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-                  return parts[0].substring(0, 2).toUpperCase();
-                })()}
-              </div>
-            )}
-            {isSidebarOpen && (
-              <div className="text-left leading-tight min-w-0">
-                <div className="text-xs font-bold text-slate-800 truncate">
-                  {user.name}
+          {/* Sidebar Footer with user profile card */}
+          <div className="p-3.5 border-t border-slate-100/90 space-y-2 bg-white shrink-0">
+            <Link
+              to={user.role === "faculty" ? "/faculty/profile" : "/organizer/profile"}
+              className="flex items-center gap-3 p-2.5 bg-slate-50/80 rounded-2xl border border-slate-100 hover:bg-blue-50/50 hover:border-blue-200/60 cursor-pointer transition-all duration-200 block"
+            >
+              {user.image ? (
+                <img
+                  src={user.image}
+                  alt={user.name || "User Avatar"}
+                  className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-xs shadow-sm border border-slate-200 shrink-0 font-sans">
+                  {(() => {
+                    if (!user.name) return "AV";
+                    const parts = user.name.trim().split(/\s+/);
+                    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+                    return parts[0].substring(0, 2).toUpperCase();
+                  })()}
                 </div>
-                <div className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wide truncate">
-                  {user.displayRole || (user.role === "organizer" ? "Senior Coordinator" : "Faculty Advisor")}
+              )}
+              {isSidebarOpen && (
+                <div className="text-left leading-tight min-w-0">
+                  <div className="text-xs font-bold text-slate-800 truncate">
+                    {user.name}
+                  </div>
+                  <div className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wide truncate">
+                    {user.displayRole || "Faculty Advisor"}
+                  </div>
                 </div>
-              </div>
-            )}
-          </Link>
+              )}
+            </Link>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2.5 w-full py-2 px-3 hover:bg-red-50 hover:text-red-600 text-slate-500 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {isSidebarOpen && <span>Logout</span>}
-          </button>
-        </div>
-      </aside>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2.5 w-full py-2 px-3 hover:bg-red-50 hover:text-red-600 text-slate-500 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              {isSidebarOpen && <span>Logout</span>}
+            </button>
+          </div>
+        </aside>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-grow flex flex-col min-w-0 h-full overflow-y-auto">
         {/* Topbar / Header */}
         <header className="h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shrink-0 shadow-xs">
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => setIsMobileOpen(true)}
-              className="lg:hidden p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
+            {isOrganizer ? (
+              <Link to="/" className="flex items-center gap-2.5 font-black text-[#2563EB] text-lg hover:opacity-90 transition-opacity">
+                <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-xl object-contain shrink-0 shadow-xs" />
+                <div className="leading-tight text-left">
+                  <span className="tracking-tight font-sans font-black block text-sm text-slate-900">AI Verse Club</span>
+                  <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-wider block">Attendance Portal</span>
+                </div>
+              </Link>
+            ) : (
+              <>
+                <button
+                  onClick={() => setIsMobileOpen(true)}
+                  className="lg:hidden p-2 hover:bg-slate-100 rounded-xl text-slate-500 transition-colors"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
 
-            {/* Sidebar toggle button for desktop */}
-            <button
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
-              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-500 hover:text-slate-800 transition-all shadow-2xs cursor-pointer"
-            >
-              {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </button>
+                {/* Sidebar toggle button for desktop */}
+                <button
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+                  className="hidden lg:flex items-center justify-center w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-500 hover:text-slate-800 transition-all shadow-2xs cursor-pointer"
+                >
+                  {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
+              </>
+            )}
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-5">
-            {/* Notification Bell with red dot */}
-            <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl relative transition-colors cursor-pointer">
-              <Bell className="h-4.5 w-4.5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-            </button>
-
+          <div className="flex items-center gap-3 sm:gap-4">
             {/* Status indicator badge */}
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200/60 text-[10px] sm:text-xs font-bold font-sans shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -216,12 +215,18 @@ const DashboardLayout: React.FC = () => {
               <span className="inline sm:hidden uppercase text-[9px] opacity-80 font-black">ONLINE</span>
             </div>
 
+            {/* Notification Bell with red dot */}
+            <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl relative transition-colors cursor-pointer">
+              <Bell className="h-4.5 w-4.5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+            </button>
+
             {/* Profile Avatar / Circle */}
             <div className="flex items-center gap-3 animate-in fade-in duration-200">
               <div className="text-right hidden sm:block leading-tight text-left">
                 <div className="text-xs font-bold text-slate-800">{user.name}</div>
                 <div className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wide">
-                  {user.displayRole || (user.role === "organizer" ? "Senior Coordinator" : "Faculty Advisor")}
+                  {user.displayRole || (isOrganizer ? "Student Organizer" : "Faculty Advisor")}
                 </div>
               </div>
               {user.image ? (
@@ -241,6 +246,18 @@ const DashboardLayout: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Topbar Logout Button (Especially prominent for Student Organizer) */}
+            {isOrganizer && (
+              <button
+                onClick={handleLogout}
+                title="Sign Out"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200/90 transition-all cursor-pointer shadow-2xs"
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            )}
           </div>
         </header>
 

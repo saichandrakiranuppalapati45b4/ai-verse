@@ -623,8 +623,8 @@ export const QuizManagementPage: React.FC = () => {
 
   const handleBackToEventAccess = () => {
     const targetEventId = eventIdParam || (quizzes.find(q => q.id === selectedQuizId)?.eventId) || "";
-    const basePath = user?.role === "organizer" ? "/organizer/events" : "/faculty/events";
-    if (targetEventId) {
+    const basePath = user?.role === "organizer" ? "/organizer/attendance" : "/faculty/events";
+    if (targetEventId && user?.role !== "organizer") {
       navigate(`${basePath}?accessEventId=${targetEventId}`);
     } else {
       navigate(basePath);
@@ -1720,7 +1720,7 @@ Answer: A`;
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
-              to={user?.role === "organizer" ? "/organizer/events" : "/faculty/events"}
+              to={user?.role === "organizer" ? "/organizer/attendance" : "/faculty/events"}
               className="flex items-center gap-2.5 group"
             >
               <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-xl object-contain shrink-0 shadow-2xs" />

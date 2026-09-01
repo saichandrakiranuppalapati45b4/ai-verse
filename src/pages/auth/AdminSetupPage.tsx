@@ -60,7 +60,7 @@ const AdminSetupPage: React.FC = () => {
         if (normalizedRole === "faculty") {
           navigate("/faculty/dashboard");
         } else {
-          navigate("/organizer/dashboard");
+          navigate("/organizer/attendance");
         }
       }, 1500);
     } catch (err: any) {

@@ -36,8 +36,6 @@ const JuryPage = React.lazy(() => import("../pages/public/JuryPage"));
 const AdminSetupPage = React.lazy(() => import("../pages/auth/AdminSetupPage"));
 
 // Faculty/Organizer Dashboards (heavy, only for admins)
-const OrgDashboardPage = React.lazy(() => import("../pages/organizer/OrgDashboardPage"));
-const OrgEventsPage = React.lazy(() => import("../pages/organizer/OrgEventsPage"));
 const OrgAttendancePage = React.lazy(() => import("../pages/organizer/OrgAttendancePage"));
 const FacDashboardPage = React.lazy(() => import("../pages/faculty/FacDashboardPage"));
 const UserManagementPage = React.lazy(() => import("../pages/faculty/UserManagementPage"));
@@ -96,15 +94,15 @@ const AppRoutes: React.FC = () => {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/organizer/dashboard" replace />} />
-          <Route path="dashboard" element={<OrgDashboardPage />} />
-          <Route path="events" element={<OrgEventsPage />} />
+          <Route index element={<Navigate to="/organizer/attendance" replace />} />
           <Route path="attendance" element={<OrgAttendancePage />} />
-          <Route path="jury" element={<Navigate to="/organizer/dashboard" replace />} />
-          <Route path="results" element={<Navigate to="/organizer/dashboard" replace />} />
-          <Route path="gallery" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Gallery Management</h2><p className="text-sm text-slate-500">Upload and album configure.</p></div>} />
-          <Route path="registrations" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Registrations</h2><p className="text-sm text-slate-500">View and export registrant records.</p></div>} />
-          <Route path="profile" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Profile Settings</h2><p className="text-sm text-slate-500">Update organizer credentials.</p></div>} />
+          <Route path="events" element={<Navigate to="/organizer/attendance" replace />} />
+          <Route path="dashboard" element={<Navigate to="/organizer/attendance" replace />} />
+          <Route path="jury" element={<Navigate to="/organizer/attendance" replace />} />
+          <Route path="results" element={<Navigate to="/organizer/attendance" replace />} />
+          <Route path="gallery" element={<Navigate to="/organizer/attendance" replace />} />
+          <Route path="registrations" element={<Navigate to="/organizer/attendance" replace />} />
+          <Route path="profile" element={<Navigate to="/organizer/attendance" replace />} />
         </Route>
 
         {/* Faculty Routes */}

@@ -22,7 +22,7 @@ const LoginPage: React.FC = () => {
   const ALLOWED_ACCOUNTS = [
     { email: "admin@aiverse.in", label: "Full Admin", role: "faculty", target: "/faculty/dashboard" },
     { email: "facultycoordinator@aiverse.in", label: "Faculty Coordinator", role: "faculty", target: "/faculty/dashboard" },
-    { email: "studentorganizer@aiverse.in", label: "Student Organizer", role: "organizer", target: "/organizer/dashboard" },
+    { email: "studentorganizer@aiverse.in", label: "Student Organizer", role: "organizer", target: "/organizer/attendance" },
     { email: "jury@aiverse.in", label: "Jury Evaluator", role: "jury", target: "/jury" },
     { email: "jurry@aiverse.in", label: "Jury Evaluator", role: "jury", target: "/jury" },
     { email: "participant@aiverse.in", label: "Participant Portal", role: "participant", target: "/participant/set-password" },
@@ -64,7 +64,7 @@ const LoginPage: React.FC = () => {
       if (activeRole === "participant") {
         navigate("/participant/set-password");
       } else if (activeRole === "organizer") {
-        navigate("/organizer/dashboard");
+        navigate("/organizer/attendance");
       } else if (activeRole === "jury") {
         navigate("/jury");
       } else {

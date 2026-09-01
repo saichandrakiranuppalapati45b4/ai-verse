@@ -104,8 +104,36 @@ export const OrgAttendancePage: React.FC = () => {
     const fetchEvents = async () => {
       try {
         setLoading(true);
-        const todayStr = getTodayStr();
+        const todayObj = new Date();
+        const year = todayObj.getFullYear();
+        const month = String(todayObj.getMonth() + 1).padStart(2, "0");
+        const day = String(todayObj.getDate()).padStart(2, "0");
+        const todayStr = `${year}-${month}-${day}`;
         const userEmail = user?.email?.toLowerCase().trim() || "";
+
+        // Robust check to determine if an event is occurring today
+        const isEventToday = (startDateStr: string, endDateStr: string) => {
+          if (!startDateStr && !endDateStr) return false;
+          const s = (startDateStr || "").trim();
+          const e = (endDateStr || s).trim();
+          
+          if (s === todayStr || s.startsWith(todayStr)) return true;
+          if (s && e && s <= todayStr && e >= todayStr) return true;
+
+          try {
+            const startD = new Date(s);
+            if (!isNaN(startD.getTime())) {
+              const endD = e ? new Date(e) : startD;
+              const t = new Date(year, todayObj.getMonth(), todayObj.getDate()).getTime();
+              const sTime = new Date(startD.getFullYear(), startD.getMonth(), startD.getDate()).getTime();
+              const eTime = !isNaN(endD.getTime()) ? new Date(endD.getFullYear(), endD.getMonth(), endD.getDate()).getTime() : sTime;
+              if (t >= sTime && t <= eTime) return true;
+            }
+          } catch {
+            // ignore parse failure
+          }
+          return false;
+        };
 
         // Check if organizer is assigned specific events
         let assignedTitles: string[] = [];
@@ -128,28 +156,29 @@ export const OrgAttendancePage: React.FC = () => {
           const data = docSnap.data();
           const eventDate = data.startDate || data.date || "";
           const endDate = data.endDate || eventDate;
-          const isToday = eventDate === todayStr || (eventDate <= todayStr && endDate >= todayStr);
+          const isToday = isEventToday(eventDate, endDate);
 
-          rawEvents.push({
-            id: docSnap.id,
-            title: data.title || "Untitled Event",
-            startDate: data.startDate || data.date || "",
-            endDate: data.endDate || "",
-            date: data.date || data.startDate || "",
-            startTime: data.startTime || "09:00 AM",
-            endTime: data.endTime || "05:00 PM",
-            timeRange: data.timeRange || (data.startTime ? `${data.startTime} - ${data.endTime || ""}` : "09:00 AM - 05:00 PM"),
-            venue: data.venue || data.location || "Campus Venue",
-            location: data.location || data.venue || "Campus Venue",
-            room: data.room || "Room 101",
-            status: data.status || "Active",
-            isToday
-          });
+          // STRICT FILTER: Only include events occurring today
+          if (isToday) {
+            rawEvents.push({
+              id: docSnap.id,
+              title: data.title || "Untitled Event",
+              startDate: data.startDate || data.date || "",
+              endDate: data.endDate || "",
+              date: data.date || data.startDate || "",
+              startTime: data.startTime || "09:00 AM",
+              endTime: data.endTime || "05:00 PM",
+              timeRange: data.timeRange || (data.startTime ? `${data.startTime} - ${data.endTime || ""}` : "09:00 AM - 05:00 PM"),
+              venue: data.venue || data.location || "Campus Venue",
+              location: data.location || data.venue || "Campus Venue",
+              room: data.room || "Room 101",
+              status: data.status || "Active",
+              isToday: true
+            });
+          }
         });
 
-        // Filter events:
-        // Priority 1: Events assigned to organizer (if any assigned)
-        // Priority 2: Events occurring today (or active/published)
+        // Filter today's events by organizer assignment if assignments exist
         let filteredEvents = rawEvents;
         if (assignedTitles.length > 0) {
           const matchedAssigned = rawEvents.filter(e => 
@@ -160,21 +189,16 @@ export const OrgAttendancePage: React.FC = () => {
           }
         }
 
-        // Sort: Today's events first, then active events
+        // Sort today's events
         filteredEvents.sort((a, b) => {
-          if (a.isToday && !b.isToday) return -1;
-          if (!a.isToday && b.isToday) return 1;
-          return (a.startDate || "").localeCompare(b.startDate || "");
+          return (a.startTime || "").localeCompare(b.startTime || "");
         });
 
         setEvents(filteredEvents);
 
         if (filteredEvents.length > 0) {
-          // Select today's event if available, otherwise first event
-          const todayEv = filteredEvents.find(e => e.isToday);
-          const defaultEvent = todayEv || filteredEvents[0];
-          setSelectedEventId(defaultEvent.id);
-          setAssignedEvent(defaultEvent);
+          setSelectedEventId(filteredEvents[0].id);
+          setAssignedEvent(filteredEvents[0]);
         }
       } catch (err) {
         console.error("Error fetching events:", err);

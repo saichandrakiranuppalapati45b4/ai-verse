@@ -108,11 +108,17 @@ const OrgDashboardPage: React.FC = () => {
     };
   }, [events, registrations]);
 
-  // Happening Now (Closest opened or active event by date, or default fallback)
+  // Happening Now (Prioritize today's active/live event, or closest active event)
   const happeningNowEvent = useMemo(() => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
     const activeEvents = events.filter(e => e.status === "Opened" || e.status === "Active");
+    const todayEvent = activeEvents.find(e => e.date === todayStr || (e.date && e.date.startsWith(todayStr)));
+    if (todayEvent) return todayEvent;
+
     if (activeEvents.length > 0) {
-      return activeEvents[0]; // Pick the first available live/active event
+      return activeEvents[0];
     }
     return null;
   }, [events]);
