@@ -68,14 +68,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
+  const activeUserIdRef = React.useRef<string | null>(null);
+
   // Initialize and listen to Supabase Auth state changes with real-time Firestore sync
   useEffect(() => {
     let unsubSnapshot: (() => void) | null = null;
 
-    const setupProfileListener = async (userId: string, userEmail: string) => {
+    const setupProfileListener = async (userId: string, userEmail: string, isInitial: boolean = false) => {
+      if (activeUserIdRef.current === userId && unsubSnapshot) {
+        return; // Listener already established and running for this user
+      }
+
       if (unsubSnapshot) {
         unsubSnapshot();
         unsubSnapshot = null;
+      }
+      activeUserIdRef.current = userId;
+      if (isInitial) {
+        setLoading(true);
       }
 
       const savedUserStr = localStorage.getItem("aether_mock_user");
@@ -92,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!isAllowed) {
         console.warn(`[AuthContext] Denying access to unauthorized user: ${userEmail}`);
         await supabase.auth.signOut().catch(() => {});
+        activeUserIdRef.current = null;
         setUser(null);
         localStorage.removeItem("aether_mock_user");
         setLoading(false);
@@ -205,7 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           const userEmail = session.user.email?.toLowerCase().trim() || "";
-          await setupProfileListener(session.user.id, userEmail);
+          await setupProfileListener(session.user.id, userEmail, true);
         } else {
           // No Supabase session — check local session (mock/legacy)
           const savedUserStr = localStorage.getItem("aether_mock_user");
@@ -214,15 +225,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const savedUser = JSON.parse(savedUserStr);
               if (savedUser && savedUser.email && savedUser.role) {
                 setUser(savedUser);
+                activeUserIdRef.current = savedUser.uid || savedUser.email;
               } else {
                 localStorage.removeItem("aether_mock_user");
+                activeUserIdRef.current = null;
                 setUser(null);
               }
             } catch (e) {
               localStorage.removeItem("aether_mock_user");
+              activeUserIdRef.current = null;
               setUser(null);
             }
           } else {
+            activeUserIdRef.current = null;
             setUser(null);
           }
           setLoading(false);
@@ -232,7 +247,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const savedUserStr = localStorage.getItem("aether_mock_user");
         if (savedUserStr) {
           try {
-            setUser(JSON.parse(savedUserStr));
+            const parsed = JSON.parse(savedUserStr);
+            setUser(parsed);
+            activeUserIdRef.current = parsed.uid || parsed.email;
           } catch (e) {}
         }
         setLoading(false);
@@ -245,26 +262,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === "SIGNED_IN" && session?.user) {
-          setLoading(true);
-          const userEmail = session.user.email?.toLowerCase().trim() || "";
-          await setupProfileListener(session.user.id, userEmail);
-        } else if (event === "SIGNED_OUT") {
-          if (unsubSnapshot) {
-            unsubSnapshot();
-            unsubSnapshot = null;
+          if (activeUserIdRef.current !== session.user.id) {
+            const userEmail = session.user.email?.toLowerCase().trim() || "";
+            await setupProfileListener(session.user.id, userEmail, false);
           }
-          // Check localStorage for mock users before clearing
+        } else if (event === "SIGNED_OUT") {
+          // If we have a local session, ignore passive Supabase SIGNED_OUT events on tab change
           const savedUserStr = localStorage.getItem("aether_mock_user");
           if (savedUserStr) {
             try {
               const savedUser = JSON.parse(savedUserStr);
               if (savedUser && savedUser.email && savedUser.role) {
-                setUser(savedUser);
-                setLoading(false);
+                // Keep the active user intact without flickering
                 return;
               }
             } catch (e) {}
           }
+          if (unsubSnapshot) {
+            unsubSnapshot();
+            unsubSnapshot = null;
+          }
+          activeUserIdRef.current = null;
           setUser(null);
           setLoading(false);
         } else if (event === "TOKEN_REFRESHED" && session?.user) {

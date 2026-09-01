@@ -6,6 +6,7 @@ export interface SupabaseUser {
   name: string;
   display_name?: string | null;
   email: string;
+  personal_email?: string | null;
   phone?: string | null;
   role: string;
   status: "Active" | "Pending" | "Deactivated" | string;
@@ -86,6 +87,7 @@ export const userService = {
       name: user.name,
       display_name: user.display_name || user.name,
       email: cleanEmail,
+      personal_email: user.personal_email || null,
       phone: user.phone || null,
       role: user.role || "Student Member",
       status: user.status || "Active",

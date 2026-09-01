@@ -53,10 +53,23 @@ const AboutPage: React.FC = () => {
   useEffect(() => {
     const loadTeam = async () => {
       try {
+        const EXCLUDED_SYSTEM_EMAILS = [
+          "admin@aiverse.in",
+          "facultycoordinator@aiverse.in",
+          "studentorganizer@aiverse.in",
+          "jurry@aiverse.in",
+          "jury@aiverse.in",
+          "participant@aiverse.in"
+        ];
+
         // 1. Try Supabase first
         const supaTeam = await userService.getAboutTeamMembers();
-        if (supaTeam && supaTeam.length > 0) {
-          const mapped = supaTeam.map(m => ({
+        const validSupaTeam = (supaTeam || []).filter(
+          m => !EXCLUDED_SYSTEM_EMAILS.includes((m.email || "").toLowerCase().trim())
+        );
+
+        if (validSupaTeam && validSupaTeam.length > 0) {
+          const mapped = validSupaTeam.map(m => ({
             id: m.id,
             name: m.name || m.display_name || "Unnamed Member",
             role: m.position || m.role || "Faculty Coordinator",
@@ -97,9 +110,12 @@ const AboutPage: React.FC = () => {
           }
         });
         
-        // ONLY filter for members explicitly selected with "Show in About Page" option
+        // ONLY filter for members explicitly selected with "Show in About Page" option and exclude system staff accounts
         const filtered = list.filter(
-          m => m.showInAbout === true || m.showInAbout === "Yes" || m.showInAboutPage === true || m.showInAboutPage === "Yes"
+          m => (m.showInAbout === true || m.showInAbout === "Yes" || m.showInAboutPage === true || m.showInAboutPage === "Yes") &&
+               !EXCLUDED_SYSTEM_EMAILS.includes((m.email || "").toLowerCase().trim()) &&
+               (m.name || "").toLowerCase() !== "system admin" &&
+               (m.name || "").toLowerCase() !== "jury evaluator"
         );
         
         if (filtered.length > 0) {

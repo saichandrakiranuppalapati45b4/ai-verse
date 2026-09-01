@@ -573,3 +573,182 @@ export function buildRoundPromotionEmail(data: PromotionEmailData): {
   return { subject, html, text };
 }
 
+export interface WelcomeMemberEmailData {
+  name: string;
+  role: string;
+  collegeEmail?: string;
+  personalEmail?: string;
+  portalUrl?: string;
+}
+
+/**
+ * Builds high-deliverability Welcome Email for newly onboarded team members & users
+ */
+export function buildWelcomeMemberEmail(data: WelcomeMemberEmailData): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const {
+    name,
+    role,
+    collegeEmail,
+    personalEmail,
+    portalUrl = "https://aiversevitb.dpdns.org/login"
+  } = data;
+
+  const subject = `Welcome to AI Verse, ${name}! 🎉 | Role: ${role}`;
+
+  const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${subject}</title>
+  <style type="text/css">
+    body { margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; }
+    table { border-collapse: collapse; }
+    .btn:hover { background-color: #1d4ed8 !important; }
+  </style>
+</head>
+<body style="margin: 0; padding: 32px 16px; background-color: #f8fafc;">
+  <div style="display: none; max-height: 0px; overflow: hidden;">
+    Welcome to AI Verse! You have been onboarded as a ${role}. Explore your role and portal access.
+    &#847; &zwnj; &nbsp; &#8199; &shy;
+  </div>
+
+  <table width="100%" border="0" cellspacing="0" cellpadding="0">
+    <tr>
+      <td align="center">
+        <table width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.04); border: 1px solid #e2e8f0;">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); padding: 40px 32px; text-align: center;">
+              <div style="font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #bfdbfe; text-transform: uppercase; margin-bottom: 10px;">AI VERSE COMMUNITY</div>
+              <h1 style="margin: 0; color: #ffffff; font-size: 26px; font-weight: 800; line-height: 1.25;">Welcome to the Team! 🎉</h1>
+              <div style="margin-top: 14px; display: inline-block; background-color: rgba(255,255,255,0.18); border-radius: 20px; padding: 6px 16px; color: #ffffff; font-size: 13px; font-weight: 700; backdrop-filter: blur(4px);">
+                Official Onboarding • ${role}
+              </div>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 36px 32px 24px 32px;">
+              <p style="font-size: 17px; line-height: 1.6; color: #0f172a; margin: 0 0 16px 0;">
+                Dear <strong>${name}</strong>,
+              </p>
+              <p style="font-size: 15px; line-height: 1.65; color: #475569; margin: 0 0 24px 0;">
+                Congratulations and a warm welcome to <strong>AI Verse</strong>! We are thrilled to have you join our team as an active contributor and leader in the role of <strong>${role}</strong>.
+              </p>
+
+              <!-- Membership Details Card -->
+              <table width="100%" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; margin-bottom: 26px; overflow: hidden;">
+                <tr>
+                  <td colspan="2" style="padding: 16px 20px; background-color: #f1f5f9; border-bottom: 1px solid #e2e8f0;">
+                    <div style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 1px;">
+                      ✦ Member Onboarding Summary
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 20px; border-bottom: 1px solid #e2e8f0; width: 50%;">
+                    <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Full Name</div>
+                    <div style="font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 2px;">${name}</div>
+                  </td>
+                  <td style="padding: 14px 20px; border-bottom: 1px solid #e2e8f0; width: 50%;">
+                    <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Assigned Role</div>
+                    <div style="font-size: 14px; font-weight: 800; color: #2563eb; margin-top: 2px;">${role}</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 14px 20px; ${personalEmail ? 'border-bottom: 1px solid #e2e8f0;' : ''} width: 50%;">
+                    <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">College Mail ID</div>
+                    <div style="font-size: 13px; font-weight: 600; color: #334155; margin-top: 2px; font-family: monospace;">${collegeEmail || "N/A"}</div>
+                  </td>
+                  <td style="padding: 14px 20px; ${personalEmail ? 'border-bottom: 1px solid #e2e8f0;' : ''} width: 50%;">
+                    <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Membership Status</div>
+                    <div style="font-size: 13px; font-weight: 700; color: #16a34a; margin-top: 2px;">Active Member ✓</div>
+                  </td>
+                </tr>
+                ${personalEmail ? `
+                <tr>
+                  <td colspan="2" style="padding: 14px 20px;">
+                    <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Personal Mail (Notifications)</div>
+                    <div style="font-size: 13px; font-weight: 600; color: #334155; margin-top: 2px; font-family: monospace;">${personalEmail}</div>
+                  </td>
+                </tr>` : ""}
+              </table>
+
+              <!-- Welcome Conclusion Card -->
+              <div style="background-color: #eff6ff; border-left: 4px solid #2563eb; padding: 18px 20px; border-radius: 12px; margin-bottom: 28px;">
+                <div style="font-size: 14px; font-weight: 800; color: #1e40af; margin-bottom: 6px;">
+                  🚀 Welcome Conclusion & Our Mission:
+                </div>
+                <div style="font-size: 13px; color: #1e3a8a; line-height: 1.6;">
+                  As a valued member of <strong>AI Verse</strong>, you are an integral part of our vision to build cutting-edge artificial intelligence systems, host premier hackathons and workshops, and empower fellow students. Together, we look forward to achieving great milestones, driving innovation, and shaping the future!
+                </div>
+              </div>
+
+              <!-- Call to Action -->
+              <div style="text-align: center; margin: 32px 0 16px 0;">
+                <a href="${portalUrl}" target="_blank" style="display: inline-block; background-color: #2563eb; color: #ffffff; font-size: 15px; font-weight: 800; text-decoration: none; padding: 14px 36px; border-radius: 12px; box-shadow: 0 4px 14px rgba(37,99,235,0.3);">
+                  Access AI Verse Portal &rarr;
+                </a>
+              </div>
+
+              <p style="font-size: 13px; color: #64748b; text-align: center; margin: 16px 0 0 0;">
+                If you have any questions, reach out to your faculty coordinators or team leads anytime.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 24px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
+              <p style="font-size: 12px; font-weight: 700; color: #475569; margin: 0 0 4px 0;">
+                AI Verse • Vishnu Institute of Technology
+              </p>
+              <p style="font-size: 11px; color: #94a3b8; margin: 0; line-height: 1.5;">
+                This welcome message was sent to ${personalEmail || collegeEmail} upon onboarding into the AI Verse Portal.<br>
+                Empowering intelligence, creativity, and collaboration.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    `🎉 WELCOME TO AI VERSE, ${name.toUpperCase()}!`,
+    `==========================================`,
+    ``,
+    `Dear ${name},`,
+    ``,
+    `Congratulations and a warm welcome to AI Verse! We are thrilled to have you join our team in the role of "${role}".`,
+    ``,
+    `MEMBER ONBOARDING DETAILS:`,
+    `- Full Name: ${name}`,
+    `- Assigned Role: ${role}`,
+    collegeEmail ? `- College Mail: ${collegeEmail}` : "",
+    personalEmail ? `- Personal Mail: ${personalEmail}` : "",
+    `- Status: Active Member`,
+    ``,
+    `WELCOME CONCLUSION & OUR MISSION:`,
+    `As a valued member of AI Verse, you are an integral part of our vision to build cutting-edge artificial intelligence systems, host premier hackathons and workshops, and empower fellow students. Together, we look forward to achieving great milestones and driving innovation!`,
+    ``,
+    `ACCESS THE PORTAL:`,
+    `${portalUrl}`,
+    ``,
+    `Warm regards,`,
+    `AI Verse Club • VIT-B`,
+  ].filter(Boolean).join("\n");
+
+  return { subject, html, text };
+}
+

@@ -39,14 +39,18 @@ import { userService } from "../../services/userService";
 import Button from "../../components/ui/Button";
 import { useAuth } from "../../context/AuthContext";
 import TeamGraphModal from "../../components/dashboard/TeamGraphModal";
+import { sendResendEmail } from "../../utils/resendEmailService";
+import { buildWelcomeMemberEmail } from "../../utils/emailTemplates";
 
 export interface UserItem {
   id: string;
   name: string;
   email: string;
+  personal_email?: string;
+  personalEmail?: string;
   phone?: string;
-  role: "Faculty Coordinator" | "Student Organizer" | "Volunteer" | "Guest" | "Student Member" | "Organizer" | "Convener" | "Event Manager" | "System Admin" | "Jury Evaluator";
-  status: "Active" | "Pending" | "Deactivated";
+  role: "Faculty Coordinator" | "Student Organizer" | "Volunteer" | "Guest" | "Student Member" | "Organizer" | "Convener" | "Event Manager" | "System Admin" | "Jury Evaluator" | string;
+  status: "Active" | "Pending" | "Deactivated" | string;
   image?: string;
   showInAbout?: "Yes" | "No";
   bio?: string;
@@ -143,6 +147,8 @@ const UserManagementPage: React.FC = () => {
             id: u.id,
             name: u.name || u.display_name || "Unnamed User",
             email: u.email || "",
+            personal_email: u.personal_email || "",
+            personalEmail: u.personal_email || "",
             phone: u.phone || "",
             role: (u.role || "Guest") as any,
             status: (u.status || "Active") as any,
@@ -165,6 +171,9 @@ const UserManagementPage: React.FC = () => {
             id: docSnap.id,
             name: data.name || data.displayName || "Unnamed User",
             email: data.email || "",
+            personal_email: data.personal_email || data.personalEmail || "",
+            personalEmail: data.personalEmail || data.personal_email || "",
+            phone: data.phone || data.phoneNumber || "",
             role: data.role || "Guest",
             status: data.status || "Active",
             image: data.image || "",
@@ -195,6 +204,7 @@ const UserManagementPage: React.FC = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePersonalEmail, setInvitePersonalEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserItem["role"]>("Student Member");
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
@@ -208,6 +218,7 @@ const UserManagementPage: React.FC = () => {
   const [showAddMemberForm, setShowAddMemberForm] = useState(false);
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
+  const [formPersonalEmail, setFormPersonalEmail] = useState("");
   const [formRoleType, setFormRoleType] = useState<string>("Organizer");
   const [formPosition, setFormPosition] = useState("");
   const [formBio, setFormBio] = useState("");
@@ -225,7 +236,8 @@ const UserManagementPage: React.FC = () => {
   const initialGridRow = {
     "Profile Photo": "",
     "Full Name": "",
-    "Email Address": "",
+    "College Mail": "",
+    "Personal Mail ID": "",
     "Phone Number": "",
     "Role Type": "",
     "Professional Bio": "",
@@ -234,8 +246,36 @@ const UserManagementPage: React.FC = () => {
   };
   const gridColumns = Object.keys(initialGridRow);
 
-  const [showPasteModal, setShowPasteModal] = useState(false);
-  const [gridData, setGridData] = useState<Array<Record<string, string>>>(Array(5).fill({...initialGridRow}));
+  const [showPasteModal, setShowPasteModal] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem("aether_bulk_paste_modal") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [gridData, setGridData] = useState<Array<Record<string, string>>>(() => {
+    try {
+      const saved = sessionStorage.getItem("aether_bulk_paste_grid");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return Array(5).fill({ ...initialGridRow });
+  });
+
+  // Sync modal and grid state to sessionStorage to prevent loss on window blur / Alt+Tab
+  React.useEffect(() => {
+    try {
+      if (showPasteModal) {
+        sessionStorage.setItem("aether_bulk_paste_modal", "true");
+        sessionStorage.setItem("aether_bulk_paste_grid", JSON.stringify(gridData));
+      } else {
+        sessionStorage.removeItem("aether_bulk_paste_modal");
+      }
+    } catch {}
+  }, [showPasteModal, gridData]);
+
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [bulkProgress, setBulkProgress] = useState({ total: 0, current: 0, success: 0, failed: 0 });
   
@@ -256,7 +296,8 @@ const UserManagementPage: React.FC = () => {
     }
     const headers = [
       "Full Name", 
-      "Email Address", 
+      "College Mail", 
+      "Personal Mail ID",
       "Phone Number",
       roleHeader, 
       "Professional Bio", 
@@ -286,7 +327,8 @@ const UserManagementPage: React.FC = () => {
       setBulkProgress(prev => ({ ...prev, current: i + 1 }));
 
       const name = row["Full Name"] || row["name"] || "";
-      const email = row["Email Address"] || row["email"] || "";
+      const email = row["College Mail"] || row["Email Address"] || row["email"] || "";
+      const personalEmail = row["Personal Mail ID"] || row["Personal Email"] || row["personal_email"] || row["personalEmail"] || row["personalMailId"] || "";
       const phone = row["Phone Number"] || row["phone"] || "";
       const roleOptions = availableRoles.join(" | ");
       const roleType = row[`Role Type (Options: ${roleOptions})`] || row["Role Type"] || row["role"] || "";
@@ -297,7 +339,7 @@ const UserManagementPage: React.FC = () => {
 
       const image = row["Profile Photo"] || row["image"] || row["photo"] || "";
 
-      if (!name.trim() || !email.trim() || !email.includes("@") || !roleType.trim() || roleType === "Select Role") {
+      if (!name.trim() || !email.trim() || !email.includes("@") || !personalEmail.trim() || !personalEmail.includes("@") || !roleType.trim() || roleType === "Select Role") {
         failedCount++;
         continue;
       }
@@ -316,6 +358,7 @@ const UserManagementPage: React.FC = () => {
             name,
             display_name: name,
             email,
+            personal_email: personalEmail,
             phone,
             role: cleanedRole,
             position,
@@ -334,6 +377,8 @@ const UserManagementPage: React.FC = () => {
           name,
           displayName: name,
           email,
+          personalEmail: personalEmail,
+          personal_email: personalEmail,
           phone,
           phoneNumber: phone,
           role: cleanedRole,
@@ -359,6 +404,8 @@ const UserManagementPage: React.FC = () => {
           id: createdId,
           name: name,
           email: email,
+          personal_email: personalEmail,
+          personalEmail: personalEmail,
           phone: phone,
           role: cleanedRole,
           status: "Active",
@@ -366,6 +413,24 @@ const UserManagementPage: React.FC = () => {
         };
         setUsers(prev => [newUser, ...prev]);
         successCount++;
+
+        // Send Welcome Email to the user's personal mail ID
+        const targetWelcomeMail = personalEmail || email;
+        if (targetWelcomeMail && targetWelcomeMail.includes("@")) {
+          const welcomeMailData = buildWelcomeMemberEmail({
+            name,
+            role: cleanedRole,
+            collegeEmail: email,
+            personalEmail: personalEmail,
+            portalUrl: `${window.location.origin}/login`
+          });
+          sendResendEmail({
+            to: targetWelcomeMail,
+            subject: welcomeMailData.subject,
+            html: welcomeMailData.html,
+            text: welcomeMailData.text
+          }).catch(mailErr => console.warn(`Welcome email notice for ${name}:`, mailErr));
+        }
       } catch (err) {
         console.error("Failed to add row", i, err);
         failedCount++;
@@ -401,7 +466,7 @@ const UserManagementPage: React.FC = () => {
           const newGrid = [...gridData];
           let startIndex = 0;
           const firstRow = results.data[0] as string[];
-          if (firstRow[0]?.toLowerCase().includes("name") || firstRow[1]?.toLowerCase().includes("email")) {
+          if (firstRow[0]?.toLowerCase().includes("name") || firstRow[1]?.toLowerCase().includes("email") || firstRow[0]?.toLowerCase().includes("photo")) {
             startIndex = 1;
           }
           
@@ -410,28 +475,57 @@ const UserManagementPage: React.FC = () => {
             const row = results.data[i] as string[];
             if (!newGrid[gridIndex]) newGrid[gridIndex] = { ...initialGridRow };
             
-            // Handle paste if 8 columns (with Profile Photo) or 7 columns (without Profile Photo)
-            if (row.length >= 8) {
+            // Handle paste depending on number of columns
+            if (row.length >= 9) {
+              // Photo, Name, College Mail, Personal Mail ID, Phone, Role, Bio, LinkedIn, GitHub
               newGrid[gridIndex] = {
                 "Profile Photo": row[0] || "",
                 "Full Name": row[1] || "",
-                "Email Address": row[2] || "",
+                "College Mail": row[2] || "",
+                "Personal Mail ID": row[3] || "",
+                "Phone Number": row[4] || "",
+                "Role Type": row[5] || "",
+                "Professional Bio": row[6] || "",
+                "LinkedIn URL": row[7] || "",
+                "GitHub URL": row[8] || ""
+              };
+            } else if (row.length === 8) {
+              // Name, College Mail, Personal Mail ID, Phone, Role, Bio, LinkedIn, GitHub
+              newGrid[gridIndex] = {
+                "Profile Photo": "",
+                "Full Name": row[0] || "",
+                "College Mail": row[1] || "",
+                "Personal Mail ID": row[2] || "",
                 "Phone Number": row[3] || "",
                 "Role Type": row[4] || "",
                 "Professional Bio": row[5] || "",
                 "LinkedIn URL": row[6] || "",
                 "GitHub URL": row[7] || ""
               };
-            } else {
+            } else if (row.length === 7) {
+              // Legacy CSV: Name, College Mail, Phone, Role, Bio, LinkedIn, GitHub
               newGrid[gridIndex] = {
                 "Profile Photo": "",
                 "Full Name": row[0] || "",
-                "Email Address": row[1] || "",
+                "College Mail": row[1] || "",
+                "Personal Mail ID": "",
                 "Phone Number": row[2] || "",
                 "Role Type": row[3] || "",
                 "Professional Bio": row[4] || "",
                 "LinkedIn URL": row[5] || "",
                 "GitHub URL": row[6] || ""
+              };
+            } else {
+              newGrid[gridIndex] = {
+                "Profile Photo": "",
+                "Full Name": row[0] || "",
+                "College Mail": row[1] || "",
+                "Personal Mail ID": row[2] || "",
+                "Phone Number": row[3] || "",
+                "Role Type": row[4] || "",
+                "Professional Bio": row[5] || "",
+                "LinkedIn URL": row[6] || "",
+                "GitHub URL": row[7] || ""
               };
             }
             gridIndex++;
@@ -441,6 +535,71 @@ const UserManagementPage: React.FC = () => {
         }
       }
     });
+  };
+
+  const handleCSVFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+      header: false,
+      skipEmptyLines: true,
+      complete: (results) => {
+        if (results.data && results.data.length > 0) {
+          const newGrid: Array<Record<string, string>> = [];
+          let startIndex = 0;
+          const firstRow = results.data[0] as string[];
+          if (firstRow[0]?.toLowerCase().includes("name") || firstRow[1]?.toLowerCase().includes("email") || firstRow[1]?.toLowerCase().includes("mail") || firstRow[0]?.toLowerCase().includes("photo")) {
+            startIndex = 1;
+          }
+
+          for (let i = startIndex; i < results.data.length; i++) {
+            const row = results.data[i] as string[];
+            if (row.length >= 9) {
+              newGrid.push({
+                "Profile Photo": row[0] || "",
+                "Full Name": row[1] || "",
+                "College Mail": row[2] || "",
+                "Personal Mail ID": row[3] || "",
+                "Phone Number": row[4] || "",
+                "Role Type": row[5] || "",
+                "Professional Bio": row[6] || "",
+                "LinkedIn URL": row[7] || "",
+                "GitHub URL": row[8] || ""
+              });
+            } else if (row.length === 8) {
+              newGrid.push({
+                "Profile Photo": "",
+                "Full Name": row[0] || "",
+                "College Mail": row[1] || "",
+                "Personal Mail ID": row[2] || "",
+                "Phone Number": row[3] || "",
+                "Role Type": row[4] || "",
+                "Professional Bio": row[5] || "",
+                "LinkedIn URL": row[6] || "",
+                "GitHub URL": row[7] || ""
+              });
+            } else if (row.length === 7) {
+              newGrid.push({
+                "Profile Photo": "",
+                "Full Name": row[0] || "",
+                "College Mail": row[1] || "",
+                "Personal Mail ID": "",
+                "Phone Number": row[2] || "",
+                "Role Type": row[3] || "",
+                "Professional Bio": row[4] || "",
+                "LinkedIn URL": row[5] || "",
+                "GitHub URL": row[6] || ""
+              });
+            }
+          }
+          while (newGrid.length < 5) newGrid.push({ ...initialGridRow });
+          setGridData(newGrid);
+          setShowPasteModal(true);
+        }
+      }
+    });
+    e.target.value = "";
   };
 
   const handleRowImageUpload = (rowIndex: number, file: File) => {
@@ -459,11 +618,15 @@ const UserManagementPage: React.FC = () => {
   };
 
   const handlePasteSubmit = () => {
-    const dataToProcess = gridData.filter(row => row["Full Name"].trim() || row["Email Address"].trim());
+    const dataToProcess = gridData.filter(row => row["Full Name"].trim() || row["College Mail"]?.trim() || row["Email Address"]?.trim());
     if (dataToProcess.length === 0) return;
     processBulkAdd(dataToProcess);
     setShowPasteModal(false);
     setGridData(Array(5).fill({...initialGridRow}));
+    try {
+      sessionStorage.removeItem("aether_bulk_paste_modal");
+      sessionStorage.removeItem("aether_bulk_paste_grid");
+    } catch {}
   };
 
   React.useEffect(() => {
@@ -579,7 +742,11 @@ const UserManagementPage: React.FC = () => {
       return;
     }
     if (!formEmail.trim() || !formEmail.includes("@")) {
-      alert("A valid email address is required!");
+      alert("A valid College Mail is required!");
+      return;
+    }
+    if (!formPersonalEmail.trim() || !formPersonalEmail.includes("@")) {
+      alert("A valid Personal Mail ID is required!");
       return;
     }
 
@@ -593,6 +760,7 @@ const UserManagementPage: React.FC = () => {
           name: formName,
           display_name: formName,
           email: formEmail,
+          personal_email: formPersonalEmail,
           role: formRoleType,
           position: formPosition,
           bio: formBio,
@@ -612,6 +780,8 @@ const UserManagementPage: React.FC = () => {
         name: formName,
         displayName: formName,
         email: formEmail,
+        personalEmail: formPersonalEmail,
+        personal_email: formPersonalEmail,
         role: formRoleType,
         roleType: formRoleType,
         position: formPosition,
@@ -638,6 +808,8 @@ const UserManagementPage: React.FC = () => {
         id: createdUserId,
         name: formName,
         email: formEmail,
+        personal_email: formPersonalEmail,
+        personalEmail: formPersonalEmail,
         role: formRoleType as any,
         image: formPhotoPreview || "",
         showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
@@ -648,9 +820,28 @@ const UserManagementPage: React.FC = () => {
       };
       setUsers(prev => [newUser, ...prev]);
 
+      // Send Welcome Email to the user's personal mail ID
+      const targetWelcomeMail = formPersonalEmail || formEmail;
+      if (targetWelcomeMail && targetWelcomeMail.includes("@")) {
+        const welcomeMailData = buildWelcomeMemberEmail({
+          name: formName,
+          role: formRoleType,
+          collegeEmail: formEmail,
+          personalEmail: formPersonalEmail,
+          portalUrl: `${window.location.origin}/login`
+        });
+        sendResendEmail({
+          to: targetWelcomeMail,
+          subject: welcomeMailData.subject,
+          html: welcomeMailData.html,
+          text: welcomeMailData.text
+        }).catch(mailErr => console.warn(`Welcome email notice for ${formName}:`, mailErr));
+      }
+
       // Reset state and return to user list view
       setFormName("");
       setFormEmail("");
+      setFormPersonalEmail("");
       setFormRoleType("Organizer");
       setFormPosition("");
       setFormBio("");
@@ -671,7 +862,10 @@ const UserManagementPage: React.FC = () => {
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteName || !inviteEmail) return;
+    if (!inviteName.trim() || !inviteEmail.trim() || !invitePersonalEmail.trim()) {
+      alert("Please fill in all required fields (Full Name, College Mail, Personal Mail ID).");
+      return;
+    }
 
     try {
       let createdId = "";
@@ -679,6 +873,7 @@ const UserManagementPage: React.FC = () => {
         const supaUser = await userService.addUser({
           name: inviteName,
           email: inviteEmail,
+          personal_email: invitePersonalEmail,
           role: inviteRole,
           status: "Active",
           show_in_about: false
@@ -691,6 +886,8 @@ const UserManagementPage: React.FC = () => {
       const newUserDoc = {
         name: inviteName,
         email: inviteEmail,
+        personalEmail: invitePersonalEmail,
+        personal_email: invitePersonalEmail,
         role: inviteRole,
         status: "Active",
         showInAbout: "No"
@@ -707,13 +904,35 @@ const UserManagementPage: React.FC = () => {
         id: createdId,
         name: inviteName,
         email: inviteEmail,
+        personal_email: invitePersonalEmail,
+        personalEmail: invitePersonalEmail,
         role: inviteRole,
         status: "Active",
         showInAbout: "No"
       };
       setUsers([newUser, ...users]);
+
+      // Send Welcome Email to the user's personal mail ID
+      const targetWelcomeMail = invitePersonalEmail || inviteEmail;
+      if (targetWelcomeMail && targetWelcomeMail.includes("@")) {
+        const welcomeMailData = buildWelcomeMemberEmail({
+          name: inviteName,
+          role: inviteRole,
+          collegeEmail: inviteEmail,
+          personalEmail: invitePersonalEmail,
+          portalUrl: `${window.location.origin}/login`
+        });
+        sendResendEmail({
+          to: targetWelcomeMail,
+          subject: welcomeMailData.subject,
+          html: welcomeMailData.html,
+          text: welcomeMailData.text
+        }).catch(mailErr => console.warn(`Welcome email notice for ${inviteName}:`, mailErr));
+      }
+
       setInviteName("");
       setInviteEmail("");
+      setInvitePersonalEmail("");
       setIsInviteModalOpen(false);
     } catch (err) {
       console.error("Error adding user to database:", err);
@@ -732,6 +951,7 @@ const UserManagementPage: React.FC = () => {
           name: formName,
           display_name: formName,
           email: formEmail,
+          personal_email: formPersonalEmail,
           role: formRoleType,
           image: formPhotoPreview || "",
           show_in_about: formShowInAbout === "Yes",
@@ -750,6 +970,8 @@ const UserManagementPage: React.FC = () => {
           name: formName,
           displayName: formName,
           email: formEmail,
+          personalEmail: formPersonalEmail,
+          personal_email: formPersonalEmail,
           role: formRoleType,
           image: formPhotoPreview || "",
           showInAbout: formShowInAbout === "Yes",
@@ -766,6 +988,8 @@ const UserManagementPage: React.FC = () => {
         ...u,
         name: formName,
         email: formEmail,
+        personal_email: formPersonalEmail,
+        personalEmail: formPersonalEmail,
         role: formRoleType as any,
         image: formPhotoPreview || "",
         showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
@@ -778,6 +1002,7 @@ const UserManagementPage: React.FC = () => {
       // Reset form
       setFormName("");
       setFormEmail("");
+      setFormPersonalEmail("");
       setFormRoleType("Organizer");
       setFormPhotoPreview("");
       setFormShowInAbout("No");
@@ -961,9 +1186,9 @@ const UserManagementPage: React.FC = () => {
                 </span>
                 Personal Details
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name *</label>
                   <input
                     type="text"
                     required
@@ -974,13 +1199,24 @@ const UserManagementPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Email Address</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">College Mail *</label>
                   <input
                     type="email"
                     required
                     placeholder="john.doe@university.edu"
                     value={formEmail}
                     onChange={(e) => setFormEmail(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/20 focus:bg-white transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Personal Mail ID *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="john.personal@gmail.com"
+                    value={formPersonalEmail}
+                    onChange={(e) => setFormPersonalEmail(e.target.value)}
                     className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 bg-slate-50/20 focus:bg-white transition-all"
                   />
                 </div>
@@ -1401,6 +1637,13 @@ const UserManagementPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
           {/* Bulk Add Members Button */}
           <div className="relative w-full md:w-auto">
+            <input 
+              ref={fileInputRef} 
+              type="file" 
+              accept=".csv" 
+              className="hidden" 
+              onChange={handleCSVFileSelect} 
+            />
             <button
               onClick={() => setShowBulkMenu(!showBulkMenu)}
               className="flex items-center gap-2 justify-center w-full md:w-auto px-5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold rounded-2xl shadow-sm transition-all text-sm whitespace-nowrap"
@@ -1614,6 +1857,7 @@ const UserManagementPage: React.FC = () => {
                                           setEditingUserId(user.id);
                                           setFormName(user.name);
                                           setFormEmail(user.email);
+                                          setFormPersonalEmail(user.personal_email || user.personalEmail || "");
                                           setFormRoleType(user.role || "Organizer");
                                           setFormPhotoPreview(user.image || "");
                                           setFormShowInAbout(user.showInAbout === "Yes" ? "Yes" : "No");
@@ -1792,13 +2036,25 @@ const UserManagementPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Email Address</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">College Mail *</label>
                 <input
                   type="email"
                   required
                   placeholder="e.g. elena.r@university.edu"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Personal Mail ID *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. elena.personal@gmail.com"
+                  value={invitePersonalEmail}
+                  onChange={(e) => setInvitePersonalEmail(e.target.value)}
                   className="w-full px-4 py-2 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800"
                 />
               </div>
@@ -1901,7 +2157,7 @@ const UserManagementPage: React.FC = () => {
                     {gridColumns.map(col => (
                       <th key={col} className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 shadow-sm">
                         {col}
-                        {["Full Name", "Email Address", "Role Type"].includes(col) && <span className="text-red-500 ml-1">*</span>}
+                        {["Full Name", "College Mail", "Personal Mail ID", "Role Type"].includes(col) && <span className="text-red-500 ml-1">*</span>}
                       </th>
                     ))}
                   </tr>
@@ -2001,7 +2257,13 @@ const UserManagementPage: React.FC = () => {
               <button 
                 type="button"
                 className="px-6 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-2xl text-sm transition-all"
-                onClick={() => setShowPasteModal(false)}
+                onClick={() => {
+                  setShowPasteModal(false);
+                  try {
+                    sessionStorage.removeItem("aether_bulk_paste_modal");
+                    sessionStorage.removeItem("aether_bulk_paste_grid");
+                  } catch {}
+                }}
               >
                 Cancel
               </button>
