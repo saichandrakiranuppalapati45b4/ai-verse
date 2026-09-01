@@ -155,9 +155,9 @@ const AboutPage: React.FC = () => {
   return (
     <div className="overflow-hidden bg-[#F8FAFC]">
       <SEO 
-        title="About - Our Story" 
-        description="Learn about the mission, values, and story of AI Verse, a student-led community pioneering cognitive computing."
-        keywords="About AI Verse, AI Mission, Academic Community"
+        title="About AI Verse VITB | Our Mission & Story - VIT Bhimavaram" 
+        description="Discover the mission, values, and community of AI Verse VITB — the official Artificial Intelligence & Data Science student club at Vishnu Institute of Technology, Bhimavaram (VIT Bhimavaram)."
+        keywords="About AI Verse, aiversevitb, AI Verse VITB, VIT Bhimavaram, Vishnu Institute of Technology, AI & Data Science"
       />
       
       {/* ================= HERO SECTION ================= */}
@@ -294,7 +294,7 @@ const AboutPage: React.FC = () => {
               </div>
               <h3 className="text-lg font-bold text-aether-dark">Innovation</h3>
               <p className="text-xs sm:text-sm text-slate-500 leading-relaxed font-normal">
-                We push the boundaries of what's possible, encouraging members to explore unconventional architectures and novel applications of machine learning.
+                We push the boundaries of what's possible, encouraging members to explore unconventional architectures and novel applications of AI and data science.
               </p>
             </motion.div>
 

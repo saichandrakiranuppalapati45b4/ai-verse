@@ -45,9 +45,9 @@ const ContactPage: React.FC = () => {
   return (
     <div className="overflow-hidden bg-[#FAFBFC] pb-24 pt-28 min-h-screen font-sans">
       <SEO 
-        title="Contact - Get in Touch" 
-        description="Get in touch with the AI Verse team for collaboration, inquiries, or support."
-        keywords="Contact AI Verse, Support, Collaboration, Research Team"
+        title="Contact AI Verse VITB | Vishnu Institute of Technology, Bhimavaram" 
+        description="Get in touch with the AI Verse VITB team at Vishnu Institute of Technology, Bhimavaram for project partnerships, event queries, and student inquiries."
+        keywords="Contact AI Verse, aiversevitb, AI Verse VITB, VIT Bhimavaram, Vishnu Institute of Technology, Collaboration"
       />
       
       {/* Background glow elements */}

@@ -154,9 +154,9 @@ const HomePage: React.FC = () => {
   return (
     <div className="overflow-hidden bg-[#F8FAFC]">
       <SEO
-        title="Home - Innovating the Future"
-        description="Discover the AI Verse portal - where developers, researchers, and AI enthusiasts collaborate on cutting-edge machine learning and cognitive computing projects."
-        keywords="AI, Artificial Intelligence, ML, Cognitive Computing, Student Research Group, AI Verse"
+        title="AI Verse VITB | AI & Data Science Student Community - VIT Bhimavaram"
+        description="Welcome to AI Verse VITB (aiversevitb) — the premier Artificial Intelligence & Data Science student community at Vishnu Institute of Technology, Bhimavaram (VIT Bhimavaram). Collaborate on AI projects, hackathons, workshops, and student innovation."
+        keywords="AI Verse, aiversevitb, AI Verse VITB, VIT Bhimavaram, Vishnu Institute of Technology, AI & Data Science, Data Science, Student AI Community, VITB AI"
       />
       {/* ================= HERO SECTION ================= */}
       <section className="relative min-h-[90vh] flex items-center pt-8 pb-16 lg:py-24">
@@ -416,7 +416,7 @@ const HomePage: React.FC = () => {
                 </div>
                 <h3 className="text-lg font-bold text-aether-dark">Education</h3>
                 <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
-                  Comprehensive curriculums and bootcamps covering machine learning, neural networks, and prompt engineering for all skill levels.
+                  Comprehensive curriculums and bootcamps covering artificial intelligence, data science, neural networks, and prompt engineering for all skill levels.
                 </p>
               </div>
               <Link to="/events" className="inline-flex items-center gap-1.5 text-xs font-bold text-aether-blue-600 hover:text-aether-blue-700 mt-4 group">

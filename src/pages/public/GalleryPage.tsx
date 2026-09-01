@@ -119,9 +119,9 @@ const GalleryPage: React.FC = () => {
   return (
     <div className="overflow-hidden bg-[#FAFBFC] pb-24 min-h-screen font-sans">
       <SEO 
-        title="Gallery - Our Visual Legacy" 
-        description="Take a visual journey through AI Verse workshops, seminars, hackathons, and collaborative student research projects." 
-        keywords="AI Verse Gallery, Student Projects, AI Workshops, Hackathons Gallery"
+        title="Gallery - Visual Moments | AI Verse VITB - VIT Bhimavaram" 
+        description="Explore the visual legacy of AI Verse VITB — hackathons, AI & Data Science workshops, project expos, and student achievements at Vishnu Institute of Technology, Bhimavaram." 
+        keywords="AI Verse Gallery, aiversevitb, AI Verse VITB, VIT Bhimavaram, Vishnu Institute of Technology, AI Workshops Gallery"
       />
       
       {/* ================= HERO / HEADER SECTION ================= */}

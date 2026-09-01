@@ -89,9 +89,9 @@ const TeamPage: React.FC = () => {
   return (
     <div className="overflow-hidden bg-[#F8FAFC]">
       <SEO 
-        title="Team - The Minds Behind the Aether" 
-        description="Meet the dedicated leaders, researchers, and developers driving cognitive computing at AI Verse."
-        keywords="AI Verse Team, AI Researchers, Student Developers"
+        title="Team - The Minds Behind AI Verse | VIT Bhimavaram" 
+        description="Meet the student leaders, data scientists, and developers powering AI Verse VITB at Vishnu Institute of Technology, Bhimavaram (VIT Bhimavaram)."
+        keywords="AI Verse Team, aiversevitb, AI Verse VITB, VIT Bhimavaram, Vishnu Institute of Technology, Student Developers, Data Science"
       />
       
       {/* ================= HERO SECTION ================= */}
@@ -124,7 +124,7 @@ const TeamPage: React.FC = () => {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="max-w-2xl mx-auto bg-white/10 backdrop-blur-md border border-white/10 p-6 rounded-2xl shadow-sm text-slate-200 text-xs sm:text-sm md:text-base font-normal leading-relaxed"
           >
-            Our collective is composed of pioneers in large-scale machine learning, cognitive sciences, and digital architecture, dedicated to sculpting the next era of Aetheric Intelligence.
+            Our collective is composed of pioneers in large-scale artificial intelligence, data science, cognitive computing, and digital architecture at VIT Bhimavaram.
           </motion.div>
         </div>
       </section>

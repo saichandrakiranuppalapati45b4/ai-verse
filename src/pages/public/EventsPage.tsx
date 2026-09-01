@@ -197,9 +197,9 @@ const EventsPage: React.FC = () => {
   return (
     <div className="overflow-hidden bg-[#F8FAFC] pb-16">
       <SEO 
-        title="Events - Future of AI" 
-        description="Join AI Verse workshops, hackathons, and seminars to learn and collaborate on state-of-the-art AI development."
-        keywords="AI workshops, Hackathons, AI Seminars, Community Events"
+        title="Events & Hackathons | AI Verse VITB - VIT Bhimavaram" 
+        description="Join AI Verse VITB hackathons, coding workshops, AI & Data Science symposiums, and technical guest lectures at Vishnu Institute of Technology, Bhimavaram."
+        keywords="AI workshops, Hackathons, AI Seminars, Community Events, aiversevitb, AI Verse VITB, VIT Bhimavaram"
       />
       
       {/* ================= HERO SECTION ================= */}

@@ -10,7 +10,7 @@ interface SEOProps {
 const SEO: React.FC<SEOProps> = ({ title, description, keywords, url }) => {
   useEffect(() => {
     // 1. Update page title
-    const fullTitle = `AI Verse | ${title}`;
+    const fullTitle = title.toLowerCase().includes("ai verse") ? title : `AI Verse VITB | ${title}`;
     document.title = fullTitle;
 
     // Helper function to create or update meta tags
@@ -45,20 +45,25 @@ const SEO: React.FC<SEOProps> = ({ title, description, keywords, url }) => {
     updateMetaTag("og:description", description, true);
     updateMetaTag("twitter:description", description);
 
-    // 3. Update meta keywords (if provided)
+    // 3. Update site name & app identity
+    updateMetaTag("og:site_name", "AI Verse VITB", true);
+    updateMetaTag("application-name", "AI Verse VITB");
+    updateMetaTag("apple-mobile-web-app-title", "AI Verse VITB");
+
+    // 4. Update meta keywords (if provided)
     if (keywords) {
-      updateMetaTag("keywords", keywords);
+      updateMetaTag("keywords", `${keywords}, aiversevitb, AI Verse VITB, VIT Bhimavaram, AI & Data Science`);
     }
 
-    // 4. Update title tags for OG and Twitter
+    // 5. Update title tags for OG and Twitter
     updateMetaTag("og:title", fullTitle, true);
     updateMetaTag("twitter:title", fullTitle);
 
-    // 5. Update Favicon Link
+    // 6. Update Favicon Link
     updateLinkTag("icon", "/ai_verse.png");
     updateLinkTag("apple-touch-icon", "/ai_verse.png");
 
-    // 6. Update URL tags
+    // 7. Update URL tags
     if (url) {
       updateMetaTag("og:url", url, true);
       updateMetaTag("twitter:url", url);
