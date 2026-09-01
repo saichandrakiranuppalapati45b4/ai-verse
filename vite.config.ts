@@ -21,7 +21,7 @@ export default defineConfig({
           req.on('end', async () => {
             try {
               const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
-              const RESEND_API_KEY = process.env.RESEND_API_KEY;
+              const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               if (!RESEND_API_KEY) {
                 res.statusCode = 500;
                 res.setHeader('Content-Type', 'application/json');
@@ -89,7 +89,7 @@ export default defineConfig({
           req.on('end', async () => {
             try {
               const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
-              const RESEND_API_KEY = process.env.RESEND_API_KEY;
+              const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
               if (!RESEND_API_KEY) {
                 res.statusCode = 500;
                 res.setHeader('Content-Type', 'application/json');

@@ -41,6 +41,7 @@ import { useAuth } from "../../context/AuthContext";
 import TeamGraphModal from "../../components/dashboard/TeamGraphModal";
 import { sendResendEmail } from "../../utils/resendEmailService";
 import { buildWelcomeMemberEmail } from "../../utils/emailTemplates";
+import { compressImageBase64 } from "../../utils/imageCompressor";
 
 export interface UserItem {
   id: string;
@@ -140,50 +141,127 @@ const UserManagementPage: React.FC = () => {
   React.useEffect(() => {
     const fetchUsers = async () => {
       try {
-        // Fetch from Supabase
-        const supabaseUsers = await userService.getUsers();
-        if (supabaseUsers && supabaseUsers.length > 0) {
-          const list: UserItem[] = supabaseUsers.map((u) => ({
-            id: u.id,
-            name: u.name || u.display_name || "Unnamed User",
-            email: u.email || "",
-            personal_email: u.personal_email || "",
-            personalEmail: u.personal_email || "",
-            phone: u.phone || "",
-            role: (u.role || "Guest") as any,
-            status: (u.status || "Active") as any,
-            image: u.image || "",
-            showInAbout: u.show_in_about ? "Yes" : "No",
-            bio: u.bio || "",
-            linkedin: u.linkedin || "",
-            github: u.github || ""
-          }));
-          setUsers(list);
-          return;
+        const combinedList: UserItem[] = [];
+        const seenEmails = new Set<string>();
+
+        // 1. Fetch from Supabase
+        try {
+          const supabaseUsers = await userService.getUsers();
+          if (supabaseUsers && supabaseUsers.length > 0) {
+            supabaseUsers.forEach((u) => {
+              const email = (u.email || "").toLowerCase().trim();
+              if (email) seenEmails.add(email);
+              combinedList.push({
+                id: u.id,
+                name: u.name || u.display_name || "Unnamed User",
+                email: u.email || "",
+                personal_email: u.personal_email || "",
+                personalEmail: u.personal_email || "",
+                phone: u.phone || "",
+                role: (u.role || "Guest") as any,
+                status: (u.status || "Active") as any,
+                image: u.image || "",
+                showInAbout: u.show_in_about ? "Yes" : "No",
+                bio: u.bio || "",
+                linkedin: u.linkedin || "",
+                github: u.github || ""
+              });
+            });
+          }
+        } catch (supaErr) {
+          console.warn("[UserManagement] Notice fetching users from Supabase:", supaErr);
         }
 
-        // Fallback to Firestore if no Supabase records returned
-        const querySnapshot = await getDocs(collection(db, "users"));
-        const list: UserItem[] = [];
-        querySnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          list.push({
-            id: docSnap.id,
-            name: data.name || data.displayName || "Unnamed User",
-            email: data.email || "",
-            personal_email: data.personal_email || data.personalEmail || "",
-            personalEmail: data.personalEmail || data.personal_email || "",
-            phone: data.phone || data.phoneNumber || "",
-            role: data.role || "Guest",
-            status: data.status || "Active",
-            image: data.image || "",
-            showInAbout: data.showInAbout === true || data.showInAbout === "Yes" || data.showInAboutPage === true || data.showInAboutPage === "Yes" ? "Yes" : "No",
-            bio: data.bio || "",
-            linkedin: data.linkedin || "",
-            github: data.github || ""
+        // 2. Fetch and merge from Firestore 'users'
+        try {
+          const querySnapshot = await getDocs(collection(db, "users"));
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const email = (data.email || "").toLowerCase().trim();
+            if (email && seenEmails.has(email)) {
+              // Update existing entry with any extra fields from Firestore
+              const idx = combinedList.findIndex(item => (item.email || "").toLowerCase().trim() === email);
+              if (idx >= 0) {
+                combinedList[idx] = {
+                  ...combinedList[idx],
+                  personal_email: combinedList[idx].personal_email || data.personal_email || data.personalEmail || "",
+                  personalEmail: combinedList[idx].personalEmail || data.personalEmail || data.personal_email || "",
+                  image: combinedList[idx].image || data.image || "",
+                  bio: combinedList[idx].bio || data.bio || "",
+                  linkedin: combinedList[idx].linkedin || data.linkedin || "",
+                  github: combinedList[idx].github || data.github || "",
+                  phone: combinedList[idx].phone || data.phone || data.phoneNumber || "",
+                  role: combinedList[idx].role || data.role || data.roleType || "Guest",
+                  showInAbout: combinedList[idx].showInAbout || (data.showInAbout === true || data.showInAbout === "Yes" || data.showInAboutPage === true || data.showInAboutPage === "Yes" ? "Yes" : "No")
+                };
+              }
+            } else {
+              if (email) seenEmails.add(email);
+              combinedList.push({
+                id: docSnap.id,
+                name: data.name || data.displayName || data.teamLeadName || "Unnamed User",
+                email: data.email || "",
+                personal_email: data.personal_email || data.personalEmail || "",
+                personalEmail: data.personalEmail || data.personal_email || "",
+                phone: data.phone || data.phoneNumber || "",
+                role: data.role || data.roleType || "Guest",
+                status: data.status || "Active",
+                image: data.image || "",
+                showInAbout: data.showInAbout === true || data.showInAbout === "Yes" || data.showInAboutPage === true || data.showInAboutPage === "Yes" ? "Yes" : "No",
+                bio: data.bio || "",
+                linkedin: data.linkedin || "",
+                github: data.github || ""
+              });
+            }
           });
-        });
-        setUsers(list);
+        } catch (fsErr) {
+          console.warn("[UserManagement] Notice fetching users from Firestore:", fsErr);
+        }
+
+        // 3. Fetch and merge from Firestore 'organizers'
+        try {
+          const organizersSnap = await getDocs(collection(db, "organizers"));
+          organizersSnap.forEach((docSnap) => {
+            const data = docSnap.data();
+            const email = (data.email || "").toLowerCase().trim();
+            if (email && seenEmails.has(email)) {
+              const idx = combinedList.findIndex(item => (item.email || "").toLowerCase().trim() === email);
+              if (idx >= 0) {
+                combinedList[idx] = {
+                  ...combinedList[idx],
+                  personal_email: combinedList[idx].personal_email || data.personal_email || data.personalEmail || "",
+                  personalEmail: combinedList[idx].personalEmail || data.personal_email || data.personalEmail || "",
+                  image: combinedList[idx].image || data.image || "",
+                  bio: combinedList[idx].bio || data.bio || "",
+                  linkedin: combinedList[idx].linkedin || data.linkedin || "",
+                  github: combinedList[idx].github || data.github || "",
+                  phone: combinedList[idx].phone || data.phone || data.phoneNumber || "",
+                };
+              }
+            } else {
+              if (email) seenEmails.add(email);
+              combinedList.push({
+                id: docSnap.id,
+                name: data.name || data.displayName || "Unnamed User",
+                email: data.email || "",
+                personal_email: data.personal_email || data.personalEmail || "",
+                personalEmail: data.personalEmail || data.personal_email || "",
+                phone: data.phone || data.phoneNumber || "",
+                role: data.role || data.roleType || "Organizer",
+                status: data.status || "Active",
+                image: data.image || "",
+                showInAbout: data.showInAbout === true || data.showInAbout === "Yes" ? "Yes" : "No",
+                bio: data.bio || "",
+                linkedin: data.linkedin || "",
+                github: data.github || ""
+              });
+            }
+          });
+        } catch (orgErr) {
+          console.warn("[UserManagement] Notice fetching organizers from Firestore:", orgErr);
+        }
+
+        setUsers(combinedList);
       } catch (err) {
         console.error("Error fetching users from database:", err);
       }
@@ -353,6 +431,8 @@ const UserManagementPage: React.FC = () => {
 
       try {
         let createdId = "";
+        const compressedImage = image ? await compressImageBase64(image, 500, 500, 0.75) : "";
+
         try {
           const supabaseRecord = await userService.addUser({
             name,
@@ -365,7 +445,7 @@ const UserManagementPage: React.FC = () => {
             bio,
             linkedin,
             github,
-            image: image,
+            image: compressedImage,
             status: "Active"
           });
           createdId = supabaseRecord.id;
@@ -387,7 +467,7 @@ const UserManagementPage: React.FC = () => {
           bio,
           linkedin,
           github,
-          image: image,
+          image: compressedImage,
           status: "Active",
           createdAt: Date.now()
         };
@@ -409,13 +489,13 @@ const UserManagementPage: React.FC = () => {
           phone: phone,
           role: cleanedRole,
           status: "Active",
-          image: image
+          image: compressedImage
         };
         setUsers(prev => [newUser, ...prev]);
         successCount++;
 
         // Send Welcome Email to the user's personal mail ID
-        const targetWelcomeMail = personalEmail || email;
+        const targetWelcomeMail = (personalEmail && personalEmail.includes("@")) ? personalEmail.trim() : email.trim();
         if (targetWelcomeMail && targetWelcomeMail.includes("@")) {
           const welcomeMailData = buildWelcomeMemberEmail({
             name,
@@ -424,12 +504,17 @@ const UserManagementPage: React.FC = () => {
             personalEmail: personalEmail,
             portalUrl: `${window.location.origin}/login`
           });
-          sendResendEmail({
+          const mailRes = await sendResendEmail({
             to: targetWelcomeMail,
             subject: welcomeMailData.subject,
             html: welcomeMailData.html,
             text: welcomeMailData.text
-          }).catch(mailErr => console.warn(`Welcome email notice for ${name}:`, mailErr));
+          });
+          if (!mailRes.success) {
+            console.warn(`[Welcome Email Notice for ${name} (${targetWelcomeMail})]:`, mailRes.error);
+          } else {
+            console.log(`[Welcome Email Sent] to ${targetWelcomeMail} for ${name}`);
+          }
         }
       } catch (err) {
         console.error("Failed to add row", i, err);
@@ -605,8 +690,10 @@ const UserManagementPage: React.FC = () => {
   const handleRowImageUpload = (rowIndex: number, file: File) => {
     if (!file) return;
     const reader = new FileReader();
-    reader.onloadend = () => {
-      handleGridChange(rowIndex, "Profile Photo", reader.result as string);
+    reader.onloadend = async () => {
+      const raw = reader.result as string;
+      const compressed = await compressImageBase64(raw, 500, 500, 0.75);
+      handleGridChange(rowIndex, "Profile Photo", compressed);
     };
     reader.readAsDataURL(file);
   };
@@ -729,8 +816,10 @@ const UserManagementPage: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormPhotoPreview(reader.result as string);
+      reader.onloadend = async () => {
+        const raw = reader.result as string;
+        const compressed = await compressImageBase64(raw, 500, 500, 0.75);
+        setFormPhotoPreview(compressed);
       };
       reader.readAsDataURL(file);
     }
@@ -753,6 +842,7 @@ const UserManagementPage: React.FC = () => {
     setAddingToTeam(true);
     try {
       let createdUserId = "";
+      const finalPhoto = formPhotoPreview ? await compressImageBase64(formPhotoPreview, 500, 500, 0.75) : "";
 
       // 1. Add in Supabase
       try {
@@ -766,7 +856,7 @@ const UserManagementPage: React.FC = () => {
           bio: formBio,
           linkedin: formLinkedin,
           github: formGithub,
-          image: formPhotoPreview || "",
+          image: finalPhoto,
           show_in_about: formShowInAbout === "Yes",
           status: "Active"
         });
@@ -788,7 +878,7 @@ const UserManagementPage: React.FC = () => {
         bio: formBio,
         linkedin: formLinkedin,
         github: formGithub,
-        image: formPhotoPreview || "",
+        image: finalPhoto,
         showInAbout: formShowInAbout === "Yes",
         showInAboutPage: formShowInAbout === "Yes",
         status: "Active",
@@ -811,7 +901,7 @@ const UserManagementPage: React.FC = () => {
         personal_email: formPersonalEmail,
         personalEmail: formPersonalEmail,
         role: formRoleType as any,
-        image: formPhotoPreview || "",
+        image: finalPhoto,
         showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
         bio: formBio,
         linkedin: formLinkedin,
@@ -821,7 +911,7 @@ const UserManagementPage: React.FC = () => {
       setUsers(prev => [newUser, ...prev]);
 
       // Send Welcome Email to the user's personal mail ID
-      const targetWelcomeMail = formPersonalEmail || formEmail;
+      const targetWelcomeMail = (formPersonalEmail && formPersonalEmail.includes("@")) ? formPersonalEmail.trim() : formEmail.trim();
       if (targetWelcomeMail && targetWelcomeMail.includes("@")) {
         const welcomeMailData = buildWelcomeMemberEmail({
           name: formName,
@@ -830,12 +920,17 @@ const UserManagementPage: React.FC = () => {
           personalEmail: formPersonalEmail,
           portalUrl: `${window.location.origin}/login`
         });
-        sendResendEmail({
+        const mailRes = await sendResendEmail({
           to: targetWelcomeMail,
           subject: welcomeMailData.subject,
           html: welcomeMailData.html,
           text: welcomeMailData.text
-        }).catch(mailErr => console.warn(`Welcome email notice for ${formName}:`, mailErr));
+        });
+        if (!mailRes.success) {
+          console.warn(`[Welcome Email Notice for ${formName} (${targetWelcomeMail})]:`, mailRes.error);
+        } else {
+          console.log(`[Welcome Email Sent] to ${targetWelcomeMail} for ${formName}`);
+        }
       }
 
       // Reset state and return to user list view
@@ -913,7 +1008,7 @@ const UserManagementPage: React.FC = () => {
       setUsers([newUser, ...users]);
 
       // Send Welcome Email to the user's personal mail ID
-      const targetWelcomeMail = invitePersonalEmail || inviteEmail;
+      const targetWelcomeMail = (invitePersonalEmail && invitePersonalEmail.includes("@")) ? invitePersonalEmail.trim() : inviteEmail.trim();
       if (targetWelcomeMail && targetWelcomeMail.includes("@")) {
         const welcomeMailData = buildWelcomeMemberEmail({
           name: inviteName,
@@ -922,12 +1017,17 @@ const UserManagementPage: React.FC = () => {
           personalEmail: invitePersonalEmail,
           portalUrl: `${window.location.origin}/login`
         });
-        sendResendEmail({
+        const mailRes = await sendResendEmail({
           to: targetWelcomeMail,
           subject: welcomeMailData.subject,
           html: welcomeMailData.html,
           text: welcomeMailData.text
-        }).catch(mailErr => console.warn(`Welcome email notice for ${inviteName}:`, mailErr));
+        });
+        if (!mailRes.success) {
+          console.warn(`[Welcome Email Notice for ${inviteName} (${targetWelcomeMail})]:`, mailRes.error);
+        } else {
+          console.log(`[Welcome Email Sent] to ${targetWelcomeMail} for ${inviteName}`);
+        }
       }
 
       setInviteName("");
@@ -945,6 +1045,8 @@ const UserManagementPage: React.FC = () => {
     if (!editingUserId || !formName || !formEmail) return;
 
     try {
+      const finalPhoto = formPhotoPreview ? await compressImageBase64(formPhotoPreview, 500, 500, 0.75) : "";
+
       // 1. Update in Supabase
       try {
         await userService.updateUser(editingUserId, {
@@ -953,7 +1055,7 @@ const UserManagementPage: React.FC = () => {
           email: formEmail,
           personal_email: formPersonalEmail,
           role: formRoleType,
-          image: formPhotoPreview || "",
+          image: finalPhoto,
           show_in_about: formShowInAbout === "Yes",
           bio: formBio,
           linkedin: formLinkedin,
@@ -973,7 +1075,7 @@ const UserManagementPage: React.FC = () => {
           personalEmail: formPersonalEmail,
           personal_email: formPersonalEmail,
           role: formRoleType,
-          image: formPhotoPreview || "",
+          image: finalPhoto,
           showInAbout: formShowInAbout === "Yes",
           showInAboutPage: formShowInAbout === "Yes",
           bio: formBio,
@@ -991,7 +1093,7 @@ const UserManagementPage: React.FC = () => {
         personal_email: formPersonalEmail,
         personalEmail: formPersonalEmail,
         role: formRoleType as any,
-        image: formPhotoPreview || "",
+        image: finalPhoto,
         showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
         bio: formBio,
         linkedin: formLinkedin,
@@ -2214,7 +2316,7 @@ const UserManagementPage: React.FC = () => {
                           ) : col === "Role Type" ? (
                             <div className="relative flex items-center p-1.5">
                               <select
-                                value={row[col]}
+                                value={row[col] || ""}
                                 onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
                                 className="w-full min-w-[160px] appearance-none pl-3 pr-8 py-2 bg-slate-50 border border-slate-200/90 rounded-xl focus:outline-none focus:border-blue-500 focus:bg-white text-slate-800 text-xs font-semibold cursor-pointer transition-all shadow-2xs"
                               >
@@ -2231,7 +2333,7 @@ const UserManagementPage: React.FC = () => {
                           ) : (
                             <input
                               type="text"
-                              value={row[col]}
+                              value={row[col] || ""}
                               onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
                               placeholder={col}
                               className="w-full min-w-[150px] px-4 py-3 bg-transparent border-0 focus:outline-none text-slate-700 text-sm font-medium placeholder:text-slate-300"
