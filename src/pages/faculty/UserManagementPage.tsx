@@ -28,7 +28,8 @@ import {
   Eye,
   Users,
   ChevronDown,
-  ShieldCheck
+  ShieldCheck,
+  Camera
 } from "lucide-react";
 import Papa from "papaparse";
 import { db, app } from "../../config/firebase";
@@ -222,6 +223,7 @@ const UserManagementPage: React.FC = () => {
   const [selectedDownloadRole, setSelectedDownloadRole] = useState("All");
 
   const initialGridRow = {
+    "Profile Photo": "",
     "Full Name": "",
     "Email Address": "",
     "Phone Number": "",
@@ -293,6 +295,8 @@ const UserManagementPage: React.FC = () => {
       const linkedin = row["LinkedIn URL"] || row["linkedin"] || "";
       const github = row["GitHub URL"] || row["github"] || "";
 
+      const image = row["Profile Photo"] || row["image"] || row["photo"] || "";
+
       if (!name.trim() || !email.trim() || !email.includes("@") || !roleType.trim() || roleType === "Select Role") {
         failedCount++;
         continue;
@@ -318,7 +322,7 @@ const UserManagementPage: React.FC = () => {
             bio,
             linkedin,
             github,
-            image: "",
+            image: image,
             status: "Active"
           });
           createdId = supabaseRecord.id;
@@ -338,7 +342,7 @@ const UserManagementPage: React.FC = () => {
           bio,
           linkedin,
           github,
-          image: "",
+          image: image,
           status: "Active",
           createdAt: Date.now()
         };
@@ -358,7 +362,7 @@ const UserManagementPage: React.FC = () => {
           phone: phone,
           role: cleanedRole,
           status: "Active",
-          image: ""
+          image: image
         };
         setUsers(prev => [newUser, ...prev]);
         successCount++;
@@ -405,15 +409,31 @@ const UserManagementPage: React.FC = () => {
           for (let i = startIndex; i < results.data.length; i++) {
             const row = results.data[i] as string[];
             if (!newGrid[gridIndex]) newGrid[gridIndex] = { ...initialGridRow };
-            newGrid[gridIndex] = {
-              "Full Name": row[0] || "",
-              "Email Address": row[1] || "",
-              "Phone Number": row[2] || "",
-              "Role Type": row[3] || "",
-              "Professional Bio": row[4] || "",
-              "LinkedIn URL": row[5] || "",
-              "GitHub URL": row[6] || ""
-            };
+            
+            // Handle paste if 8 columns (with Profile Photo) or 7 columns (without Profile Photo)
+            if (row.length >= 8) {
+              newGrid[gridIndex] = {
+                "Profile Photo": row[0] || "",
+                "Full Name": row[1] || "",
+                "Email Address": row[2] || "",
+                "Phone Number": row[3] || "",
+                "Role Type": row[4] || "",
+                "Professional Bio": row[5] || "",
+                "LinkedIn URL": row[6] || "",
+                "GitHub URL": row[7] || ""
+              };
+            } else {
+              newGrid[gridIndex] = {
+                "Profile Photo": "",
+                "Full Name": row[0] || "",
+                "Email Address": row[1] || "",
+                "Phone Number": row[2] || "",
+                "Role Type": row[3] || "",
+                "Professional Bio": row[4] || "",
+                "LinkedIn URL": row[5] || "",
+                "GitHub URL": row[6] || ""
+              };
+            }
             gridIndex++;
           }
           while (newGrid.length < Math.max(5, gridIndex)) newGrid.push({ ...initialGridRow });
@@ -421,6 +441,15 @@ const UserManagementPage: React.FC = () => {
         }
       }
     });
+  };
+
+  const handleRowImageUpload = (rowIndex: number, file: File) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      handleGridChange(rowIndex, "Profile Photo", reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleGridChange = (rowIndex: number, col: string, value: string) => {
@@ -1883,7 +1912,50 @@ const UserManagementPage: React.FC = () => {
                       <td className="px-4 py-2 text-slate-400 font-bold text-xs border-r border-slate-100 bg-white group-hover:bg-slate-50/50 sticky left-0 z-10 text-center">{rIndex + 1}</td>
                       {gridColumns.map(col => (
                         <td key={col} className="p-0 border-r border-slate-50 last:border-r-0 focus-within:ring-1 focus-within:ring-inset focus-within:ring-blue-500">
-                          {col === "Role Type" ? (
+                          {col === "Profile Photo" ? (
+                            <div className="flex items-center justify-center p-2 min-w-[100px]">
+                              <input
+                                type="file"
+                                id={`row-photo-input-${rIndex}`}
+                                className="hidden"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleRowImageUpload(rIndex, f);
+                                }}
+                              />
+                              {row["Profile Photo"] ? (
+                                <div className="relative group/photo">
+                                  <img
+                                    src={row["Profile Photo"]}
+                                    alt="Profile"
+                                    onClick={() => document.getElementById(`row-photo-input-${rIndex}`)?.click()}
+                                    className="w-9 h-9 rounded-full object-cover border-2 border-blue-400 shadow-xs cursor-pointer hover:opacity-80 transition-opacity"
+                                    title="Click to change photo"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleGridChange(rIndex, "Profile Photo", "");
+                                    }}
+                                    className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] shadow-xs transition-colors"
+                                    title="Remove photo"
+                                  >
+                                    <X className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <label
+                                  htmlFor={`row-photo-input-${rIndex}`}
+                                  className="w-9 h-9 rounded-full border-2 border-dashed border-slate-200 hover:border-blue-500 bg-slate-50/70 hover:bg-blue-50/60 flex items-center justify-center text-slate-400 hover:text-blue-600 cursor-pointer transition-all shadow-2xs group/upload"
+                                  title="Upload Profile Image"
+                                >
+                                  <Camera className="w-4 h-4 group-hover/upload:scale-110 transition-transform" />
+                                </label>
+                              )}
+                            </div>
+                          ) : col === "Role Type" ? (
                             <div className="relative flex items-center p-1.5">
                               <select
                                 value={row[col]}

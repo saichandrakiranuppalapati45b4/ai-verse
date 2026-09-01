@@ -15,10 +15,11 @@ import {
   MoreVertical,
   Trash2
 } from "lucide-react";
-import { db, firebaseConfig } from "../../config/firebase";
+import { db } from "../../config/firebase";
 import { collection, getDocs, addDoc, doc, setDoc, deleteDoc } from "firebase/firestore";
-import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
+import { createClient } from "@supabase/supabase-js";
+import { env } from "../../config/env";
+import { userService } from "../../services/userService";
 
 // Import local assets if they exist
 import elenaImg from "../../assets/images/elena.png";
@@ -251,12 +252,62 @@ const OrganizerManagementPage: React.FC = () => {
     if (showAddOrganizerForm) {
       const fetchUsers = async () => {
         try {
-          const snap = await getDocs(collection(db, "users"));
-          const list: any[] = [];
-          snap.forEach(d => {
-            list.push({ id: d.id, ...d.data() });
-          });
-          setAllUsers(list);
+          const mergedList: any[] = [];
+          const seenEmails = new Set<string>();
+
+          // 1. Fetch from Supabase
+          try {
+            const supaUsers = await userService.getUsers();
+            if (supaUsers && supaUsers.length > 0) {
+              supaUsers.forEach(u => {
+                const emailKey = (u.email || "").toLowerCase().trim();
+                if (emailKey && !seenEmails.has(emailKey)) {
+                  seenEmails.add(emailKey);
+                  mergedList.push({
+                    id: u.id,
+                    name: u.name || u.display_name || u.email?.split("@")[0] || "User",
+                    displayName: u.display_name || u.name,
+                    email: u.email,
+                    role: u.role || "Member",
+                    position: u.position || u.role || "Member",
+                    image: u.image || "",
+                    phone: u.phone || "",
+                    status: u.status || "Active"
+                  });
+                }
+              });
+            }
+          } catch (supaErr) {
+            console.warn("Supabase fetch users notice in OrganizerManagement:", supaErr);
+          }
+
+          // 2. Fetch from Firestore users
+          try {
+            const snap = await getDocs(collection(db, "users"));
+            snap.forEach(d => {
+              const data = d.data();
+              const emailKey = (data.email || "").toLowerCase().trim();
+              if (emailKey && !seenEmails.has(emailKey)) {
+                seenEmails.add(emailKey);
+                mergedList.push({
+                  id: d.id,
+                  name: data.name || data.displayName || data.teamLeadName || data.email?.split("@")[0] || "User",
+                  displayName: data.displayName || data.name,
+                  email: data.email,
+                  role: data.role || data.roleType || "Member",
+                  position: data.position || data.displayRole || data.role || "Member",
+                  image: data.image || "",
+                  phone: data.phoneNumber || data.phone || "",
+                  status: data.status || "Active"
+                });
+              }
+            });
+          } catch (fsErr) {
+            console.warn("Firestore fetch users notice in OrganizerManagement:", fsErr);
+          }
+
+          mergedList.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+          setAllUsers(mergedList);
         } catch (e) {
           console.error("Error fetching users:", e);
         }
@@ -303,7 +354,7 @@ const OrganizerManagementPage: React.FC = () => {
     // Validate that formUsername is a valid email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formUsername)) {
-      alert("The Username field must be a valid email address (e.g. name@uni.edu) for Firebase authentication.");
+      alert("The Username field must be a valid email address (e.g. name@uni.edu) for authentication.");
       return;
     }
 
@@ -311,22 +362,61 @@ const OrganizerManagementPage: React.FC = () => {
     if (!selectedUser) return;
 
     try {
-      // 1. Create a Firebase Auth user using a secondary App instance to avoid logging out the current admin/faculty
+      // 1. Create a Supabase Auth user using a secondary client to avoid logging out the current admin/faculty
       let newUid = "";
       try {
-        const secondaryApp = initializeApp(firebaseConfig, "SecondaryAuthApp");
-        const secondaryAuth = getAuth(secondaryApp);
-        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formUsername, formTempPassword);
-        newUid = userCredential.user.uid;
-        await signOut(secondaryAuth);
-        await deleteApp(secondaryApp);
-      } catch (authError: any) {
-        console.warn("Firebase Auth creation notice/error:", authError);
-        // If the email is already in use, it means the user was already created in Auth (e.g. they registered themselves).
-        // That is acceptable, and we can continue creating their organizer role document.
-        if (authError.code !== "auth/email-already-in-use") {
-          throw authError;
+        const supabaseUrl = env.supabase.url;
+        const supabaseAnonKey = env.supabase.anonKey;
+        
+        if (supabaseUrl && supabaseAnonKey) {
+          const secondarySupabase = createClient(supabaseUrl, supabaseAnonKey, {
+            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+          });
+          
+          const { data: signUpData, error: signUpError } = await secondarySupabase.auth.signUp({
+            email: formUsername,
+            password: formTempPassword,
+            options: {
+              data: {
+                name: selectedUser.name,
+                role: "organizer"
+              }
+            }
+          });
+          
+          if (signUpError && signUpError.message !== "User already registered") {
+            console.warn("Supabase Auth creation notice:", signUpError);
+          }
+          
+          if (signUpData?.user?.id) {
+            newUid = signUpData.user.id;
+          }
+
+          // Create profile in Supabase public.users table
+          try {
+            const existingUser = await userService.getUserByEmail(formUsername);
+            if (!existingUser) {
+              await userService.addUser({
+                email: formUsername,
+                name: selectedUser.name,
+                role: "organizer",
+                position: "student Organizer",
+                status: "Active",
+                image: selectedUser.image || ""
+              });
+            } else {
+              await userService.updateUser(existingUser.id, {
+                role: "organizer",
+                position: "student Organizer",
+                status: "Active"
+              });
+            }
+          } catch (profileErr) {
+            console.warn("Supabase public.users profile creation error:", profileErr);
+          }
         }
+      } catch (authError: any) {
+        console.warn("Supabase Auth creation notice/error:", authError);
       }
 
       const assignedNames: string[] = [];
@@ -361,7 +451,7 @@ const OrganizerManagementPage: React.FC = () => {
       await addDoc(collection(db, "organizers"), payload);
 
       if (newUid) {
-        // Create user document at the new Firebase Auth UID
+        // Create user document at the new Supabase Auth UID
         const newUserRef = doc(db, "users", newUid);
         await setDoc(newUserRef, {
           name: selectedUser.name,

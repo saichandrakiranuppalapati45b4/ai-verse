@@ -15,7 +15,8 @@ import {
   Sparkles, 
   RotateCw,
   Clock,
-  ShieldCheck
+  ShieldCheck,
+  MapPin
 } from "lucide-react";
 
 interface Teammate {
@@ -46,6 +47,26 @@ interface RegistrationData {
   createdAt?: number;
 }
 
+interface TicketDesignConfig {
+  bgPreview?: string;
+  bgFilename?: string;
+  qrPosition?: "bottom-right" | "bottom-center" | "top-right" | "top-left" | "bottom-left" | "center" | "right-panel" | "custom" | string;
+  qrX?: number;
+  qrY?: number;
+  qrWidthPercent?: number;
+  qrBg?: "white" | "transparent" | "glow";
+  showAttendeeText?: boolean;
+  textX?: number;
+  textY?: number;
+  textColor?: string;
+  template?: string;
+  passLabel?: string;
+  primaryColor?: string;
+  showMembers?: boolean;
+  showVenue?: boolean;
+  showBarcode?: boolean;
+}
+
 interface EventData {
   title: string;
   date: string;
@@ -55,6 +76,7 @@ interface EventData {
   registrationFee?: number;
   isPaidEvent?: boolean;
   category?: string;
+  ticketDesign?: TicketDesignConfig;
 }
 
 const TicketPage: React.FC = () => {
@@ -303,6 +325,25 @@ const TicketPage: React.FC = () => {
   const displayLeadName = registration?.teamLeadName || "Team Lead";
   const displayLeadEmail = registration?.teamLeadPersonalEmail || registration?.teamLeadCollegeEmail || registration?.teamLeadEmail || "leader@vishnu.edu.in";
   
+  // Ticket Design Config from Event
+  const ticketDesign = event?.ticketDesign || {};
+  const ticketBgPreview = ticketDesign.bgPreview || "";
+  const ticketQrPos = ticketDesign.qrPosition || "bottom-right";
+  const ticketQrX = ticketDesign.qrX !== undefined ? ticketDesign.qrX : 75;
+  const ticketQrY = ticketDesign.qrY !== undefined ? ticketDesign.qrY : 75;
+  const ticketQrWidthPercent = ticketDesign.qrWidthPercent !== undefined ? ticketDesign.qrWidthPercent : 22;
+  const ticketQrBg = ticketDesign.qrBg || "white";
+  const ticketShowAttendeeText = ticketDesign.showAttendeeText || false;
+  const ticketTextX = ticketDesign.textX !== undefined ? ticketDesign.textX : 20;
+  const ticketTextY = ticketDesign.textY !== undefined ? ticketDesign.textY : 80;
+  const ticketTextColor = ticketDesign.textColor || "#FFFFFF";
+  const ticketTemplate = ticketDesign.template || "modern-blue";
+  const ticketPassLabel = ticketDesign.passLabel || "OFFICIAL ACCESS PASS";
+  const ticketPrimaryColor = ticketDesign.primaryColor || "#2563EB";
+  const ticketShowMembers = ticketDesign.showMembers !== false;
+  const ticketShowVenue = ticketDesign.showVenue !== false;
+  const ticketShowBarcode = ticketDesign.showBarcode !== false;
+
   // Status check: whether the team registration is confirmed by coordinators
   const isConfirmed = 
     registration?.status?.toLowerCase() === "confirmed" || 
@@ -341,7 +382,7 @@ const TicketPage: React.FC = () => {
   const handleDownloadTicketImage = async () => {
     setIsExporting(true);
     try {
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${registrationId || "mock_reg_123"}`;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${registrationId || "mock_reg_123"}`;
       
       const logoImage = new Image();
       logoImage.crossOrigin = "anonymous";
@@ -349,10 +390,17 @@ const TicketPage: React.FC = () => {
       const qrImage = new Image();
       qrImage.crossOrigin = "anonymous";
 
+      const bgImage = new Image();
+      if (ticketBgPreview) {
+        bgImage.crossOrigin = "anonymous";
+      }
+
       let loaded = 0;
+      const totalImagesToLoad = 2; // (bgImage or logoImage) + qrImage
+
       const renderCanvas = () => {
         loaded++;
-        if (loaded < 2) return;
+        if (loaded < totalImagesToLoad) return;
 
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
@@ -361,218 +409,214 @@ const TicketPage: React.FC = () => {
           return;
         }
 
-        const scale = 2;
-        const w = 440;
-        const totalRows = allMembers.length;
-        const h = 760 + totalRows * 36;
-        
-        canvas.width = w * scale;
-        canvas.height = h * scale;
-        ctx.scale(scale, scale);
+        // ================= A. CUSTOM UPLOADED TICKET TEMPLATE EXPORT =================
+        if (ticketBgPreview && bgImage.complete && bgImage.naturalWidth > 0) {
+          const origW = bgImage.naturalWidth;
+          const origH = bgImage.naturalHeight;
+          canvas.width = origW;
+          canvas.height = origH;
 
-        // 1. Background
-        ctx.fillStyle = "#F1F5F9";
-        ctx.fillRect(0, 0, w, h);
+          // 1. Draw uploaded ticket template image
+          ctx.drawImage(bgImage, 0, 0, origW, origH);
 
-        // 2. Ticket Card
-        ctx.fillStyle = "#FFFFFF";
-        ctx.shadowColor = "rgba(0, 0, 0, 0.08)";
-        ctx.shadowBlur = 20;
-        ctx.shadowOffsetY = 8;
+          // 2. Compute QR placeholder coordinates
+          const qrWidth = origW * (ticketQrWidthPercent / 100);
+          const qrHeight = qrWidth;
+          const qrCenterX = origW * (ticketQrX / 100);
+          const qrCenterY = origH * (ticketQrY / 100);
+          const qrLeft = qrCenterX - qrWidth / 2;
+          const qrTop = qrCenterY - qrHeight / 2;
 
-        const margin = 14;
-        const tw = w - margin * 2;
-        const th = h - margin * 2 - 16;
+          // 3. QR Background Container
+          if (ticketQrBg === "white") {
+            const pad = qrWidth * 0.08;
+            ctx.fillStyle = "#FFFFFF";
+            ctx.shadowColor = "rgba(0, 0, 0, 0.2)";
+            ctx.shadowBlur = 16;
+            if (ctx.roundRect) {
+              ctx.beginPath();
+              ctx.roundRect(qrLeft - pad, qrTop - pad, qrWidth + pad * 2, qrHeight + pad * 2, 16);
+              ctx.fill();
+            } else {
+              ctx.fillRect(qrLeft - pad, qrTop - pad, qrWidth + pad * 2, qrHeight + pad * 2);
+            }
+            ctx.shadowColor = "transparent";
+          } else if (ticketQrBg === "glow") {
+            const pad = qrWidth * 0.08;
+            ctx.fillStyle = "#0B0F19";
+            ctx.strokeStyle = "#22D3EE";
+            ctx.lineWidth = 4;
+            if (ctx.roundRect) {
+              ctx.beginPath();
+              ctx.roundRect(qrLeft - pad, qrTop - pad, qrWidth + pad * 2, qrHeight + pad * 2, 16);
+              ctx.fill();
+              ctx.stroke();
+            } else {
+              ctx.fillRect(qrLeft - pad, qrTop - pad, qrWidth + pad * 2, qrHeight + pad * 2);
+              ctx.strokeRect(qrLeft - pad, qrTop - pad, qrWidth + pad * 2, qrHeight + pad * 2);
+            }
+          }
 
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(margin, margin, tw, th, [24, 24, 0, 0]);
-          ctx.fill();
+          // 4. Draw attendee QR code
+          ctx.drawImage(qrImage, qrLeft, qrTop, qrWidth, qrHeight);
+
+          // 5. Optional Attendee Text Overlay
+          if (ticketShowAttendeeText) {
+            const textCenterX = origW * (ticketTextX / 100);
+            const textCenterY = origH * (ticketTextY / 100);
+            ctx.fillStyle = ticketTextColor;
+            ctx.font = `bold ${Math.max(16, Math.round(origW * 0.024))}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText(`${displayGroupName} • ID: AV-${registrationId?.slice(-6).toUpperCase() || "PASS"}`, textCenterX, textCenterY);
+          }
         } else {
-          ctx.fillRect(margin, margin, tw, th);
-        }
-        ctx.shadowColor = "transparent";
+          // ================= B. FALLBACK DEFAULT TICKET PASS =================
+          const scale = 2;
+          const w = 440;
+          const totalRows = ticketShowMembers ? allMembers.length : 0;
+          const h = 760 + totalRows * 36;
+          
+          canvas.width = w * scale;
+          canvas.height = h * scale;
+          ctx.scale(scale, scale);
 
-        // 3. Header Official Logo
-        const logoSize = 48;
-        ctx.drawImage(logoImage, w / 2 - logoSize / 2, 28, logoSize, logoSize);
+          ctx.fillStyle = "#F1F5F9";
+          ctx.fillRect(0, 0, w, h);
 
-        // Event Title
-        ctx.fillStyle = "#0F172A";
-        ctx.font = "900 18px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(displayTitle.length > 28 ? displayTitle.substring(0, 28) + "..." : displayTitle, w / 2, 102);
+          const margin = 14;
+          const tw = w - margin * 2;
+          const th = h - margin * 2 - 16;
 
-        ctx.fillStyle = "#64748B";
-        ctx.font = "600 10.5px sans-serif";
-        ctx.fillText("Innovate • Build • Inspire", w / 2, 119);
+          ctx.fillStyle = "#FFFFFF";
+          ctx.shadowColor = "rgba(0, 0, 0, 0.12)";
+          ctx.shadowBlur = 24;
+          ctx.shadowOffsetY = 8;
 
-        // Status Pill
-        ctx.fillStyle = "#ECFDF5";
-        const pillWidth = 150;
-        const pillHeight = 24;
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(w / 2 - pillWidth / 2, 132, pillWidth, pillHeight, 12);
-          ctx.fill();
-        } else {
-          ctx.fillRect(w / 2 - pillWidth / 2, 132, pillWidth, pillHeight);
-        }
+          if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(margin, margin, tw, th, [24, 24, 0, 0]);
+            ctx.fill();
+          } else {
+            ctx.fillRect(margin, margin, tw, th);
+          }
+          ctx.shadowColor = "transparent";
 
-        ctx.fillStyle = "#059669";
-        ctx.font = "800 10px sans-serif";
-        ctx.fillText(isConfirmed ? "✓  TEAM CONFIRMED" : "✓  PAYMENT CONFIRMED", w / 2, 148);
+          ctx.strokeStyle = "#E2E8F0";
+          ctx.lineWidth = 1.5;
+          if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(margin, margin, tw, th, [24, 24, 0, 0]);
+            ctx.stroke();
+          }
 
-        // 4. Meta Table
-        ctx.strokeStyle = "#F1F5F9";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(30, 172);
-        ctx.lineTo(w - 30, 172);
-        ctx.stroke();
+          const logoSize = 44;
+          ctx.drawImage(logoImage, w / 2 - logoSize / 2, 28, logoSize, logoSize);
 
-        ctx.textAlign = "left";
-        ctx.fillStyle = "#94A3B8";
-        ctx.font = "800 8.5px sans-serif";
-        ctx.fillText("ORDER NO", 32, 192);
-        ctx.fillText("AMOUNT", w / 2 + 15, 192);
+          ctx.fillStyle = "#2563EB";
+          ctx.font = "900 9px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText("OFFICIAL ATTENDANCE PASS", w / 2, 86);
 
-        ctx.fillStyle = "#0F172A";
-        ctx.font = "800 12px sans-serif";
-        ctx.fillText(orderNumber, 32, 209);
-        ctx.fillText(isFree ? "FREE ENTRY" : `₹${totalAmount}.00`, w / 2 + 15, 209);
-
-        ctx.fillStyle = "#94A3B8";
-        ctx.font = "800 8.5px sans-serif";
-        ctx.fillText("DATE & TIME", 32, 235);
-        ctx.fillText("STATUS", w / 2 + 15, 235);
-
-        ctx.fillStyle = "#0F172A";
-        ctx.font = "800 11.5px sans-serif";
-        ctx.fillText(`${formattedDateStr} • ${formattedTimeStr}`, 32, 252);
-        ctx.fillStyle = "#059669";
-        ctx.fillText(isConfirmed ? "Team Confirmed" : (isFree ? "Free Pass" : "Paid In Full"), w / 2 + 15, 252);
-
-        // Dashed Divider
-        ctx.strokeStyle = "#CBD5E1";
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(30, 272);
-        ctx.lineTo(w - 30, 272);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // 5. Details Section
-        let currY = 300;
-
-        // Event Name
-        ctx.fillStyle = "#EEF2FF";
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(32, currY - 12, 26, 26, 7);
-          ctx.fill();
-        } else {
-          ctx.fillRect(32, currY - 12, 26, 26);
-        }
-        ctx.fillStyle = "#4F46E5";
-        ctx.font = "900 11px sans-serif";
-        ctx.fillText("📅", 37, currY + 6);
-
-        ctx.fillStyle = "#6366F1";
-        ctx.font = "800 8px sans-serif";
-        ctx.fillText("EVENT NAME", 68, currY - 2);
-        ctx.fillStyle = "#0F172A";
-        ctx.font = "800 11.5px sans-serif";
-        ctx.fillText(displayTitle.length > 32 ? displayTitle.substring(0, 32) + "..." : displayTitle, 68, currY + 12);
-
-        // Team Name
-        currY += 42;
-        ctx.fillStyle = "#EEF2FF";
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(32, currY - 12, 26, 26, 7);
-          ctx.fill();
-        } else {
-          ctx.fillRect(32, currY - 12, 26, 26);
-        }
-        ctx.fillStyle = "#4F46E5";
-        ctx.fillText("👥", 37, currY + 6);
-
-        ctx.fillStyle = "#6366F1";
-        ctx.font = "800 8px sans-serif";
-        ctx.fillText("TEAM NAME", 68, currY - 2);
-        ctx.fillStyle = "#0F172A";
-        ctx.font = "800 11.5px sans-serif";
-        ctx.fillText(displayGroupName, 68, currY + 12);
-        ctx.fillStyle = "#64748B";
-        ctx.font = "600 9.5px sans-serif";
-        ctx.fillText(`Team ID: AV-${registrationId?.slice(-6).toUpperCase() || "PASS"}`, 68, currY + 24);
-
-        // Team Members
-        currY += 46;
-        ctx.fillStyle = "#EEF2FF";
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(32, currY - 12, 26, 26, 7);
-          ctx.fill();
-        } else {
-          ctx.fillRect(32, currY - 12, 26, 26);
-        }
-        ctx.fillStyle = "#4F46E5";
-        ctx.fillText("👤", 37, currY + 6);
-
-        ctx.fillStyle = "#6366F1";
-        ctx.font = "800 8px sans-serif";
-        ctx.fillText("TEAM MEMBERS", 68, currY - 2);
-
-        currY += 10;
-        allMembers.forEach((m, idx) => {
           ctx.fillStyle = "#0F172A";
-          ctx.font = "800 10.5px sans-serif";
-          ctx.fillText(`${idx + 1}.  ${m.name} ${m.isLead ? "(Team Lead)" : ""}`, 68, currY);
+          ctx.font = "900 17px sans-serif";
+          ctx.fillText(displayTitle.length > 28 ? displayTitle.substring(0, 28) + "..." : displayTitle, w / 2, 108);
+
           ctx.fillStyle = "#64748B";
-          ctx.font = "500 9px sans-serif";
-          ctx.fillText(m.email, 82, currY + 12);
-          currY += 26;
-        });
+          ctx.font = "600 10px sans-serif";
+          ctx.fillText("Innovate • Build • Inspire", w / 2, 124);
 
-        // Dashed Divider before QR
-        currY += 8;
-        ctx.strokeStyle = "#CBD5E1";
-        ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(30, currY);
-        ctx.lineTo(w - 30, currY);
-        ctx.stroke();
-        ctx.setLineDash([]);
+          ctx.fillStyle = isConfirmed ? "#ECFDF5" : "#FEF3C7";
+          const pillWidth = 145;
+          const pillHeight = 22;
+          if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(w / 2 - pillWidth / 2, 134, pillWidth, pillHeight, 11);
+            ctx.fill();
+          } else {
+            ctx.fillRect(w / 2 - pillWidth / 2, 134, pillWidth, pillHeight);
+          }
 
-        // QR Code
-        currY += 20;
-        const qrSize = 120;
-        ctx.drawImage(qrImage, w / 2 - qrSize / 2, currY, qrSize, qrSize);
+          ctx.fillStyle = isConfirmed ? "#059669" : "#D97706";
+          ctx.font = "800 9.5px sans-serif";
+          ctx.fillText(isConfirmed ? "✓  TEAM CONFIRMED" : "⏱  UNDER REVIEW", w / 2, 149);
 
-        currY += qrSize + 20;
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#64748B";
-        ctx.font = "800 9px sans-serif";
-        ctx.fillText("SCAN TO VERIFY TICKET", w / 2, currY);
+          ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(30, 172);
+          ctx.lineTo(w - 30, 172);
+          ctx.stroke();
 
-        // Sawtooth / Serrated cut teeth at bottom
-        const teethCount = 18;
-        const toothWidth = tw / teethCount;
-        const bottomY = margin + th;
+          ctx.textAlign = "left";
+          ctx.fillStyle = "#64748B";
+          ctx.font = "800 8.5px sans-serif";
+          ctx.fillText("ORDER NO", 32, 192);
+          ctx.fillText("AMOUNT", w / 2 + 15, 192);
 
-        ctx.fillStyle = "#F1F5F9";
-        ctx.beginPath();
-        ctx.moveTo(margin, bottomY);
-        for (let i = 0; i < teethCount; i++) {
-          const toothX = margin + i * toothWidth;
-          ctx.arc(toothX + toothWidth / 2, bottomY, toothWidth / 2 - 1, 0, Math.PI, true);
+          ctx.fillStyle = "#0F172A";
+          ctx.font = "800 12px sans-serif";
+          ctx.fillText(orderNumber, 32, 209);
+          ctx.fillText(isFree ? "FREE ENTRY" : `₹${totalAmount}.00`, w / 2 + 15, 209);
+
+          ctx.fillStyle = "#64748B";
+          ctx.font = "800 8.5px sans-serif";
+          ctx.fillText("DATE & TIME", 32, 235);
+          ctx.fillText("STATUS", w / 2 + 15, 235);
+
+          ctx.fillStyle = "#0F172A";
+          ctx.font = "800 11.5px sans-serif";
+          ctx.fillText(`${formattedDateStr} • ${formattedTimeStr}`, 32, 252);
+          ctx.fillStyle = isConfirmed ? "#059669" : "#D97706";
+          ctx.fillText(isConfirmed ? "Confirmed Pass" : "Under Review", w / 2 + 15, 252);
+
+          // Details Section
+          let currY = 300;
+          ctx.fillStyle = "#2563EB";
+          ctx.font = "800 8px sans-serif";
+          ctx.fillText("EVENT NAME", 68, currY - 2);
+          ctx.fillStyle = "#0F172A";
+          ctx.font = "800 11.5px sans-serif";
+          ctx.fillText(displayTitle.length > 32 ? displayTitle.substring(0, 32) + "..." : displayTitle, 68, currY + 12);
+
+          currY += 46;
+          ctx.fillStyle = "#2563EB";
+          ctx.font = "800 8px sans-serif";
+          ctx.fillText("TEAM NAME", 68, currY - 2);
+          ctx.fillStyle = "#0F172A";
+          ctx.font = "800 11.5px sans-serif";
+          ctx.fillText(displayGroupName, 68, currY + 12);
+          ctx.fillStyle = "#64748B";
+          ctx.font = "600 9.5px sans-serif";
+          ctx.fillText(`Team ID: AV-${registrationId?.slice(-6).toUpperCase() || "PASS"}`, 68, currY + 24);
+
+          // QR Code
+          currY += 56;
+          const qrPixelSize = 120;
+          ctx.drawImage(qrImage, w / 2 - qrPixelSize / 2, currY, qrPixelSize, qrPixelSize);
+
+          currY += qrPixelSize + 18;
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#64748B";
+          ctx.font = "800 9px sans-serif";
+          ctx.fillText("SCAN TO VERIFY OFFICIAL TICKET", w / 2, currY);
+
+          // Sawtooth cut teeth
+          const teethCount = 18;
+          const toothWidth = tw / teethCount;
+          const bottomY = margin + th;
+
+          ctx.fillStyle = "#F1F5F9";
+          ctx.beginPath();
+          ctx.moveTo(margin, bottomY);
+          for (let i = 0; i < teethCount; i++) {
+            const toothX = margin + i * toothWidth;
+            ctx.arc(toothX + toothWidth / 2, bottomY, toothWidth / 2 - 1, 0, Math.PI, true);
+          }
+          ctx.lineTo(margin + tw, bottomY + 20);
+          ctx.lineTo(margin, bottomY + 20);
+          ctx.closePath();
+          ctx.fill();
         }
-        ctx.lineTo(margin + tw, bottomY + 20);
-        ctx.lineTo(margin, bottomY + 20);
-        ctx.closePath();
-        ctx.fill();
 
         // Download canvas
         const blobUrl = canvas.toDataURL("image/png");
@@ -589,21 +633,22 @@ const TicketPage: React.FC = () => {
         setIsExporting(false);
       };
 
-      logoImage.onload = renderCanvas;
+      if (ticketBgPreview) {
+        bgImage.onload = renderCanvas;
+        bgImage.onerror = () => renderCanvas();
+        bgImage.src = ticketBgPreview;
+      } else {
+        logoImage.onload = renderCanvas;
+        logoImage.onerror = () => renderCanvas();
+        logoImage.src = "/ai_verse.png";
+      }
+
       qrImage.onload = renderCanvas;
-
-      logoImage.onerror = () => {
-        // If logo fails to load, render anyway
-        renderCanvas();
-      };
-
       qrImage.onerror = (err) => {
         console.error("Failed to load QR image for canvas download", err);
         alert("Failed to render ticket image. Please try using Print Ticket instead.");
         setIsExporting(false);
       };
-
-      logoImage.src = "/ai_verse.png";
       qrImage.src = qrUrl;
     } catch (err) {
       console.error("Error downloading ticket image:", err);
@@ -1017,9 +1062,23 @@ const TicketPage: React.FC = () => {
                 key={printKey} 
                 ref={ticketRef}
                 style={{
-                  transform: !isPrintingAnim && isDragging ? `translateY(${dragOffset}px) rotate(${dragOffset * 0.1}deg)` : undefined
+                  transform: !isPrintingAnim && isDragging ? `translateY(${dragOffset}px) rotate(${dragOffset * 0.1}deg)` : undefined,
+                  backgroundImage: ticketBgPreview ? `url(${ticketBgPreview})` : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                  borderColor: ticketPrimaryColor
                 }}
-                className={`w-[94%] bg-white pt-5 pb-3 px-6 sm:px-7 rounded-t-xl shadow-[0_20px_50px_rgba(0,0,0,0.12)] border-x border-slate-200/90 relative ${
+                className={`w-[94%] pt-5 pb-3 px-6 sm:px-7 rounded-t-2xl shadow-[0_20px_50px_rgba(0,0,0,0.12)] relative transition-all ${
+                  ticketTemplate === "cyberpunk"
+                    ? "bg-slate-950 text-slate-100 border-2 border-cyan-500/80 shadow-[0_20px_60px_rgba(6,182,212,0.15)]"
+                    : ticketTemplate === "golden-vip"
+                    ? "bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-amber-100 border-2 border-amber-500/80 shadow-[0_20px_60px_rgba(245,158,11,0.15)]"
+                    : ticketTemplate === "minimal-clean"
+                    ? "bg-white text-slate-900 border-2 border-slate-900 shadow-xl"
+                    : ticketTemplate === "thermal-pass"
+                    ? "bg-white text-slate-900 border-x border-slate-300 font-mono"
+                    : "bg-white text-slate-900 border-x border-slate-200/90 shadow-[0_20px_50px_rgba(0,0,0,0.12)]"
+                } ${
                   isPrintingAnim 
                     ? "animate-thermal-feed" 
                     : isTorn 
@@ -1056,143 +1115,291 @@ const TicketPage: React.FC = () => {
                   <span className="text-xs opacity-75 hidden sm:inline">⬇️</span>
                 </div>
 
-                {/* 1. Header Logo & Event Badge */}
-                <div className="flex flex-col items-center text-center space-y-2 pb-3.5">
-                  {/* Official AI Verse Logo */}
-                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center p-1 relative">
+                {/* ================= TICKET CONTENT ================= */}
+                {ticketBgPreview ? (
+                  /* Custom Uploaded Ticket Template Layout */
+                  <div className="w-full relative select-none rounded-xl overflow-hidden shadow-2xl border border-slate-700/50 bg-slate-950 my-1">
+                    {/* Uploaded Ticket Template Image */}
                     <img 
-                      src="/ai_verse.png" 
-                      alt="AI Verse Logo" 
-                      className="w-full h-full object-contain drop-shadow-sm" 
+                      src={ticketBgPreview} 
+                      alt="Official Event Ticket" 
+                      className="w-full h-auto object-contain block"
                     />
+
+                    {/* Dynamic Attendee QR Code Stamped at Organizer's Coordinates */}
+                    <div 
+                      style={{
+                        left: `${ticketQrX}%`,
+                        top: `${ticketQrY}%`,
+                        width: `${ticketQrWidthPercent}%`,
+                        transform: "translate(-50%, -50%)"
+                      }}
+                      className={`absolute z-20 aspect-square flex items-center justify-center p-1.5 rounded-xl transition-all ${
+                        ticketQrBg === "white"
+                          ? "bg-white shadow-[0_4px_20px_rgba(0,0,0,0.35)] border border-slate-200/80"
+                          : ticketQrBg === "glow"
+                          ? "bg-slate-950/90 shadow-[0_0_20px_#22d3ee] border-2 border-cyan-400 backdrop-blur-xs"
+                          : "bg-transparent"
+                      }`}
+                    >
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${registrationId || "mock_reg_123"}`} 
+                        alt="Attendance QR"
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+
+                    {/* Optional Attendee Text Overlay */}
+                    {ticketShowAttendeeText && (
+                      <div
+                        style={{
+                          left: `${ticketTextX}%`,
+                          top: `${ticketTextY}%`,
+                          color: ticketTextColor,
+                          transform: "translate(-50%, -50%)"
+                        }}
+                        className="absolute z-20 text-center font-black tracking-wide text-xs sm:text-sm drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] pointer-events-none whitespace-nowrap"
+                      >
+                        {displayGroupName} • AV-{registrationId?.slice(-6).toUpperCase() || "PASS"}
+                      </div>
+                    )}
                   </div>
+                ) : (
+                  /* Standard Thermal Pass Layout */
+                  <>
+                    {/* 1. Header Logo & Event Badge */}
+                    <div className="flex flex-col items-center text-center space-y-2 pb-3.5 relative">
+                      {ticketQrPos === "top-right" && (
+                        <div className="absolute top-0 right-0 z-10 p-1.5 rounded-xl bg-white border border-slate-200 shadow-md">
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${registrationId || "mock_reg_123"}`} 
+                            alt="Attendance QR Code"
+                            className="w-14 h-14 object-contain"
+                          />
+                        </div>
+                      )}
 
-                  <div className="space-y-0.5 pt-1">
-                    <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-tight">
-                      {displayTitle}
-                    </h2>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-                      Innovate • Build • Inspire
-                    </p>
-                  </div>
+                      {/* Official AI Verse Logo */}
+                      <div className="w-16 h-16 rounded-2xl flex items-center justify-center p-1 relative">
+                        <img 
+                          src="/ai_verse.png" 
+                          alt="AI Verse Logo" 
+                          className="w-full h-full object-contain drop-shadow-sm" 
+                        />
+                      </div>
 
-                  {/* Status Pill */}
-                  <div className="pt-1">
-                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[10.5px] border border-emerald-200/70 shadow-2xs">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      {isConfirmed ? "Team Confirmed" : "Payment Confirmed"}
-                    </span>
-                  </div>
-                </div>
+                      <div className="space-y-0.5 pt-1">
+                        <span 
+                          style={{ backgroundColor: `${ticketPrimaryColor}20`, color: ticketPrimaryColor }}
+                          className="text-[9px] font-black px-2.5 py-0.5 rounded-full border uppercase tracking-wider inline-block mb-1"
+                        >
+                          {ticketPassLabel}
+                        </span>
+                        <h2 className="text-lg sm:text-xl font-black tracking-tight leading-tight">
+                          {displayTitle}
+                        </h2>
+                        <p className="text-[11px] opacity-70 font-bold uppercase tracking-wider">
+                          Innovate • Build • Inspire
+                        </p>
+                      </div>
 
-                {/* 2. Order Metadata Grid */}
-                <div className="border-t border-slate-100 py-3.5 space-y-2.5">
-                  <div className="grid grid-cols-2 gap-3 text-left">
-                    <div>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Order No</span>
-                      <span className="text-xs font-black text-slate-850 font-mono block mt-0.5">{orderNumber}</span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Amount</span>
-                      <span className="text-xs font-black text-slate-850 block mt-0.5">
-                        {isFree ? "FREE PASS" : `₹${totalAmount}.00`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-left pt-1">
-                    <div>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Date & Time</span>
-                      <span className="text-[11px] font-extrabold text-slate-800 block mt-0.5">
-                        {formattedDateStr} • {formattedTimeStr}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Status</span>
-                      <span className="text-[11px] font-extrabold text-emerald-600 block mt-0.5">
-                        {isConfirmed ? "Team Confirmed" : (isFree ? "Free Verified" : "Paid In Full")}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dotted Divider */}
-                <div className="border-t border-dashed border-slate-200 my-1"></div>
-
-                {/* 3. Detailed Information Cards */}
-                <div className="py-3 space-y-3.5 text-left">
-                  
-                  {/* Event Name Item */}
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100/60 mt-0.5">
-                      <Calendar className="w-4 h-4" />
-                    </div>
-                    <div className="leading-tight">
-                      <span className="text-[9px] font-extrabold text-indigo-600 uppercase tracking-wider block">Event Name</span>
-                      <span className="text-xs font-black text-slate-850 block mt-0.5">{displayTitle}</span>
-                      <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
-                        {event?.category || "HACKATHONS"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Team Name Item */}
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100/60 mt-0.5">
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div className="leading-tight">
-                      <span className="text-[9px] font-extrabold text-indigo-600 uppercase tracking-wider block">Team Name</span>
-                      <span className="text-xs font-black text-slate-850 block mt-0.5">{displayGroupName}</span>
-                      <span className="text-[10px] text-slate-400 font-mono font-semibold block mt-0.5">
-                        Team ID: AV-{registrationId?.slice(-6).toUpperCase() || "PASS"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Team Members List */}
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100/60 mt-0.5">
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div className="leading-tight flex-1">
-                      <span className="text-[9px] font-extrabold text-indigo-600 uppercase tracking-wider block mb-1">Team Members</span>
-                      <div className="space-y-2">
-                        {allMembers.map((m, idx) => (
-                          <div key={idx} className="text-left leading-tight">
-                            <span className="text-xs font-black text-slate-850 block">
-                              {idx + 1}. {m.name} {m.isLead ? <span className="text-indigo-600 font-extrabold text-[10px]">(Team Lead)</span> : ""}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-medium block pl-3.5 mt-0.5 truncate">
-                              {m.email}
-                            </span>
-                          </div>
-                        ))}
+                      {/* Status Pill */}
+                      <div className="pt-1">
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-[10.5px] border border-emerald-200/70 shadow-2xs">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          {isConfirmed ? "Team Confirmed" : "Payment Confirmed"}
+                        </span>
                       </div>
                     </div>
-                  </div>
 
-                </div>
+                    {/* 2. Order Metadata Grid */}
+                    <div className="border-t border-slate-200/40 py-3.5 space-y-2.5">
+                      <div className="grid grid-cols-2 gap-3 text-left">
+                        <div>
+                          <span className="text-[9px] font-bold opacity-60 uppercase tracking-wider block">Order No</span>
+                          <span className="text-xs font-black font-mono block mt-0.5">{orderNumber}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold opacity-60 uppercase tracking-wider block">Amount</span>
+                          <span className="text-xs font-black block mt-0.5">
+                            {isFree ? "FREE PASS" : `₹${totalAmount}.00`}
+                          </span>
+                        </div>
+                      </div>
 
-                {/* Dotted Divider */}
-                <div className="border-t border-dashed border-slate-200 my-1"></div>
+                      <div className="grid grid-cols-2 gap-3 text-left pt-1">
+                        <div>
+                          <span className="text-[9px] font-bold opacity-60 uppercase tracking-wider block">Date & Time</span>
+                          <span className="text-[11px] font-extrabold block mt-0.5">
+                            {formattedDateStr} • {formattedTimeStr}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold opacity-60 uppercase tracking-wider block">Status</span>
+                          <span className="text-[11px] font-extrabold text-emerald-600 block mt-0.5">
+                            {isConfirmed ? "Team Confirmed" : (isFree ? "Free Verified" : "Paid In Full")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
 
-                {/* 4. QR Code & Attendance Instruction */}
-                <div className="py-4 flex flex-col items-center text-center space-y-2">
-                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner inline-block">
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${registrationId || "mock_reg_123"}`} 
-                      alt="Attendance QR Code"
-                      className="w-32 h-32 object-contain"
-                    />
-                  </div>
-                  <span className="text-[9.5px] font-black text-slate-500 uppercase tracking-widest block pt-1">
-                    Scan to Verify Ticket
-                  </span>
-                </div>
+                    {/* Dotted Divider */}
+                    <div className="border-t border-dashed border-slate-200/50 my-1"></div>
 
-                {/* 5. Realistic Serrated Cut Teeth Edge at Bottom */}
-                <div className="w-full h-4 receipt-serrated-edge mt-2 -mb-2"></div>
+                    {/* 3. Detailed Information Cards */}
+                    <div className="py-3 space-y-3.5 text-left">
+                      
+                      {/* Event Name Item */}
+                      <div className="flex items-start gap-3">
+                        <div 
+                          style={{ backgroundColor: `${ticketPrimaryColor}20`, color: ticketPrimaryColor }}
+                          className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border border-slate-200/40 mt-0.5"
+                        >
+                          <Calendar className="w-4 h-4" />
+                        </div>
+                        <div className="leading-tight">
+                          <span style={{ color: ticketPrimaryColor }} className="text-[9px] font-extrabold uppercase tracking-wider block">Event Name</span>
+                          <span className="text-xs font-black block mt-0.5">{displayTitle}</span>
+                          <span className="text-[10px] opacity-70 font-semibold block mt-0.5">
+                            {event?.category || "HACKATHONS"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Venue Location Item */}
+                      {ticketShowVenue && (
+                        <div className="flex items-start gap-3">
+                          <div 
+                            style={{ backgroundColor: `${ticketPrimaryColor}20`, color: ticketPrimaryColor }}
+                            className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border border-slate-200/40 mt-0.5"
+                          >
+                            <MapPin className="w-4 h-4" />
+                          </div>
+                          <div className="leading-tight">
+                            <span style={{ color: ticketPrimaryColor }} className="text-[9px] font-extrabold uppercase tracking-wider block">Venue / Hall</span>
+                            <span className="text-xs font-black block mt-0.5">{event?.location || "Virtual Hub / Main Hall"}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Team Name Item */}
+                      <div className="flex items-start gap-3">
+                        <div 
+                          style={{ backgroundColor: `${ticketPrimaryColor}20`, color: ticketPrimaryColor }}
+                          className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border border-slate-200/40 mt-0.5"
+                        >
+                          <Users className="w-4 h-4" />
+                        </div>
+                        <div className="leading-tight">
+                          <span style={{ color: ticketPrimaryColor }} className="text-[9px] font-extrabold uppercase tracking-wider block">Team Name</span>
+                          <span className="text-xs font-black block mt-0.5">{displayGroupName}</span>
+                          <span className="text-[10px] opacity-70 font-mono font-semibold block mt-0.5">
+                            Team ID: AV-{registrationId?.slice(-6).toUpperCase() || "PASS"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Team Members List */}
+                      {ticketShowMembers && (
+                        <div className="flex items-start gap-3">
+                          <div 
+                            style={{ backgroundColor: `${ticketPrimaryColor}20`, color: ticketPrimaryColor }}
+                            className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border border-slate-200/40 mt-0.5"
+                          >
+                            <Users className="w-4 h-4" />
+                          </div>
+                          <div className="leading-tight flex-1">
+                            <span style={{ color: ticketPrimaryColor }} className="text-[9px] font-extrabold uppercase tracking-wider block mb-1">Team Members</span>
+                            <div className="space-y-2">
+                              {allMembers.map((m, idx) => (
+                                <div key={idx} className="text-left leading-tight">
+                                  <span className="text-xs font-black block">
+                                    {idx + 1}. {m.name} {m.isLead ? <span style={{ color: ticketPrimaryColor }} className="font-extrabold text-[10px]">(Team Lead)</span> : ""}
+                                  </span>
+                                  <span className="text-[10px] opacity-70 font-medium block pl-3.5 mt-0.5 truncate">
+                                    {m.email}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* Dotted Divider */}
+                    <div className="border-t border-dashed border-slate-200/50 my-1"></div>
+
+                    {/* 4. QR Code & Attendance Instruction (Bottom Placements) */}
+                    {ticketQrPos === "bottom-center" && (
+                      <div className="py-4 flex flex-col items-center text-center space-y-2">
+                        <div className={`p-2.5 rounded-2xl ${
+                          ticketQrBg === "white"
+                            ? "bg-white border border-slate-200 shadow-inner"
+                            : ticketQrBg === "glow"
+                            ? "bg-slate-900 border-2 border-cyan-400 shadow-[0_0_12px_#22d3ee]"
+                            : "bg-transparent"
+                        } inline-block`}>
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${registrationId || "mock_reg_123"}`} 
+                            alt="Attendance QR Code"
+                            className="w-32 h-32 object-contain"
+                          />
+                        </div>
+                        <span className="text-[9.5px] font-black opacity-60 uppercase tracking-widest block pt-1">
+                          Scan to Verify Official Pass
+                        </span>
+                      </div>
+                    )}
+
+                    {ticketQrPos === "bottom-right" && (
+                      <div className="py-3 flex items-center justify-between">
+                        <div className="space-y-1 text-left">
+                          <span className="text-[9px] opacity-60 font-bold uppercase tracking-wider block">Official Check-In</span>
+                          <span className="text-xs font-black block">ADMIT {allMembers.length} PERSON(S)</span>
+                          <span className="text-[9.5px] text-emerald-600 font-extrabold block">✓ VERIFIED BADGE</span>
+                        </div>
+                        <div className={`p-2 rounded-xl ${
+                          ticketQrBg === "white" ? "bg-white border border-slate-200 shadow-inner" : "bg-transparent"
+                        }`}>
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${registrationId || "mock_reg_123"}`} 
+                            alt="Attendance QR Code"
+                            className="w-24 h-24 object-contain"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {ticketQrPos === "right-panel" && (
+                      <div className="py-3 flex items-center justify-between border-t border-slate-200/40">
+                        <div className="space-y-1 text-left">
+                          <span className="text-[9px] opacity-60 font-bold uppercase tracking-wider block">Boarding Pass Voucher</span>
+                          <span className="text-xs font-black block">SECTOR: MAIN AUDITORIUM</span>
+                        </div>
+                        <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-sm">
+                          <img 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${registrationId || "mock_reg_123"}`} 
+                            alt="Attendance QR Code"
+                            className="w-22 h-22 object-contain"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Barcode Strip if enabled */}
+                    {ticketShowBarcode && (
+                      <div className="mt-2 pt-2 border-t border-dashed border-slate-200/40 flex justify-between items-center text-[9px] opacity-60 font-mono">
+                        <span>||| || |||| | ||||| ||||</span>
+                        <span>PASS-AV-{registrationId?.slice(-6).toUpperCase() || "2026"}</span>
+                      </div>
+                    )}
+
+                    {/* 5. Realistic Serrated Cut Teeth Edge at Bottom */}
+                    <div className="w-full h-4 receipt-serrated-edge mt-2 -mb-2"></div>
+                  </>
+                )}
               </div>
             </div>
 

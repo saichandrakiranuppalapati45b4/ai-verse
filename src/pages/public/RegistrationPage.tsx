@@ -49,6 +49,8 @@ interface EventData {
   maxReg: number;
   posterPreview?: string;
   registrationFee?: number;
+  pricingType?: "per_person" | "per_team";
+  pricingModel?: string;
   category?: string;
   isPaidEvent?: boolean;
   paymentQrImagePreview?: string;
@@ -93,6 +95,8 @@ const RegistrationPage: React.FC = () => {
   // Check if lead's college email belongs strictly to vishnu.edu.in
   const isVishnuDomain = leadCollegeEmail.trim().toLowerCase().endsWith("@vishnu.edu.in");
 
+  const isPricingPerTeam = event?.pricingType === "per_team" || event?.pricingModel === "per_team";
+
   // Dynamic fee calculation per person
   const perPersonFee = React.useMemo(() => {
     const baseFee = Number(event?.registrationFee) || 0;
@@ -114,7 +118,9 @@ const RegistrationPage: React.FC = () => {
   }, [event, isVishnuDomain, needsFood, foodSlot]);
 
   const totalTeamMembers = members.length + 1;
-  const totalRegistrationFee = perPersonFee * totalTeamMembers;
+  const totalRegistrationFee = isPricingPerTeam
+    ? (isVishnuDomain && needsFood === false ? 0 : (Number(event?.registrationFee) || 0))
+    : perPersonFee * totalTeamMembers;
   const requiresPaymentProof = totalRegistrationFee > 0;
 
   useEffect(() => {
@@ -146,6 +152,8 @@ const RegistrationPage: React.FC = () => {
             maxReg: data.maxReg || 100,
             posterPreview: data.posterPreview || "",
             registrationFee: data.registrationFee !== undefined ? data.registrationFee : 0,
+            pricingType: data.pricingType === "per_team" || data.pricingModel === "per_team" ? "per_team" : "per_person",
+            pricingModel: data.pricingModel || data.pricingType || "per_person",
             category: data.category || "Workshop",
             isPaidEvent: data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : (Number(data.registrationFee) > 0),
             paymentQrImagePreview: data.paymentQrImagePreview || data.paymentQr || "",
@@ -389,7 +397,8 @@ const RegistrationPage: React.FC = () => {
         foodPreference: foodPreferenceText,
         // Payment proof fields
         isPaidEvent: Boolean(requiresPaymentProof),
-        registrationFee: perPersonFee,
+        pricingType: isPricingPerTeam ? "per_team" : "per_person",
+        registrationFee: isPricingPerTeam ? (event?.registrationFee || 0) : perPersonFee,
         totalFeePaid: totalRegistrationFee,
         paymentProofPreview: compressedProof,
         paymentProofFilename: requiresPaymentProof ? (paymentProofFilename || "") : "",
@@ -1250,7 +1259,7 @@ const RegistrationPage: React.FC = () => {
                             {/* Summary strip inside card */}
                             <div className="p-3 bg-white rounded-xl border border-indigo-100 flex items-center justify-between text-xs">
                               <span className="font-bold text-slate-600">
-                                Total for {members.length + 1} {members.length === 0 ? "Person" : "Team Members"} (₹{perPersonFee}/person):
+                                Total for {members.length + 1} {members.length === 0 ? "Person" : "Team Members"} {isPricingPerTeam ? `(₹${event.registrationFee} Flat per Team)` : `(₹${perPersonFee}/person)`}:
                               </span>
                               <span className="font-black text-emerald-600 text-sm">
                                 ₹{totalRegistrationFee}
@@ -1635,13 +1644,13 @@ const RegistrationPage: React.FC = () => {
 
                   <div className="pt-3 border-t border-slate-100/80 space-y-2 text-[11px] font-bold text-slate-400">
                     <div className="flex justify-between items-center">
-                      <span>Fee Per Person</span>
+                      <span className="text-slate-400 font-semibold">Pricing Model</span>
                       <span className="text-slate-800 font-bold">
-                        {perPersonFee > 0 ? `₹${perPersonFee}` : "Free"}
+                        {isPricingPerTeam ? `₹${event.registrationFee} (Flat Fee per Team)` : `₹${perPersonFee} per Person`}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span>Team Members</span>
+                      <span className="text-slate-400 font-semibold">Total Team Size</span>
                       <span className="text-slate-800 font-bold">{members.length + 1} Attendees</span>
                     </div>
                     {isVishnuDomain && (

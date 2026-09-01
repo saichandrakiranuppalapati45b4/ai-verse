@@ -51,6 +51,7 @@ interface DetailedEvent {
   minTeamSize?: number;
   maxTeamSize?: number;
   registrationFee?: number;
+  pricingType?: "per_person" | "per_team";
   isPaidEvent?: boolean;
   paymentQrImagePreview?: string;
   paymentQr?: string;
@@ -151,6 +152,7 @@ const EventDetailsPage: React.FC = () => {
             minTeamSize: data.minTeamSize || null,
             maxTeamSize: data.maxTeamSize || null,
             registrationFee: data.registrationFee !== undefined ? Number(data.registrationFee) : 0,
+            pricingType: data.pricingType === "per_team" || data.pricingModel === "per_team" ? "per_team" : "per_person",
             isPaidEvent: data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : (Number(data.registrationFee) > 0),
             paymentQrImagePreview: data.paymentQrImagePreview || data.paymentQr || "",
             paymentQr: data.paymentQr || data.paymentQrImagePreview || "",
@@ -304,12 +306,16 @@ const EventDetailsPage: React.FC = () => {
                         : "Free"}
                     </h3>
                     {event.isPaidEvent && event.registrationFee && event.registrationFee > 0 && (
-                      <span className="text-xs font-bold text-slate-400">/ person</span>
+                      <span className="text-xs font-bold text-slate-400">
+                        {event.pricingType === "per_team" ? "/ team" : "/ person"}
+                      </span>
                     )}
                   </div>
                   <p className="text-[10px] text-slate-400 font-semibold">
                     {event.isPaidEvent && event.registrationFee && event.registrationFee > 0
-                      ? "Paid Hackathon Entry"
+                      ? event.pricingType === "per_team"
+                        ? "Paid Hackathon Entry (Flat Team Rate)"
+                        : "Paid Hackathon Entry (Per Person)"
                       : "Early Bird RSVP active"}
                   </p>
                 </div>
@@ -614,7 +620,7 @@ const EventDetailsPage: React.FC = () => {
                     Payment Details
                   </h3>
                   <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase">
-                    ₹{event.registrationFee} / person
+                    ₹{event.registrationFee} {event.pricingType === "per_team" ? "/ team" : "/ person"}
                   </span>
                 </div>
 

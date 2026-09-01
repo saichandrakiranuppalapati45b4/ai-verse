@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import jsQR from "jsqr";
-import { db, auth } from "../../config/firebase";
+import { db } from "../../config/firebase";
+import { useAuth } from "../../context/AuthContext";
 import { collection, getDocs, getDoc, doc, updateDoc, setDoc } from "firebase/firestore";
 import SEO from "../../components/layout/SEO";
 import { 
@@ -59,6 +60,7 @@ interface EventItem {
 }
 
 export const OrgAttendancePage: React.FC = () => {
+  const { user } = useAuth();
   // Two-step flow: "landing" = event selection, "marking" = attendance marking
   const [activeView, setActiveView] = useState<"landing" | "marking">("landing");
 
@@ -103,7 +105,7 @@ export const OrgAttendancePage: React.FC = () => {
       try {
         setLoading(true);
         const todayStr = getTodayStr();
-        const userEmail = auth.currentUser?.email?.toLowerCase().trim() || "";
+        const userEmail = user?.email?.toLowerCase().trim() || "";
 
         // Check if organizer is assigned specific events
         let assignedTitles: string[] = [];

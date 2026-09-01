@@ -3,17 +3,16 @@ import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import SEO from "../../components/layout/SEO";
 import Papa from "papaparse";
-import { db, firebaseConfig } from "../../config/firebase";
+import { db } from "../../config/firebase";
 import { env } from "../../config/env";
 import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment, onSnapshot } from "firebase/firestore";
-import { initializeApp, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { createClient } from "@supabase/supabase-js";
 import { userService } from "../../services/userService";
 import { deleteQuizzesByEventId, evaluateQuizAnswers } from "../../services/quizService";
 import { useModal } from "../../context/ModalContext";
 import {
   Calendar,
+  User,
   Users,
   UserPlus,
   TrendingUp,
@@ -55,10 +54,12 @@ import {
   Layers,
   Trophy,
   Award,
-  QrCode
+  QrCode,
+  Ticket
 } from "lucide-react";
 import DatePicker from "../../components/ui/DatePicker";
 import TimePicker from "../../components/ui/TimePicker";
+import MemberSelectCombobox from "../../components/ui/MemberSelectCombobox";
 import { sendResendEmail } from "../../utils/resendEmailService";
 import { buildTeamCredentialsEmail, buildRoundPromotionEmail } from "../../utils/emailTemplates";
 
@@ -89,6 +90,19 @@ const EventManagementPage: React.FC = () => {
   const speakerFileInputRef = React.useRef<HTMLInputElement>(null);
   const juryFileInputRef = React.useRef<HTMLInputElement>(null);
   const paymentQrFileInputRef = React.useRef<HTMLInputElement>(null);
+  const ticketBgFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleTicketBgFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormTicketBgFilename(file.name);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormTicketBgPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handlePaymentQrFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -183,12 +197,87 @@ const EventManagementPage: React.FC = () => {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, "users"));
-        const list: any[] = [];
-        querySnapshot.forEach((doc) => {
-          list.push({ id: doc.id, ...doc.data() });
-        });
-        setAllUsers(list);
+        const mergedUsers: any[] = [];
+        const seenEmails = new Set<string>();
+
+        // 1. Fetch from Supabase users
+        try {
+          const supaUsers = await userService.getUsers();
+          if (supaUsers && supaUsers.length > 0) {
+            supaUsers.forEach((u) => {
+              const emailKey = (u.email || "").toLowerCase().trim();
+              if (emailKey && !seenEmails.has(emailKey)) {
+                seenEmails.add(emailKey);
+                mergedUsers.push({
+                  id: u.id,
+                  name: u.name || u.display_name || u.email?.split("@")[0] || "User",
+                  displayName: u.display_name || u.name,
+                  email: u.email,
+                  role: u.role || "Member",
+                  position: u.position || u.role || "Team Member",
+                  image: u.image || "",
+                  phone: u.phone || "",
+                  status: u.status || "Active"
+                });
+              }
+            });
+          }
+        } catch (supaErr) {
+          console.warn("Notice loading users from Supabase:", supaErr);
+        }
+
+        // 2. Fetch from Firestore users
+        try {
+          const querySnapshot = await getDocs(collection(db, "users"));
+          querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const emailKey = (data.email || "").toLowerCase().trim();
+            if (emailKey && !seenEmails.has(emailKey)) {
+              seenEmails.add(emailKey);
+              mergedUsers.push({
+                id: docSnap.id,
+                name: data.name || data.displayName || data.teamLeadName || data.email?.split("@")[0] || "User",
+                displayName: data.displayName || data.name,
+                email: data.email,
+                role: data.role || data.roleType || "Member",
+                position: data.position || data.displayRole || data.role || "Team Member",
+                image: data.image || "",
+                phone: data.phoneNumber || data.phone || "",
+                status: data.status || "Active"
+              });
+            }
+          });
+        } catch (fsErr) {
+          console.warn("Notice loading users from Firestore:", fsErr);
+        }
+
+        // 3. Fetch from Firestore organizers
+        try {
+          const orgSnapshot = await getDocs(collection(db, "organizers"));
+          orgSnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const emailKey = (data.email || data.username || "").toLowerCase().trim();
+            if (emailKey && !seenEmails.has(emailKey)) {
+              seenEmails.add(emailKey);
+              mergedUsers.push({
+                id: docSnap.id,
+                name: data.name || data.displayName || emailKey.split("@")[0] || "Organizer",
+                displayName: data.displayName || data.name,
+                email: data.email || data.username,
+                role: "Organizer",
+                position: data.position || "Student Organizer",
+                image: data.image || "",
+                status: "Active"
+              });
+            }
+          });
+        } catch (orgErr) {
+          console.warn("Notice loading organizers from Firestore:", orgErr);
+        }
+
+        // Sort by name alphabetically
+        mergedUsers.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        setAllUsers(mergedUsers);
       } catch (err) {
         console.error("Error fetching users:", err);
       }
@@ -801,42 +890,42 @@ const EventManagementPage: React.FC = () => {
 
   // Auto-compute eligible teams based on selected criteria
   const eligibleTeamIds = useMemo(() => {
-    const eligiblePool = promotionRoster.filter((t) => t.currentTeamRound === promoteFromRound && !t.isEliminated);
+    const activeCandidates = promotionRoster.filter((t) => !t.isEliminated);
 
     if (promotionMode === "quiz") {
       if (quizCutoffType === "score") {
-        return eligiblePool
-          .filter((t) => t.quizScore !== null && Number(t.quizScore) >= Number(quizCutoffScore))
+        return activeCandidates
+          .filter((t) => t.quizScore !== null && t.quizScore !== undefined && Number(t.quizScore) >= Number(quizCutoffScore))
           .map((t) => t.id);
       }
       if (quizCutoffType === "percentage") {
-        return eligiblePool
-          .filter((t) => t.quizPercentage !== null && Number(t.quizPercentage) >= Number(quizCutoffPercentage))
+        return activeCandidates
+          .filter((t) => t.quizPercentage !== null && t.quizPercentage !== undefined && Number(t.quizPercentage) >= Number(quizCutoffPercentage))
           .map((t) => t.id);
       }
       if (quizCutoffType === "topN") {
-        return [...eligiblePool]
-          .filter((t) => t.quizScore !== null)
+        return [...activeCandidates]
+          .filter((t) => t.quizScore !== null && t.quizScore !== undefined)
           .sort((a, b) => (b.quizScore || 0) - (a.quizScore || 0))
           .slice(0, quizTopNCount)
           .map((t) => t.id);
       }
     } else if (promotionMode === "jury") {
       if (juryCutoffType === "score") {
-        return eligiblePool
-          .filter((t) => t.juryScore !== null && Number(t.juryScore) >= Number(juryCutoffScore))
+        return activeCandidates
+          .filter((t) => t.juryScore !== null && t.juryScore !== undefined && Number(t.juryScore) >= Number(juryCutoffScore))
           .map((t) => t.id);
       }
       if (juryCutoffType === "topN") {
-        return [...eligiblePool]
-          .filter((t) => t.juryScore !== null)
+        return [...activeCandidates]
+          .filter((t) => t.juryScore !== null && t.juryScore !== undefined)
           .sort((a, b) => (b.juryScore || 0) - (a.juryScore || 0))
           .slice(0, juryTopNCount)
           .map((t) => t.id);
       }
     }
     return [];
-  }, [promotionRoster, promoteFromRound, promotionMode, quizCutoffType, quizCutoffScore, quizCutoffPercentage, quizTopNCount, juryCutoffType, juryCutoffScore, juryTopNCount]);
+  }, [promotionRoster, promotionMode, quizCutoffType, quizCutoffScore, quizCutoffPercentage, quizTopNCount, juryCutoffType, juryCutoffScore, juryTopNCount]);
 
   // When criteria changes in quiz/jury mode, sync selectedPromoteRegIds
   useEffect(() => {
@@ -844,6 +933,45 @@ const EventManagementPage: React.FC = () => {
       setSelectedPromoteRegIds(eligibleTeamIds);
     }
   }, [eligibleTeamIds, promotionMode]);
+
+  const handleApplyQuizAutoSelect = () => {
+    const matched = promotionRoster
+      .filter((t) => {
+        if (t.isEliminated) return false;
+        if (t.quizScore === null || t.quizScore === undefined) return false;
+        if (quizCutoffType === "score") return Number(t.quizScore) >= Number(quizCutoffScore);
+        if (quizCutoffType === "percentage") return Number(t.quizPercentage ?? 0) >= Number(quizCutoffPercentage);
+        if (quizCutoffType === "topN") {
+          const sorted = [...promotionRoster]
+            .filter(r => !r.isEliminated && r.quizScore !== null && r.quizScore !== undefined)
+            .sort((a, b) => (b.quizScore || 0) - (a.quizScore || 0));
+          return sorted.slice(0, quizTopNCount).map(r => r.id).includes(t.id);
+        }
+        return false;
+      })
+      .map((t) => t.id);
+
+    setSelectedPromoteRegIds(matched);
+  };
+
+  const handleApplyJuryAutoSelect = () => {
+    const matched = promotionRoster
+      .filter((t) => {
+        if (t.isEliminated) return false;
+        if (t.juryScore === null || t.juryScore === undefined) return false;
+        if (juryCutoffType === "score") return Number(t.juryScore) >= Number(juryCutoffScore);
+        if (juryCutoffType === "topN") {
+          const sorted = [...promotionRoster]
+            .filter(r => !r.isEliminated && r.juryScore !== null && r.juryScore !== undefined)
+            .sort((a, b) => (b.juryScore || 0) - (a.juryScore || 0));
+          return sorted.slice(0, juryTopNCount).map(r => r.id).includes(t.id);
+        }
+        return false;
+      })
+      .map((t) => t.id);
+
+    setSelectedPromoteRegIds(matched);
+  };
 
   const handleExecuteBatchPromotion = async () => {
     if (selectedPromoteRegIds.length === 0) {
@@ -1207,19 +1335,6 @@ const EventManagementPage: React.FC = () => {
           console.warn("Firestore team_credentials error:", credErr);
         }
 
-        // Create Firebase Auth user using secondary app (avoids logging out current admin)
-        try {
-          const secondaryApp = initializeApp(firebaseConfig, `TeamAuth_${reg.id}`);
-          const secondaryAuth = getAuth(secondaryApp);
-          await createUserWithEmailAndPassword(secondaryAuth, teamEmail, commonPassword);
-          await signOut(secondaryAuth);
-          await deleteApp(secondaryApp);
-        } catch (authErr: any) {
-          // If email already in use, that's fine — user already exists in Auth
-          if (authErr.code !== "auth/email-already-in-use") {
-            console.warn("Firebase Auth creation error for:", teamEmail, authErr);
-          }
-        }
 
         // Create Supabase Auth user using secondary client (avoids logging out current admin)
         try {
@@ -1644,6 +1759,7 @@ const EventManagementPage: React.FC = () => {
   const [formMaxTeamSize, setFormMaxTeamSize] = useState("4");
   const [formRegistrationFee, setFormRegistrationFee] = useState("0");
   const [formIsPaidEvent, setFormIsPaidEvent] = useState<boolean>(false);
+  const [formPricingType, setFormPricingType] = useState<"per_person" | "per_team">("per_person");
   const [formPaymentQrImageFilename, setFormPaymentQrImageFilename] = useState("");
   const [formPaymentQrImagePreview, setFormPaymentQrImagePreview] = useState("");
   const [formUpiId, setFormUpiId] = useState("");
@@ -1777,6 +1893,19 @@ const EventManagementPage: React.FC = () => {
     { roundNumber: 3, name: "Round 3: Grand Finale & Jury Pitch", type: "Finals", description: "Live onstage presentation, demo execution, and final jury evaluation.", startDate: "", endDate: "", startTime: "", endTime: "", status: "Upcoming" }
   ]);
 
+  // Ticket Design Upload & Dynamic QR Placement States
+  const [formTicketBgPreview, setFormTicketBgPreview] = useState<string>("");
+  const [formTicketBgFilename, setFormTicketBgFilename] = useState<string>("");
+  const [formTicketQrPosition, setFormTicketQrPosition] = useState<"bottom-right" | "bottom-center" | "top-right" | "top-left" | "bottom-left" | "center" | "custom">("bottom-right");
+  const [formTicketQrX, setFormTicketQrX] = useState<number>(75); // % from left
+  const [formTicketQrY, setFormTicketQrY] = useState<number>(75); // % from top
+  const [formTicketQrWidthPercent, setFormTicketQrWidthPercent] = useState<number>(22); // % width of ticket
+  const [formTicketQrBg, setFormTicketQrBg] = useState<"white" | "transparent" | "glow">("white");
+  const [formTicketShowAttendeeText, setFormTicketShowAttendeeText] = useState<boolean>(false);
+  const [formTicketTextX, setFormTicketTextX] = useState<number>(20);
+  const [formTicketTextY, setFormTicketTextY] = useState<number>(80);
+  const [formTicketTextColor, setFormTicketTextColor] = useState<string>("#FFFFFF");
+
   const getSpeakerSectionTitle = () => {
     if (formCategory === "Hackathon" || formCategory === "Tech Event") return "Jury Information";
     if (formCategory === "Workshop") return "Tech Speaker Information";
@@ -1881,6 +2010,8 @@ const EventManagementPage: React.FC = () => {
       minTeamSize: formMinTeamSize ? Number(formMinTeamSize) : 1,
       maxTeamSize: formMaxTeamSize ? Number(formMaxTeamSize) : 4,
       isPaidEvent: formIsPaidEvent,
+      pricingType: formIsPaidEvent ? formPricingType : "per_person",
+      pricingModel: formIsPaidEvent ? formPricingType : "per_person",
       registrationFee: formIsPaidEvent && formRegistrationFee ? Number(formRegistrationFee) : 0,
       paymentQrImageFilename: formIsPaidEvent ? formPaymentQrImageFilename : "",
       paymentQrImagePreview: formIsPaidEvent ? formPaymentQrImagePreview : "",
@@ -1915,6 +2046,19 @@ const EventManagementPage: React.FC = () => {
       totalRounds: formTotalRounds,
       currentRound: formCurrentRound,
       rounds: formRounds,
+      ticketDesign: {
+        bgPreview: formTicketBgPreview,
+        bgFilename: formTicketBgFilename,
+        qrPosition: formTicketQrPosition,
+        qrX: formTicketQrX,
+        qrY: formTicketQrY,
+        qrWidthPercent: formTicketQrWidthPercent,
+        qrBg: formTicketQrBg,
+        showAttendeeText: formTicketShowAttendeeText,
+        textX: formTicketTextX,
+        textY: formTicketTextY,
+        textColor: formTicketTextColor,
+      },
       createdAt: Date.now()
     };
 
@@ -2028,6 +2172,7 @@ const EventManagementPage: React.FC = () => {
       setFormMinTeamSize("1");
       setFormMaxTeamSize("4");
       setFormIsPaidEvent(false);
+      setFormPricingType("per_person");
       setFormRegistrationFee("0");
       setFormPaymentQrImageFilename("");
       setFormPaymentQrImagePreview("");
@@ -2077,6 +2222,17 @@ const EventManagementPage: React.FC = () => {
         { time: "11:30 AM - 01:00 PM", title: "Workshop: Transformer Efficiency", description: "Hands-on FlashAttention, quantization, and sparse computation models." },
         { time: "03:00 PM - 04:30 PM", title: "Panel: Ethical Scaling", description: "A roundtable discussion with industry leaders on model deployment." }
       ]);
+      setFormTicketBgPreview("");
+      setFormTicketBgFilename("");
+      setFormTicketQrPosition("bottom-right");
+      setFormTicketQrX(75);
+      setFormTicketQrY(75);
+      setFormTicketQrWidthPercent(22);
+      setFormTicketQrBg("white");
+      setFormTicketShowAttendeeText(false);
+      setFormTicketTextX(20);
+      setFormTicketTextY(80);
+      setFormTicketTextColor("#FFFFFF");
 
       setView("list");
     } catch (err) {
@@ -2163,6 +2319,7 @@ const EventManagementPage: React.FC = () => {
         const loadedFee = data.registrationFee !== undefined ? String(data.registrationFee) : "0";
         setFormRegistrationFee(loadedFee);
         setFormIsPaidEvent(data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : Number(loadedFee) > 0);
+        setFormPricingType(data.pricingType === "per_team" || data.pricingModel === "per_team" ? "per_team" : "per_person");
         setFormPaymentQrImageFilename(data.paymentQrImageFilename || "");
         setFormPaymentQrImagePreview(data.paymentQrImagePreview || data.paymentQr || "");
         setFormUpiId(data.upiId || "");
@@ -2221,6 +2378,19 @@ const EventManagementPage: React.FC = () => {
             { time: data.agendaTime3 || "03:00 PM - 04:30 PM", title: data.agendaTitle3 || "Panel: Ethical Scaling", description: data.agendaDesc3 || "A roundtable discussion with industry leaders on model deployment." }
           ]);
         }
+
+        const td = data.ticketDesign || {};
+        setFormTicketBgPreview(td.bgPreview || "");
+        setFormTicketBgFilename(td.bgFilename || "");
+        setFormTicketQrPosition(td.qrPosition || "bottom-right");
+        setFormTicketQrX(td.qrX !== undefined ? td.qrX : 75);
+        setFormTicketQrY(td.qrY !== undefined ? td.qrY : 75);
+        setFormTicketQrWidthPercent(td.qrWidthPercent !== undefined ? td.qrWidthPercent : 22);
+        setFormTicketQrBg(td.qrBg || "white");
+        setFormTicketShowAttendeeText(td.showAttendeeText || false);
+        setFormTicketTextX(td.textX !== undefined ? td.textX : 20);
+        setFormTicketTextY(td.textY !== undefined ? td.textY : 80);
+        setFormTicketTextColor(td.textColor || "#FFFFFF");
 
         setView("create");
       } else {
@@ -2307,6 +2477,7 @@ const EventManagementPage: React.FC = () => {
                   setFormMinTeamSize("1");
                   setFormMaxTeamSize("4");
                   setFormIsPaidEvent(false);
+                  setFormPricingType("per_person");
                   setFormRegistrationFee("0");
                   setFormPaymentQrImageFilename("");
                   setFormPaymentQrImagePreview("");
@@ -3228,17 +3399,31 @@ const EventManagementPage: React.FC = () => {
                     </h3>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Coordinator Name</label>
-                      <select
+                      <MemberSelectCombobox
+                        label="Coordinator Name"
                         value={formFacultyCoordinator}
-                        onChange={(e) => setFormFacultyCoordinator(e.target.value)}
-                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-purple-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all cursor-pointer"
-                      >
-                        <option value="">Select Faculty Coordinator</option>
-                        {allUsers.filter(u => u.role === "Faculty Coordinator").map(u => (
-                          <option key={u.id} value={u.name || u.displayName || u.email}>{u.name || u.displayName || u.email}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => setFormFacultyCoordinator(val)}
+                        users={allUsers}
+                        placeholder="Search or select Faculty Coordinator..."
+                        themeColor="purple"
+                        strictFilter={true}
+                        headerTitle="Faculty Coordinators"
+                        recommendedRole={["Faculty Coordinator", "Faculty Lead", "Faculty Advisor", "Faculty"]}
+                        roleFilter={(u) => {
+                          const r = (u.role || "").toLowerCase().trim();
+                          const p = (u.position || "").toLowerCase().trim();
+                          const e = (u.email || "").toLowerCase().trim();
+                          return (
+                            r === "faculty coordinator" ||
+                            r === "faculty" ||
+                            p.includes("faculty coordinator") ||
+                            p.includes("faculty lead") ||
+                            p.includes("faculty advisor") ||
+                            e.startsWith("facultycoordinator@") ||
+                            (r.includes("faculty") && !r.includes("student"))
+                          );
+                        }}
+                      />
                     </div>
                   </div>
 
@@ -3252,17 +3437,48 @@ const EventManagementPage: React.FC = () => {
                     </h3>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Coordinator Name</label>
-                      <select
+                      <MemberSelectCombobox
+                        label="Coordinator Name"
                         value={formStudentCoordinator}
-                        onChange={(e) => setFormStudentCoordinator(e.target.value)}
-                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-orange-500 font-medium text-sm text-slate-800 bg-slate-50/30 focus:bg-white transition-all cursor-pointer"
-                      >
-                        <option value="">Select Student Coordinator</option>
-                        {allUsers.filter(u => u.role !== "Faculty Coordinator").map(u => (
-                          <option key={u.id} value={u.name || u.displayName || u.email}>{u.name || u.displayName || u.email}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => setFormStudentCoordinator(val)}
+                        users={allUsers}
+                        placeholder="Search or select Student Coordinator..."
+                        themeColor="orange"
+                        strictFilter={true}
+                        headerTitle="Student Coordinators & Team Members"
+                        roleFilter={(u) => {
+                          const r = (u.role || "").toLowerCase().trim();
+                          const p = (u.position || "").toLowerCase().trim();
+                          const e = (u.email || "").toLowerCase().trim();
+
+                          // 1. Exclude Faculty Coordinators / Faculty Staff / Admins
+                          const isFacultyOrAdmin =
+                            r.includes("faculty") ||
+                            p.includes("faculty") ||
+                            r.includes("admin") ||
+                            p.includes("admin") ||
+                            e === "admin@aiverse.in" ||
+                            e.startsWith("facultycoordinator@");
+
+                          // 2. Exclude Registered Team Accounts / Participants
+                          const isParticipantOrTeam =
+                            r.includes("participant") ||
+                            p.includes("participant") ||
+                            r === "team" ||
+                            p === "team" ||
+                            !!u.teamName ||
+                            !!u.team_name ||
+                            !!u.registrationId ||
+                            !!u.registration_id ||
+                            (e.endsWith("@aiverse.in") && (e.startsWith("team") || e.startsWith("betaa") || e.startsWith("alphaa") || e.startsWith("saitech") || e.startsWith("test")));
+
+                          // 3. Exclude Jury accounts
+                          const isJury = r.includes("jury") || p.includes("jury") || e.startsWith("jury@");
+
+                          // Include all remaining team members (Student Organizers, Core Members, Volunteers, Leads, etc.)
+                          return !isFacultyOrAdmin && !isParticipantOrTeam && !isJury;
+                        }}
+                      />
                     </div>
                   </div>
 
@@ -3479,6 +3695,413 @@ const EventManagementPage: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Upload Ticket Design Card */}
+              {!formIsPastEvent && (
+                <div id="section-ticket-design" className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6 text-left">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center shadow-inner">
+                        <Ticket className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-850 tracking-tight flex items-center gap-2">
+                          Upload Ticket Design
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-[#2563EB] border border-blue-200/70">
+                            JPG / PNG Template
+                          </span>
+                        </h3>
+                        <p className="text-[11px] text-slate-400 font-medium">
+                          Upload your custom ticket design in JPG or PNG format. Position the <strong>QR</strong> placeholder box on your ticket to print dynamic attendee QR codes.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Hidden File Input for Ticket Template */}
+                  <input
+                    type="file"
+                    ref={ticketBgFileInputRef}
+                    className="hidden"
+                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                    onChange={handleTicketBgFileChange}
+                  />
+
+                  {/* 1. Upload Ticket Template Dropzone */}
+                  {!formTicketBgPreview ? (
+                    <div
+                      onClick={() => ticketBgFileInputRef.current?.click()}
+                      className="border-2 border-dashed border-blue-300/80 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-3xl p-7 text-center transition-all cursor-pointer group flex flex-col items-center justify-center space-y-3"
+                    >
+                      <div className="w-14 h-14 rounded-2xl bg-white text-blue-600 shadow-md flex items-center justify-center group-hover:scale-105 transition-transform border border-blue-100">
+                        <Upload className="w-6 h-6" />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-sm font-black text-slate-800 block">
+                          Click to Upload Ticket Template
+                        </span>
+                        <p className="text-xs text-slate-400 font-medium max-w-sm mx-auto">
+                          Upload your designed ticket in <strong className="text-slate-700">PNG</strong> or <strong className="text-slate-700">JPG</strong> format.
+                        </p>
+                      </div>
+                      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-slate-200 text-[10px] font-bold text-slate-500 shadow-2xs">
+                        <span>📐 Portrait or Landscape</span>
+                        <span>•</span>
+                        <span>Max 10MB</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={formTicketBgPreview}
+                          alt="Ticket Template Thumbnail"
+                          className="w-14 h-14 object-cover rounded-xl border border-slate-300 shadow-sm"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-slate-850 block truncate max-w-[220px]">
+                            {formTicketBgFilename || "Custom_Ticket_Template.png"}
+                          </span>
+                          <span className="text-[10px] text-emerald-600 font-extrabold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Ticket Template Linked & Ready
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => ticketBgFileInputRef.current?.click()}
+                          className="px-3 py-1.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-all text-xs shadow-2xs cursor-pointer"
+                        >
+                          Replace Image
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormTicketBgPreview("");
+                            setFormTicketBgFilename("");
+                            if (ticketBgFileInputRef.current) ticketBgFileInputRef.current.value = "";
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. Interactive Ticket Canvas & QR Code Placement */}
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-black text-slate-850 flex items-center gap-1.5">
+                          <QrCode className="w-3.5 h-3.5 text-blue-600" />
+                          QR Code Placeholder Placement on Ticket
+                        </span>
+                        <p className="text-[11px] text-slate-400 font-medium">
+                          Click anywhere on the ticket below to place the QR code, or use the position controls.
+                        </p>
+                      </div>
+                      <span className="text-[10.5px] font-mono font-bold px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200">
+                        X: {formTicketQrX}% • Y: {formTicketQrY}%
+                      </span>
+                    </div>
+
+                    {/* Interactive Canvas Box */}
+                    <div className="p-4 sm:p-6 rounded-3xl bg-slate-900/95 border border-slate-800 flex justify-center items-center overflow-hidden">
+                      <div
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const clickX = e.clientX - rect.left;
+                          const clickY = e.clientY - rect.top;
+                          const pctX = Math.round(Math.max(8, Math.min(92, (clickX / rect.width) * 100)));
+                          const pctY = Math.round(Math.max(8, Math.min(92, (clickY / rect.height) * 100)));
+                          setFormTicketQrX(pctX);
+                          setFormTicketQrY(pctY);
+                          setFormTicketQrPosition("custom");
+                        }}
+                        className="relative w-full max-w-[420px] rounded-2xl overflow-hidden shadow-2xl cursor-crosshair group select-none border border-slate-700 bg-slate-800"
+                        style={{
+                          aspectRatio: formTicketBgPreview ? undefined : "16/9",
+                          minHeight: "260px"
+                        }}
+                      >
+                        {/* Background Template Image */}
+                        {formTicketBgPreview ? (
+                          <img
+                            src={formTicketBgPreview}
+                            alt="Ticket Template"
+                            className="w-full h-auto object-contain block pointer-events-none"
+                          />
+                        ) : (
+                          <div className="w-full h-[280px] bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 p-6 flex flex-col justify-between text-white border-2 border-dashed border-indigo-500/40 pointer-events-none">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block">AI Verse 2026</span>
+                                <h4 className="text-lg font-black">{formTitle || "Official Event Pass"}</h4>
+                              </div>
+                              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-300 text-[9px] font-bold border border-indigo-400/40">
+                                ALL ACCESS
+                              </span>
+                            </div>
+                            <div className="text-center py-4">
+                              <span className="text-xs font-bold text-slate-400">
+                                (Upload your JPG or PNG ticket image above)
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-400">
+                              <span>TEAM ID: AV-89210</span>
+                              <span>ADMIT ONE</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Drag/Click Dynamic QR Code Placeholder */}
+                        <div
+                          style={{
+                            left: `${formTicketQrX}%`,
+                            top: `${formTicketQrY}%`,
+                            width: `${formTicketQrWidthPercent}%`,
+                            transform: "translate(-50%, -50%)"
+                          }}
+                          className={`absolute z-20 aspect-square rounded-xl flex flex-col items-center justify-center p-1.5 transition-transform hover:scale-105 shadow-2xl ${
+                            formTicketQrBg === "white"
+                              ? "bg-white border-2 border-blue-500 shadow-blue-500/30"
+                              : formTicketQrBg === "glow"
+                              ? "bg-slate-950 border-2 border-cyan-400 shadow-[0_0_20px_#22d3ee]"
+                              : "bg-white/90 border-2 border-dashed border-blue-600 backdrop-blur-xs"
+                          }`}
+                          title={`QR Code Placeholder (X: ${formTicketQrX}%, Y: ${formTicketQrY}%)`}
+                        >
+                          <img
+                            src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PARTICIPANT_PASS_QR"
+                            alt="Dynamic QR Placeholder"
+                            className="w-full h-full object-contain pointer-events-none"
+                          />
+                          <div className="absolute -top-3.5 px-2 py-0.5 rounded-full bg-blue-600 text-[8.5px] font-black text-white whitespace-nowrap shadow-md uppercase tracking-wider flex items-center gap-1">
+                            <QrCode className="w-2.5 h-2.5" />
+                            <span>QR</span>
+                          </div>
+                          <div className="absolute -bottom-3.5 px-1.5 py-0.5 rounded bg-slate-900/90 text-[7.5px] font-bold text-slate-200 whitespace-nowrap shadow-xs uppercase tracking-tight">
+                            {formTicketQrX}%, {formTicketQrY}%
+                          </div>
+                        </div>
+
+                        {/* Optional Attendee Text Overlay Preview */}
+                        {formTicketShowAttendeeText && (
+                          <div
+                            style={{
+                              left: `${formTicketTextX}%`,
+                              top: `${formTicketTextY}%`,
+                              color: formTicketTextColor,
+                              transform: "translate(-50%, -50%)"
+                            }}
+                            className="absolute z-20 px-2 py-0.5 rounded bg-black/60 backdrop-blur-xs text-[10px] font-black border border-white/20 whitespace-nowrap pointer-events-none"
+                          >
+                            Attendee: Team Alpha (AV-PASS)
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. QR Placement Fine-Tuning Controls */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
+                    {/* Left Column: Preset Position Buttons */}
+                    <div className="space-y-3">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        Quick Position Presets
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: "bottom-right", label: "Bottom Right", x: 78, y: 78 },
+                          { id: "bottom-center", label: "Bottom Center", x: 50, y: 80 },
+                          { id: "top-right", label: "Top Right", x: 80, y: 20 },
+                          { id: "top-left", label: "Top Left", x: 20, y: 20 },
+                          { id: "bottom-left", label: "Bottom Left", x: 20, y: 78 },
+                          { id: "center", label: "Center", x: 50, y: 50 }
+                        ].map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setFormTicketQrPosition(p.id as any);
+                              setFormTicketQrX(p.x);
+                              setFormTicketQrY(p.y);
+                            }}
+                            className={`p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                              formTicketQrX === p.x && formTicketQrY === p.y
+                                ? "border-blue-600 bg-blue-50 text-blue-900 font-bold shadow-2xs"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 font-medium"
+                            }`}
+                          >
+                            <span className="text-[10px] block">{p.label}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Precision Sliders */}
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-700">Horizontal Position (X)</span>
+                          <span className="font-mono font-bold text-blue-600">{formTicketQrX}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="5"
+                          max="95"
+                          value={formTicketQrX}
+                          onChange={(e) => {
+                            setFormTicketQrX(Number(e.target.value));
+                            setFormTicketQrPosition("custom");
+                          }}
+                          className="w-full accent-blue-600 cursor-pointer"
+                        />
+
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="font-bold text-slate-700">Vertical Position (Y)</span>
+                          <span className="font-mono font-bold text-blue-600">{formTicketQrY}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="5"
+                          max="95"
+                          value={formTicketQrY}
+                          onChange={(e) => {
+                            setFormTicketQrY(Number(e.target.value));
+                            setFormTicketQrPosition("custom");
+                          }}
+                          className="w-full accent-blue-600 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Right Column: QR Code Sizing & Container Style */}
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="font-bold text-slate-700">QR Code Size (% of Ticket Width)</span>
+                          <span className="font-mono font-bold text-blue-600">{formTicketQrWidthPercent}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="12"
+                          max="40"
+                          value={formTicketQrWidthPercent}
+                          onChange={(e) => setFormTicketQrWidthPercent(Number(e.target.value))}
+                          className="w-full accent-blue-600 cursor-pointer"
+                        />
+                        <div className="grid grid-cols-4 gap-1.5 mt-2">
+                          {[
+                            { label: "Compact", val: 16 },
+                            { label: "Standard", val: 22 },
+                            { label: "Large", val: 28 },
+                            { label: "Hero", val: 35 }
+                          ].map((s) => (
+                            <button
+                              key={s.label}
+                              type="button"
+                              onClick={() => setFormTicketQrWidthPercent(s.val)}
+                              className={`py-1 px-1.5 rounded-lg border text-[9.5px] font-bold transition-all cursor-pointer ${
+                                formTicketQrWidthPercent === s.val
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                              }`}
+                            >
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                          QR Container Background Box
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: "white", label: "White Box", desc: "Clean & High Contrast" },
+                            { id: "transparent", label: "Transparent", desc: "Direct on Image" },
+                            { id: "glow", label: "Neon Glow", desc: "Dark Cyber Border" }
+                          ].map((b) => (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => setFormTicketQrBg(b.id as any)}
+                              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                                formTicketQrBg === b.id
+                                  ? "border-blue-600 bg-blue-50 text-blue-900 font-bold shadow-2xs"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 font-medium"
+                              }`}
+                            >
+                              <span className="text-[10.5px] block font-bold">{b.label}</span>
+                              <span className="text-[8.5px] text-slate-400 block leading-tight">{b.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Attendee Name Overlay Toggle */}
+                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                        <label className="flex items-center justify-between cursor-pointer select-none">
+                          <span className="text-xs font-bold text-slate-800">
+                            Overlay Attendee / Team Name on Ticket
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={formTicketShowAttendeeText}
+                            onChange={(e) => setFormTicketShowAttendeeText(e.target.checked)}
+                            className="w-4 h-4 rounded text-blue-600"
+                          />
+                        </label>
+
+                        {formTicketShowAttendeeText && (
+                          <div className="pt-2 border-t border-slate-200/60 space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 block">Text X%</span>
+                                <input
+                                  type="number"
+                                  min="5"
+                                  max="95"
+                                  value={formTicketTextX}
+                                  onChange={(e) => setFormTicketTextX(Number(e.target.value))}
+                                  className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold bg-white"
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[9px] font-bold text-slate-400 block">Text Y%</span>
+                                <input
+                                  type="number"
+                                  min="5"
+                                  max="95"
+                                  value={formTicketTextY}
+                                  onChange={(e) => setFormTicketTextY(Number(e.target.value))}
+                                  className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold bg-white"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9.5px] font-bold text-slate-500">Text Color:</span>
+                              {["#FFFFFF", "#000000", "#2563EB", "#F59E0B"].map((c) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  onClick={() => setFormTicketTextColor(c)}
+                                  style={{ backgroundColor: c }}
+                                  className={`w-5 h-5 rounded-full border border-slate-300 ${
+                                    formTicketTextColor === c ? "ring-2 ring-blue-500 scale-110" : ""
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Speaker Information */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
@@ -4217,9 +4840,48 @@ const EventManagementPage: React.FC = () => {
                     {/* Pricing Input Section (When ON) */}
                     {formIsPaidEvent && (
                       <div className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-100/70 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* 1. Pricing Type Selection: Per Person vs Per Team */}
                         <div>
                           <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                            Price Per Person (₹) <span className="text-red-500">*</span>
+                            Pricing Option <span className="text-red-500">*</span>
+                          </label>
+                          <div className="grid grid-cols-2 gap-2 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setFormPricingType("per_person")}
+                              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                formPricingType === "per_person"
+                                  ? "bg-white text-emerald-700 shadow-sm border border-emerald-300 font-black"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              <User className="w-3.5 h-3.5" />
+                              <span>Per Person</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFormPricingType("per_team")}
+                              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                formPricingType === "per_team"
+                                  ? "bg-white text-emerald-700 shadow-sm border border-emerald-300 font-black"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              <Users className="w-3.5 h-3.5" />
+                              <span>Per Team</span>
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-medium mt-1">
+                            {formPricingType === "per_team"
+                              ? "Flat fee per team regardless of how many members join."
+                              : "Calculated per member: Total Fee = Price × Total Team Members."}
+                          </p>
+                        </div>
+
+                        {/* 2. Fee Input */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                            {formPricingType === "per_team" ? "Flat Price Per Team (₹)" : "Price Per Person (₹)"} <span className="text-red-500">*</span>
                           </label>
                           <div className="relative">
                             <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400 select-none">₹</span>
@@ -4227,7 +4889,7 @@ const EventManagementPage: React.FC = () => {
                               type="number"
                               min="0"
                               step="1"
-                              placeholder="e.g. 250"
+                              placeholder={formPricingType === "per_team" ? "e.g. 500" : "e.g. 250"}
                               value={formRegistrationFee === "0" ? "" : formRegistrationFee}
                               onChange={(e) => setFormRegistrationFee(e.target.value)}
                               className="w-full pl-8 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-sm font-bold placeholder:text-slate-300 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all"
@@ -6603,10 +7265,11 @@ const EventManagementPage: React.FC = () => {
                           </span>
                           <button
                             type="button"
-                            onClick={() => setSelectedPromoteRegIds(eligibleTeamIds)}
-                            className="px-3 py-1 bg-purple-600 text-white rounded-xl text-xs font-black hover:bg-purple-700 cursor-pointer transition-all shadow-xs"
+                            onClick={handleApplyQuizAutoSelect}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-95 text-white rounded-xl text-xs font-black cursor-pointer transition-all shadow-md shadow-purple-500/20 flex items-center gap-1.5"
                           >
-                            Apply Quiz Auto-Select
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Apply Quiz Auto-Select</span>
                           </button>
                         </div>
                       </div>
@@ -6664,10 +7327,11 @@ const EventManagementPage: React.FC = () => {
                           </span>
                           <button
                             type="button"
-                            onClick={() => setSelectedPromoteRegIds(eligibleTeamIds)}
-                            className="px-3 py-1 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 cursor-pointer transition-all shadow-xs"
+                            onClick={handleApplyJuryAutoSelect}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 active:scale-95 text-white rounded-xl text-xs font-black cursor-pointer transition-all shadow-md shadow-indigo-500/20 flex items-center gap-1.5"
                           >
-                            Apply Jury Auto-Select
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Apply Jury Auto-Select</span>
                           </button>
                         </div>
                       </div>

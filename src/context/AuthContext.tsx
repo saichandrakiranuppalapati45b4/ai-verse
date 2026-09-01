@@ -1,13 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  signOut, 
-  onAuthStateChanged,
-  updatePassword
-} from "firebase/auth";
 import { doc, setDoc, getDoc, getDocs, collection, query, where, onSnapshot } from "firebase/firestore";
-import { auth, db } from "../config/firebase";
+import { db } from "../config/firebase";
 import { supabase } from "../config/supabase";
 import { userService } from "../services/userService";
 
@@ -75,145 +68,146 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Initialize and listen to real Firebase Auth state changes with real-time Firestore sync
+  // Initialize and listen to Supabase Auth state changes with real-time Firestore sync
   useEffect(() => {
     let unsubSnapshot: (() => void) | null = null;
-    let unsubscribeAuth: (() => void) | null = null;
 
-    try {
-      unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-        setLoading(true);
-        if (unsubSnapshot) {
-          unsubSnapshot();
-          unsubSnapshot = null;
+    const setupProfileListener = async (userId: string, userEmail: string) => {
+      if (unsubSnapshot) {
+        unsubSnapshot();
+        unsubSnapshot = null;
+      }
+
+      const savedUserStr = localStorage.getItem("aether_mock_user");
+      let localUser: UserProfile | null = null;
+      if (savedUserStr) {
+        try {
+          localUser = JSON.parse(savedUserStr);
+        } catch (e) {}
+      }
+
+      // Allow authorized emails, participant role accounts, and any @aiverse.in team emails
+      const isAllowed = ALLOWED_EMAILS.includes(userEmail) || localUser?.role === "participant" || userEmail.includes("participant") || userEmail.endsWith("@aiverse.in");
+      
+      if (!isAllowed) {
+        console.warn(`[AuthContext] Denying access to unauthorized user: ${userEmail}`);
+        await supabase.auth.signOut().catch(() => {});
+        setUser(null);
+        localStorage.removeItem("aether_mock_user");
+        setLoading(false);
+        return;
+      }
+
+      // For team emails (e.g. alphaa@aiverse.in), the user doc is stored under
+      // the sanitized email ID (e.g. alphaa_aiverse_in), not the Supabase Auth UID.
+      const sanitizedEmailId = userEmail.replace(/[^a-z0-9]/g, '_');
+      let userDocRef = doc(db, "users", userId);
+      
+      // If a user doc exists under the sanitized email ID, use that instead
+      if (sanitizedEmailId !== userId) {
+        try {
+          const emailDocSnap = await getDoc(doc(db, "users", sanitizedEmailId));
+          if (emailDocSnap.exists()) {
+            userDocRef = doc(db, "users", sanitizedEmailId);
+          }
+        } catch (e) {
+          // Fallback to UID-based doc
         }
+      }
+      
+      let forcedRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty";
+      let forcedDisplayRole = "Super Admin";
+      let defaultName = "System Admin";
+      
+      if (userEmail === "admin@aiverse.in") {
+        forcedRole = "faculty";
+        forcedDisplayRole = "Super Admin";
+        defaultName = "System Admin";
+      } else if (userEmail === "facultycoordinator@aiverse.in") {
+        forcedRole = "faculty";
+        forcedDisplayRole = "Faculty Coordinator";
+        defaultName = "Faculty Coordinator";
+      } else if (userEmail === "studentorganizer@aiverse.in") {
+        forcedRole = "organizer";
+        forcedDisplayRole = "Student Organizer";
+        defaultName = "Student Organizer";
+      } else if (userEmail === "jury@aiverse.in" || userEmail === "jurry@aiverse.in") {
+        forcedRole = "jury";
+        forcedDisplayRole = "Jury Evaluator";
+        defaultName = "Jury Panelist";
+      } else if (userEmail === "participant@aiverse.in") {
+        forcedRole = "participant";
+        forcedDisplayRole = "Participant";
+        defaultName = "Alex Rivera";
+      } else if (userEmail.endsWith("@aiverse.in")) {
+        // Team participant emails like alphaa@aiverse.in, betaa@aiverse.in
+        forcedRole = "participant";
+        forcedDisplayRole = "Participant";
+        defaultName = userEmail.split("@")[0];
+      }
 
-        if (firebaseUser) {
-          const userEmail = firebaseUser.email?.toLowerCase().trim() || "";
-          
-          const savedUserStr = localStorage.getItem("aether_mock_user");
-          let localUser: UserProfile | null = null;
-          if (savedUserStr) {
-            try {
-              localUser = JSON.parse(savedUserStr);
-            } catch (e) {}
-          }
+      const fallbackProfile: UserProfile = {
+        uid: userId,
+        email: userEmail,
+        name: defaultName,
+        role: forcedRole,
+        displayRole: forcedDisplayRole
+      };
 
-          // Allow authorized emails, participant role accounts, and any @aiverse.in team emails
-          const isAllowed = ALLOWED_EMAILS.includes(userEmail) || localUser?.role === "participant" || userEmail.includes("participant") || userEmail.endsWith("@aiverse.in");
-          
-          if (!isAllowed) {
-            console.warn(`[AuthContext] Denying access to unauthorized user: ${userEmail}`);
-            await signOut(auth).catch(() => {});
-            setUser(null);
-            localStorage.removeItem("aether_mock_user");
-            setLoading(false);
-            return;
-          }
-
-          // For team emails (e.g. alphaa@aiverse.in), the user doc is stored under
-          // the sanitized email ID (e.g. alphaa_aiverse_in), not the Firebase Auth UID.
-          // Check that doc first so we get registrationId, teamName, etc.
-          const sanitizedEmailId = userEmail.replace(/[^a-z0-9]/g, '_');
-          let userDocRef = doc(db, "users", firebaseUser.uid);
-          
-          // If a user doc exists under the sanitized email ID, use that instead
-          if (sanitizedEmailId !== firebaseUser.uid) {
-            try {
-              const emailDocSnap = await getDoc(doc(db, "users", sanitizedEmailId));
-              if (emailDocSnap.exists()) {
-                userDocRef = doc(db, "users", sanitizedEmailId);
-              }
-            } catch (e) {
-              // Fallback to UID-based doc
-            }
-          }
-          
-          let forcedRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty";
-          let forcedDisplayRole = "Super Admin";
-          let defaultName = "System Admin";
-          
-          if (userEmail === "admin@aiverse.in") {
-            forcedRole = "faculty";
-            forcedDisplayRole = "Super Admin";
-            defaultName = "System Admin";
-          } else if (userEmail === "facultycoordinator@aiverse.in") {
-            forcedRole = "faculty";
-            forcedDisplayRole = "Faculty Coordinator";
-            defaultName = "Faculty Coordinator";
-          } else if (userEmail === "studentorganizer@aiverse.in") {
-            forcedRole = "organizer";
-            forcedDisplayRole = "Student Organizer";
-            defaultName = "Student Organizer";
-          } else if (userEmail === "jury@aiverse.in" || userEmail === "jurry@aiverse.in") {
-            forcedRole = "jury";
-            forcedDisplayRole = "Jury Evaluator";
-            defaultName = "Jury Panelist";
-          } else if (userEmail === "participant@aiverse.in") {
-            forcedRole = "participant";
-            forcedDisplayRole = "Participant";
-            defaultName = "Alex Rivera";
-          } else if (userEmail.endsWith("@aiverse.in")) {
-            // Team participant emails like alphaa@aiverse.in, betaa@aiverse.in
-            forcedRole = "participant";
-            forcedDisplayRole = "Participant";
-            defaultName = userEmail.split("@")[0];
-          }
-
-          const fallbackProfile: UserProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || "",
-            name: firebaseUser.displayName || defaultName,
-            role: forcedRole,
-            displayRole: forcedDisplayRole
-          };
-
-          // Setup real-time listener for user profile changes
-          try {
-            unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
-              if (docSnap.exists()) {
-                const profileData = docSnap.data();
-                const userRole = normalizeRole(profileData.role, forcedRole);
-                setUser({
-                  uid: firebaseUser.uid,
-                  email: firebaseUser.email || "",
-                  name: profileData.displayName || profileData.name || profileData.teamLeadName || defaultName,
-                  role: userRole,
-                  displayRole: profileData.displayRole || profileData.role || forcedDisplayRole,
-                  image: profileData.image || "",
-                  year: profileData.year,
-                  requiresPasswordChange: profileData.requiresPasswordChange,
-                  teamName: profileData.teamName,
-                  eventTitle: profileData.eventTitle,
-                  registrationId: profileData.registrationId
-                });
-              } else {
-                setUser(fallbackProfile);
-                // Write a default profile document for them in Firestore asynchronously
-                const defaultProfile = {
-                  name: firebaseUser.displayName || defaultName,
-                  email: firebaseUser.email || "",
-                  role: forcedRole,
-                  displayRole: forcedDisplayRole,
-                  status: "Active"
-                };
-                setDoc(userDocRef, defaultProfile).catch((err) => {
-                  console.error("[AuthContext] Error creating default profile document:", err);
-                });
-              }
-              setLoading(false);
-            }, (error) => {
-              console.warn("[AuthContext] Firestore sync unavailable, using default profile:", error?.message || error);
-              setUser(fallbackProfile);
-              setLoading(false);
+      // Setup real-time Firestore listener for user profile changes
+      try {
+        unsubSnapshot = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const profileData = docSnap.data();
+            const userRole = normalizeRole(profileData.role, forcedRole);
+            setUser({
+              uid: userId,
+              email: userEmail,
+              name: profileData.displayName || profileData.name || profileData.teamLeadName || defaultName,
+              role: userRole,
+              displayRole: profileData.displayRole || profileData.role || forcedDisplayRole,
+              image: profileData.image || "",
+              year: profileData.year,
+              requiresPasswordChange: profileData.requiresPasswordChange,
+              teamName: profileData.teamName,
+              eventTitle: profileData.eventTitle,
+              registrationId: profileData.registrationId
             });
-          } catch (e) {
+          } else {
             setUser(fallbackProfile);
-            setLoading(false);
+            // Write a default profile document for them in Firestore asynchronously
+            const defaultProfile = {
+              name: defaultName,
+              email: userEmail,
+              role: forcedRole,
+              displayRole: forcedDisplayRole,
+              status: "Active"
+            };
+            setDoc(userDocRef, defaultProfile).catch((err) => {
+              console.error("[AuthContext] Error creating default profile document:", err);
+            });
           }
+          setLoading(false);
+        }, (error) => {
+          console.warn("[AuthContext] Firestore sync unavailable, using default profile:", error?.message || error);
+          setUser(fallbackProfile);
+          setLoading(false);
+        });
+      } catch (e) {
+        setUser(fallbackProfile);
+        setLoading(false);
+      }
+    };
 
+    // Check initial Supabase session
+    const initSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const userEmail = session.user.email?.toLowerCase().trim() || "";
+          await setupProfileListener(session.user.id, userEmail);
         } else {
-          // If not authenticated via Firebase, check local session
+          // No Supabase session — check local session (mock/legacy)
           const savedUserStr = localStorage.getItem("aether_mock_user");
           if (savedUserStr) {
             try {
@@ -233,20 +227,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           setLoading(false);
         }
-      });
-    } catch (authInitErr) {
-      console.warn("[AuthContext] Firebase Auth listener initialization warning:", authInitErr);
-      const savedUserStr = localStorage.getItem("aether_mock_user");
-      if (savedUserStr) {
-        try {
-          setUser(JSON.parse(savedUserStr));
-        } catch (e) {}
+      } catch (err) {
+        console.warn("[AuthContext] Supabase session check warning:", err);
+        const savedUserStr = localStorage.getItem("aether_mock_user");
+        if (savedUserStr) {
+          try {
+            setUser(JSON.parse(savedUserStr));
+          } catch (e) {}
+        }
+        setLoading(false);
       }
-      setLoading(false);
-    }
+    };
+
+    initSession();
+
+    // Listen to Supabase Auth state changes
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === "SIGNED_IN" && session?.user) {
+          setLoading(true);
+          const userEmail = session.user.email?.toLowerCase().trim() || "";
+          await setupProfileListener(session.user.id, userEmail);
+        } else if (event === "SIGNED_OUT") {
+          if (unsubSnapshot) {
+            unsubSnapshot();
+            unsubSnapshot = null;
+          }
+          // Check localStorage for mock users before clearing
+          const savedUserStr = localStorage.getItem("aether_mock_user");
+          if (savedUserStr) {
+            try {
+              const savedUser = JSON.parse(savedUserStr);
+              if (savedUser && savedUser.email && savedUser.role) {
+                setUser(savedUser);
+                setLoading(false);
+                return;
+              }
+            } catch (e) {}
+          }
+          setUser(null);
+          setLoading(false);
+        } else if (event === "TOKEN_REFRESHED" && session?.user) {
+          // Session refreshed, no action needed
+        }
+      }
+    );
 
     return () => {
-      if (unsubscribeAuth) unsubscribeAuth();
+      authSubscription.unsubscribe();
       if (unsubSnapshot) unsubSnapshot();
     };
   }, []);
@@ -351,15 +379,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log("[AuthContext] Supabase profile lookup notice:", supaProfileErr);
       }
 
-      // 3. Try Firebase Auth sign in
-      try {
-        await signInWithEmailAndPassword(auth, email, roleOrPassword);
-        localStorage.removeItem("aether_mock_user");
-        setLoading(false);
-        return;
-      } catch (firebaseErr) {
-        console.log("[AuthContext] Firebase Auth sign-in unverified, querying Firestore users collection...");
-      }
+      // 3. Query Firestore users collection for legacy participant credentials
 
       // 4. Query Firestore `users` collection for participant credentials (e.g. alphaa_aiverse_in)
       const docId = cleanEmail.replace(/[^a-z0-9]/g, '_');
@@ -429,31 +449,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      // 1. Supabase Auth
-      try {
-        await supabase.auth.signUp({
-          email: cleanEmail,
-          password: passwordOrRole,
-          options: {
-            data: { name, role }
-          }
-        });
-        await userService.addUser({
-          name,
-          email: cleanEmail,
-          role,
-          status: "Active"
-        });
-      } catch (e) {
-        console.warn("Supabase register notice:", e);
+      // 1. Create user in Supabase Auth
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: passwordOrRole,
+        options: {
+          data: { name, role }
+        }
+      });
+
+      if (signUpError) {
+        throw new Error(signUpError.message);
       }
 
-      // 2. Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(auth, email, passwordOrRole);
-      const userDocRef = doc(db, "users", userCredential.user.uid);
+      // 2. Create user profile in Supabase users table
+      await userService.addUser({
+        name,
+        email: cleanEmail,
+        role,
+        status: "Active"
+      });
+
+      // 3. Also create Firestore profile doc for real-time sync
+      const userId = signUpData.user?.id || cleanEmail.replace(/[^a-z0-9]/g, '_');
+      const userDocRef = doc(db, "users", userId);
       const profile = {
         name,
-        email,
+        email: cleanEmail,
         role
       };
       await setDoc(userDocRef, profile);
@@ -470,7 +492,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       await supabase.auth.signOut().catch(() => {});
-      await signOut(auth).catch(() => {});
       setUser(null);
       localStorage.removeItem("aether_mock_user");
     } catch (error) {
@@ -484,7 +505,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (role === null) {
       setUser(null);
       localStorage.removeItem("aether_mock_user");
-      signOut(auth).catch(() => {});
+      supabase.auth.signOut().catch(() => {});
     } else {
       const email = role === "organizer" 
         ? "studentorganizer@aiverse.in" 
@@ -500,7 +521,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
       setUser(updatedUser);
       localStorage.setItem("aether_mock_user", JSON.stringify(updatedUser));
-      signOut(auth).catch(() => {});
+      supabase.auth.signOut().catch(() => {});
     }
   };
 
@@ -520,13 +541,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(updatedUser);
     localStorage.setItem("aether_mock_user", JSON.stringify(updatedUser));
 
-    // 2. Safely update Firebase Auth password if current user exists
-    if (auth.currentUser) {
-      try {
-        await updatePassword(auth.currentUser, newPassword);
-      } catch (authErr) {
-        console.warn("[AuthContext] updatePassword on Firebase Auth skipped/unverified:", authErr);
+    // 2. Update password in Supabase Auth
+    try {
+      const { error: supaErr } = await supabase.auth.updateUser({ password: newPassword });
+      if (supaErr) {
+        console.warn("[AuthContext] Supabase updateUser password error:", supaErr);
       }
+    } catch (authErr) {
+      console.warn("[AuthContext] Supabase password update skipped:", authErr);
     }
 
     // 3. Update Firestore users collection with new password

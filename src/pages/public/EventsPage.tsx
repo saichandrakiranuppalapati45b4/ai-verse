@@ -35,6 +35,7 @@ interface Event {
   endDate?: string;
   isPastEvent?: boolean;
   registrationFee?: number;
+  pricingType?: "per_person" | "per_team";
   isPaidEvent?: boolean;
   allowRegistrations?: boolean;
 }
@@ -104,6 +105,7 @@ const EventsPage: React.FC = () => {
             endDate: data.endDate || data.startDate || "",
             isPastEvent: Boolean(data.isPastEvent),
             registrationFee: data.registrationFee !== undefined ? Number(data.registrationFee) : 0,
+            pricingType: data.pricingType === "per_team" || data.pricingModel === "per_team" ? "per_team" : "per_person",
             isPaidEvent: data.isPaidEvent !== undefined ? Boolean(data.isPaidEvent) : (Number(data.registrationFee) > 0),
             allowRegistrations: data.allowRegistrations !== undefined ? data.allowRegistrations : true
           });
@@ -379,7 +381,7 @@ const EventsPage: React.FC = () => {
                               : "bg-slate-50 text-slate-600 border border-slate-200"
                           }`}>
                             {event.isPaidEvent && event.registrationFee && event.registrationFee > 0
-                              ? `₹${event.registrationFee}`
+                              ? `₹${event.registrationFee} ${event.pricingType === "per_team" ? "/ team" : "/ person"}`
                               : "Free"}
                           </span>
                           <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-lg uppercase shadow-sm ${getCategoryStyles(event.type)}`}>
