@@ -176,14 +176,14 @@ const DashboardLayout: React.FC = () => {
       {/* Main Content Area */}
       <div className="flex-grow flex flex-col min-w-0 h-full overflow-y-auto">
         {/* Topbar / Header */}
-        <header className="h-16 flex items-center justify-between px-4 sm:px-6 lg:px-8 sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shrink-0 shadow-xs">
-          <div className="flex items-center gap-4">
+        <header className="h-16 flex items-center justify-between px-3 sm:px-6 lg:px-8 sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90 shrink-0 shadow-xs">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             {isOrganizer ? (
-              <Link to="/" className="flex items-center gap-2.5 font-black text-[#2563EB] text-lg hover:opacity-90 transition-opacity">
-                <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-xl object-contain shrink-0 shadow-xs" />
-                <div className="leading-tight text-left">
-                  <span className="tracking-tight font-sans font-black block text-sm text-slate-900">AI Verse Club</span>
-                  <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-wider block">Attendance Portal</span>
+              <Link to="/" className="flex items-center gap-2 sm:gap-2.5 font-black text-[#2563EB] text-base sm:text-lg hover:opacity-90 transition-opacity min-w-0">
+                <img src="/ai_verse.png" alt="AI Verse Logo" className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl object-contain shrink-0 shadow-xs" />
+                <div className="leading-tight text-left min-w-0">
+                  <span className="tracking-tight font-sans font-black block text-xs sm:text-sm text-slate-900 truncate">AI Verse Club</span>
+                  <span className="text-[7.5px] sm:text-[8.5px] text-slate-400 font-bold uppercase tracking-wider block truncate">Attendance Portal</span>
                 </div>
               </Link>
             ) : (
@@ -207,23 +207,28 @@ const DashboardLayout: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             {/* Status indicator badge */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200/60 text-[10px] sm:text-xs font-bold font-sans shrink-0">
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200/60 text-[10px] sm:text-xs font-bold font-sans shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="hidden sm:inline">AI Verse <span className="uppercase text-[9px] opacity-80 font-black">ONLINE</span></span>
-              <span className="inline sm:hidden uppercase text-[9px] opacity-80 font-black">ONLINE</span>
+              <span>AI Verse <span className="uppercase text-[9px] opacity-80 font-black">ONLINE</span></span>
+            </div>
+
+            {/* Mobile Status Dot */}
+            <div className="sm:hidden flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200/60 text-[9px] font-black shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>LIVE</span>
             </div>
 
             {/* Notification Bell with red dot */}
-            <button className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl relative transition-colors cursor-pointer">
-              <Bell className="h-4.5 w-4.5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+            <button className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl relative transition-colors cursor-pointer shrink-0">
+              <Bell className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+              <span className="absolute top-1 right-1 sm:top-1.5 sm:right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
             </button>
 
             {/* Profile Avatar / Circle */}
-            <div className="flex items-center gap-3 animate-in fade-in duration-200">
-              <div className="text-right hidden sm:block leading-tight text-left">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <div className="text-right hidden md:block leading-tight text-left">
                 <div className="text-xs font-bold text-slate-800">{user.name}</div>
                 <div className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-wide">
                   {user.displayRole || (isOrganizer ? "Student Organizer" : "Faculty Advisor")}
@@ -233,10 +238,10 @@ const DashboardLayout: React.FC = () => {
                 <img
                   src={user.image}
                   alt={user.name || "User Avatar"}
-                  className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-md shrink-0"
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover border border-slate-200 shadow-xs shrink-0"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-sm shadow-md border border-white shrink-0 font-sans">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-[#2563EB] text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-xs border border-white shrink-0 font-sans">
                   {(() => {
                     if (!user.name) return "AV";
                     const parts = user.name.trim().split(/\s+/);
@@ -247,14 +252,14 @@ const DashboardLayout: React.FC = () => {
               )}
             </div>
 
-            {/* Topbar Logout Button (Especially prominent for Student Organizer) */}
+            {/* Topbar Logout Button */}
             {isOrganizer && (
               <button
                 onClick={handleLogout}
                 title="Sign Out"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200/90 transition-all cursor-pointer shadow-2xs"
+                className="flex items-center gap-1 px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-extrabold text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200/90 transition-all cursor-pointer shadow-2xs shrink-0"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 <span className="hidden sm:inline">Logout</span>
               </button>
             )}
@@ -262,7 +267,7 @@ const DashboardLayout: React.FC = () => {
         </header>
 
         {/* Content Outlet */}
-        <main className="flex-grow p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto bg-slate-50/50">
+        <main className="flex-grow p-3 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto bg-slate-50/50">
           <Outlet />
         </main>
 
