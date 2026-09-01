@@ -399,6 +399,8 @@ const UserManagementPage: React.FC = () => {
 
     let successCount = 0;
     let failedCount = 0;
+    let emailSentCount = 0;
+    let lastEmailError = "";
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
@@ -512,8 +514,10 @@ const UserManagementPage: React.FC = () => {
           });
           if (!mailRes.success) {
             console.warn(`[Welcome Email Notice for ${name} (${targetWelcomeMail})]:`, mailRes.error);
+            lastEmailError = mailRes.error || "Email failed";
           } else {
             console.log(`[Welcome Email Sent] to ${targetWelcomeMail} for ${name}`);
+            emailSentCount++;
           }
         }
       } catch (err) {
@@ -525,7 +529,14 @@ const UserManagementPage: React.FC = () => {
     setBulkProgress(prev => ({ ...prev, success: successCount, failed: failedCount }));
     setTimeout(() => {
       setIsBulkProcessing(false);
-      alert(`Bulk Add Complete!\nSuccess: ${successCount}\nFailed: ${failedCount}`);
+      let alertMsg = `Bulk Add Complete!\nSuccess: ${successCount}\nFailed: ${failedCount}`;
+      if (emailSentCount > 0) {
+        alertMsg += `\nWelcome Emails Sent: ${emailSentCount}`;
+      }
+      if (lastEmailError) {
+        alertMsg += `\n\n(Email Delivery Notice: ${lastEmailError})`;
+      }
+      alert(alertMsg);
     }, 500);
   };
 
@@ -910,6 +921,7 @@ const UserManagementPage: React.FC = () => {
       };
       setUsers(prev => [newUser, ...prev]);
 
+      let emailStatusNotice = "";
       // Send Welcome Email to the user's personal mail ID
       const targetWelcomeMail = (formPersonalEmail && formPersonalEmail.includes("@")) ? formPersonalEmail.trim() : formEmail.trim();
       if (targetWelcomeMail && targetWelcomeMail.includes("@")) {
@@ -928,10 +940,14 @@ const UserManagementPage: React.FC = () => {
         });
         if (!mailRes.success) {
           console.warn(`[Welcome Email Notice for ${formName} (${targetWelcomeMail})]:`, mailRes.error);
+          emailStatusNotice = `\n\n(Email Delivery Note: ${mailRes.error})`;
         } else {
           console.log(`[Welcome Email Sent] to ${targetWelcomeMail} for ${formName}`);
+          emailStatusNotice = `\n\n(Welcome email delivered to ${targetWelcomeMail}!)`;
         }
       }
+
+      alert(`Member successfully added to team!${emailStatusNotice}`);
 
       // Reset state and return to user list view
       setFormName("");
@@ -1007,6 +1023,7 @@ const UserManagementPage: React.FC = () => {
       };
       setUsers([newUser, ...users]);
 
+      let emailStatusNotice = "";
       // Send Welcome Email to the user's personal mail ID
       const targetWelcomeMail = (invitePersonalEmail && invitePersonalEmail.includes("@")) ? invitePersonalEmail.trim() : inviteEmail.trim();
       if (targetWelcomeMail && targetWelcomeMail.includes("@")) {
@@ -1025,10 +1042,14 @@ const UserManagementPage: React.FC = () => {
         });
         if (!mailRes.success) {
           console.warn(`[Welcome Email Notice for ${inviteName} (${targetWelcomeMail})]:`, mailRes.error);
+          emailStatusNotice = `\n\n(Email Delivery Note: ${mailRes.error})`;
         } else {
           console.log(`[Welcome Email Sent] to ${targetWelcomeMail} for ${inviteName}`);
+          emailStatusNotice = `\n\n(Welcome email delivered to ${targetWelcomeMail}!)`;
         }
       }
+
+      alert(`User added successfully!${emailStatusNotice}`);
 
       setInviteName("");
       setInviteEmail("");
