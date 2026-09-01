@@ -17,7 +17,7 @@ export default {
         });
       }
 
-      const RESEND_API_KEY = env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+      const RESEND_API_KEY = env.RESEND_API_KEY || "";
 
       let body;
       try {

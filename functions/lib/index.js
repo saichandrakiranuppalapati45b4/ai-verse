@@ -37,7 +37,7 @@ exports.deleteUserAccount = exports.sendTeamAccessEmail = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 admin.initializeApp();
-const RESEND_API_KEY = "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 // ─── Send Team Access Email via Resend (server-side, no CORS issues) ───
 exports.sendTeamAccessEmail = functions.https.onCall(async (data, context) => {
     if (!context.auth) {

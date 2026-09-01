@@ -9,7 +9,7 @@
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  const RESEND_API_KEY = env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+  const RESEND_API_KEY = env.RESEND_API_KEY || (typeof process !== "undefined" ? process.env.RESEND_API_KEY : "");
 
   let body;
   try {

@@ -3,7 +3,7 @@ import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
-const RESEND_API_KEY = "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
 // ─── Send Team Access Email via Resend (server-side, no CORS issues) ───
 export const sendTeamAccessEmail = functions.https.onCall(async (data, context) => {

@@ -6,7 +6,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_NaVPe4gE_D3NMQ6wNbAgGawf4EHL2s29X";
+  const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 
   const { to, subject, html, text, from, reply_to } = req.body;
 
