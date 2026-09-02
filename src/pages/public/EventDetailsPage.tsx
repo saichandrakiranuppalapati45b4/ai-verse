@@ -49,7 +49,7 @@ interface DetailedEvent {
   image: string;
   posterImages?: {filename: string, preview: string}[];
   primaryTag?: string;
-  status?: "Draft" | "Active" | "Opened";
+  status?: "Draft" | "Active" | "Opened" | "Completed" | "Archived";
   maxReg: number;
   currentReg: number;
   startDate?: string;
