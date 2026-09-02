@@ -40,22 +40,32 @@ const LoginPage: React.FC = () => {
       
       // Check user session for destination
       const savedUserStr = localStorage.getItem("aether_mock_user");
-      let activeRole = "faculty";
+      let activeRole = "participant";
+      let requiresPwChange = false;
       if (savedUserStr) {
         try {
           const parsed = JSON.parse(savedUserStr);
           if (parsed && parsed.role) activeRole = parsed.role;
+          if (parsed && parsed.requiresPasswordChange) requiresPwChange = true;
         } catch (e) {}
       }
 
-      if (activeRole === "participant") {
-        navigate("/participant/set-password");
-      } else if (activeRole === "organizer") {
+      const lowerRole = String(activeRole).toLowerCase().trim();
+
+      if (lowerRole === "participant" || lowerRole === "member" || lowerRole.includes("participant") || lowerRole.includes("student member") || lowerRole.includes("volunteer")) {
+        if (requiresPwChange) {
+          navigate("/participant/set-password");
+        } else {
+          navigate("/participant/dashboard");
+        }
+      } else if (lowerRole === "organizer" || lowerRole.includes("organizer")) {
         navigate("/organizer/attendance");
-      } else if (activeRole === "jury") {
+      } else if (lowerRole === "jury" || lowerRole.includes("jury") || lowerRole.includes("evaluator")) {
         navigate("/jury");
-      } else {
+      } else if (lowerRole === "faculty" || lowerRole.includes("admin") || lowerRole.includes("faculty")) {
         navigate("/faculty/dashboard");
+      } else {
+        navigate("/participant/dashboard");
       }
     } catch (err: any) {
       setError(err?.message || "Failed to sign in. Please check your credentials.");

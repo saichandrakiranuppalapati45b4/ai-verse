@@ -9,7 +9,7 @@ import {
 import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { userService } from "../../services/userService";
 import { formatRoleLabel } from "../faculty/UserManagementPage";
 
@@ -43,12 +43,19 @@ interface MemberData {
   phone?: string;
 }
 
-interface RoleCategoryDefinition {
-  id: string;
-  title: string;
-  order: number;
-  match: (roleStr: string) => boolean;
-}
+const DEFAULT_ROLE_HIERARCHY = [
+  "Faculty Coordinators",
+  "Student Leads",
+  "Technical",
+  "Design",
+  "Content and Media",
+  "Video and Photography",
+  "Logistics and Operations",
+  "PR and HR",
+  "Event Management",
+  "Student Organizers",
+  "Volunteers"
+];
 
 // System administrative accounts to exclude
 const EXCLUDED_SYSTEM_EMAILS = [
@@ -62,106 +69,9 @@ const EXCLUDED_SYSTEM_EMAILS = [
 
 const BLANK_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394A3B8'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
-const ROLE_CATEGORIES: RoleCategoryDefinition[] = [
-  {
-    id: "leadership",
-    title: "Faculty Coordinators",
-    order: 1,
-    match: (r: string) => (
-      r.includes("faculty") ||
-      r.includes("convener") ||
-      r.includes("conviner") ||
-      r.includes("advisor") ||
-      r.includes("director") ||
-      r.includes("president") ||
-      r.includes("lead coordinator")
-    )
-  },
-  {
-    id: "technical",
-    title: "Technical",
-    order: 2,
-    match: (r: string) => (
-      r.includes("tech") ||
-      r.includes("developer") ||
-      r.includes("software") ||
-      r.includes("ai") ||
-      r.includes("ml") ||
-      r.includes("web") ||
-      r.includes("mobile") ||
-      r.includes("coding") ||
-      r.includes("data")
-    )
-  },
-  {
-    id: "organizers",
-    title: "Student Organizers",
-    order: 3,
-    match: (r: string) => (
-      r.includes("student organizer") ||
-      r.includes("co-organizer") ||
-      r.includes("organizer") ||
-      r.includes("student lead") ||
-      r.includes("core")
-    )
-  },
-  {
-    id: "design",
-    title: "Design & Media",
-    order: 4,
-    match: (r: string) => (
-      r.includes("design") ||
-      r.includes("ui") ||
-      r.includes("ux") ||
-      r.includes("media") ||
-      r.includes("photo") ||
-      r.includes("video") ||
-      r.includes("creative") ||
-      r.includes("content") ||
-      r.includes("graphic")
-    )
-  },
-  {
-    id: "operations",
-    title: "Event Management",
-    order: 5,
-    match: (r: string) => (
-      r.includes("event manager") ||
-      r.includes("operation") ||
-      r.includes("logistics") ||
-      r.includes("management") ||
-      r.includes("manager")
-    )
-  },
-  {
-    id: "marketing",
-    title: "PR & Marketing",
-    order: 6,
-    match: (r: string) => (
-      r.includes("pr") ||
-      r.includes("marketing") ||
-      r.includes("public relations") ||
-      r.includes("sponsorship") ||
-      r.includes("outreach") ||
-      r.includes("communication")
-    )
-  },
-  {
-    id: "volunteers",
-    title: "Volunteers",
-    order: 7,
-    match: (r: string) => (
-      r.includes("volunteer") ||
-      r.includes("student member") ||
-      r.includes("member") ||
-      r.includes("contributor") ||
-      r.includes("guest")
-    )
-  }
-];
-
 const TeamPage: React.FC = () => {
   const [dbMembers, setDbMembers] = useState<MemberData[]>([]);
+  const [configuredRoles, setConfiguredRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>("all");
 
@@ -169,6 +79,20 @@ const TeamPage: React.FC = () => {
     const fetchTeam = async () => {
       try {
         setLoading(true);
+
+        // 0. Fetch dynamic role hierarchy from Firestore Portal Settings
+        try {
+          const configDoc = await getDoc(doc(db, "settings", "portal_config"));
+          if (configDoc.exists()) {
+            const configData = configDoc.data();
+            if (configData.availableRoles && Array.isArray(configData.availableRoles) && configData.availableRoles.length > 0) {
+              setConfiguredRoles(configData.availableRoles);
+            }
+          }
+        } catch (confErr) {
+          console.warn("[TeamPage] Notice fetching portal_config roles:", confErr);
+        }
+
         const combinedList: any[] = [];
         const seenEmails = new Set<string>();
 
@@ -282,17 +206,33 @@ const TeamPage: React.FC = () => {
           console.warn("[TeamPage] Notice fetching organizers from Firestore:", orgErr);
         }
 
-        // 4. Filter out excluded system accounts
+        // 4. Filter out excluded system accounts and participant accounts
         const validMembers = combinedList.filter((m) => {
           const email = (m.email || "").toLowerCase().trim();
           const name = (m.name || "").toLowerCase().trim();
           const role = (m.role || "").toLowerCase().trim();
+          const pos = (m.position || "").toLowerCase().trim();
+          const roleType = (m.roleType || "").toLowerCase().trim();
           const status = (m.status || "Active").toLowerCase().trim();
 
           if (EXCLUDED_SYSTEM_EMAILS.includes(email)) return false;
           if (name === "system admin" || name === "jury evaluator" || name === "jury panelist") return false;
           if (role === "system admin" || role === "jury evaluator") return false;
           if (status === "deactivated") return false;
+
+          // Exclude all participants & event team accounts from the public team page
+          if (
+            role === "participant" || 
+            pos === "participant" || 
+            roleType === "participant" ||
+            role.includes("participant") || 
+            pos.includes("participant") || 
+            roleType.includes("participant") || 
+            email.includes("participant") ||
+            email.startsWith("team")
+          ) {
+            return false;
+          }
 
           return true;
         });
@@ -307,60 +247,190 @@ const TeamPage: React.FC = () => {
     fetchTeam();
   }, []);
 
-  const getMemberCategory = (m: MemberData): string => {
-    const roleStr = `${m.position || ""} ${m.role || ""} ${m.roleType || ""}`.toLowerCase();
-    for (const cat of ROLE_CATEGORIES) {
-      if (cat.match(roleStr)) {
-        return cat.id;
-      }
+  // Check if a member belongs to Club Organizers leadership group
+  const isClubOrganizer = (member: MemberData): boolean => {
+    const mRole = (member.role || "").toLowerCase().trim();
+    const mPos = (member.position || "").toLowerCase().trim();
+    const mType = (member.roleType || "").toLowerCase().trim();
+    const combined = `${mPos} ${mRole} ${mType}`.toLowerCase().trim();
+
+    // Faculty members belong to faculty coordinators section
+    if (combined.includes("faculty") || combined.includes("convener") || combined.includes("advisor")) {
+      return false;
     }
-    return "other";
+
+    return (
+      mRole === "organizer" ||
+      mPos === "organizer" ||
+      mRole === "co-organizer" ||
+      mPos === "co-organizer" ||
+      mRole === "secretary" ||
+      mPos === "secretary" ||
+      mRole === "facilitator" ||
+      mPos === "facilitator" ||
+      combined.includes("co-organizer") ||
+      combined.includes("co organizer") ||
+      combined.includes("secretary") ||
+      combined.includes("facilitator") ||
+      combined.includes("lead organizer") ||
+      combined.includes("student organizer") ||
+      (combined.includes("organizer") && !combined.includes("event manager") && !combined.includes("event management"))
+    );
   };
 
-  // Group members by role
+  // Rank within Club Organizers: 1. Organizer -> 2. Co-Organizer -> 3. Secretary -> 4. Facilitator
+  const getOrganizerRank = (member: MemberData): number => {
+    const combined = `${member.position || ""} ${member.role || ""} ${member.roleType || ""}`.toLowerCase().trim();
+    if (combined.includes("lead organizer") || (combined.includes("organizer") && !combined.includes("co-") && !combined.includes("co "))) return 1;
+    if (combined.includes("co-organizer") || combined.includes("co organizer")) return 2;
+    if (combined.includes("secretary")) return 3;
+    if (combined.includes("facilitator")) return 4;
+    return 5;
+  };
+
+  // Intelligent member-to-role matching for other departments
+  const matchMemberToRole = (member: MemberData, targetRole: string): boolean => {
+    const mRole = (member.role || "").toLowerCase().trim();
+    const mPos = (member.position || "").toLowerCase().trim();
+    const mType = (member.roleType || "").toLowerCase().trim();
+    const combined = `${mPos} ${mRole} ${mType}`.toLowerCase().trim();
+    const target = targetRole.toLowerCase().trim();
+
+    // Exact matches
+    if (mRole === target || mPos === target || mType === target) return true;
+    if (combined === target) return true;
+
+    // Direct containment
+    if (combined.includes(target) || target.includes(mRole) || target.includes(mPos)) return true;
+
+    // Normalized punctuation/space stripped matching
+    const targetNorm = target.replace(/[^a-z0-9]/g, "");
+    const combinedNorm = combined.replace(/[^a-z0-9]/g, "");
+    if (combinedNorm.includes(targetNorm) || targetNorm.includes(combinedNorm)) return true;
+
+    // Token overlap matching
+    const tokens = target.split(/[\s&,/+_-]+/).filter(t => t.length > 2 && !["and", "the", "for", "with"].includes(t));
+    if (tokens.length > 0) {
+      const matches = tokens.filter(t => combined.includes(t));
+      if (matches.length === tokens.length || matches.length >= Math.ceil(tokens.length * 0.7)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // Group members with "Club Organizers" at the very starting of the page
   const groupedSections = useMemo(() => {
-    const map = new Map<string, { definition: RoleCategoryDefinition; members: MemberData[] }>();
+    const activeRolesList = configuredRoles.length > 0 ? configuredRoles : DEFAULT_ROLE_HIERARCHY;
+    const assignedMemberIds = new Set<string>();
+    const activeSections: Array<{ definition: { id: string; title: string; order: number }; members: MemberData[] }> = [];
 
-    ROLE_CATEGORIES.forEach(cat => {
-      map.set(cat.id, { definition: cat, members: [] });
+    // =========================================================================
+    // STEP 1: Faculty Coordinators (if present in members)
+    // =========================================================================
+    const facultyMembers = dbMembers.filter(m => {
+      const combined = `${m.position || ""} ${m.role || ""} ${m.roleType || ""}`.toLowerCase();
+      return combined.includes("faculty") || combined.includes("convener") || combined.includes("advisor");
     });
 
-    const otherMembers: MemberData[] = [];
-
-    dbMembers.forEach(member => {
-      const catId = getMemberCategory(member);
-      if (map.has(catId)) {
-        map.get(catId)!.members.push(member);
-      } else {
-        otherMembers.push(member);
-      }
-    });
-
-    const activeSections: Array<{ definition: RoleCategoryDefinition; members: MemberData[] }> = [];
-
-    ROLE_CATEGORIES.forEach(cat => {
-      const data = map.get(cat.id);
-      if (data && data.members.length > 0) {
-        activeSections.push(data);
-      }
-    });
-
-    if (otherMembers.length > 0) {
+    if (facultyMembers.length > 0) {
+      facultyMembers.forEach(m => assignedMemberIds.add(m.id || m.email || `${m.name}-${m.role}`));
       activeSections.push({
         definition: {
-          id: "other",
-          title: "Other Members",
-          order: 99,
-          match: () => true
+          id: "faculty-coordinators",
+          title: "Faculty Coordinators",
+          order: 1
         },
-        members: otherMembers
+        members: facultyMembers
+      });
+    }
+
+    // =========================================================================
+    // STEP 2: CLUB ORGANIZERS (Organizer, Co-Organizer, Secretary, Facilitator)
+    // Displayed at the starting / top of the public team page
+    // =========================================================================
+    const clubOrganizersList = dbMembers.filter(m => {
+      const memId = m.id || m.email || `${m.name}-${m.role}`;
+      if (assignedMemberIds.has(memId)) return false;
+      return isClubOrganizer(m);
+    });
+
+    if (clubOrganizersList.length > 0) {
+      // Sort inside Club Organizers by hierarchy: Organizer -> Co-Organizer -> Secretary -> Facilitator
+      clubOrganizersList.sort((a, b) => getOrganizerRank(a) - getOrganizerRank(b));
+      clubOrganizersList.forEach(m => assignedMemberIds.add(m.id || m.email || `${m.name}-${m.role}`));
+
+      activeSections.push({
+        definition: {
+          id: "club-organizers",
+          title: "Club Organizers",
+          order: 2
+        },
+        members: clubOrganizersList
+      });
+    }
+
+    // =========================================================================
+    // STEP 3: Department Roles in Configured Hierarchy Order
+    // (Excluding individual leadership titles that are already in Club Organizers)
+    // =========================================================================
+    const leadershipRoleKeywords = ["organizer", "co-organizer", "co organizer", "secretary", "facilitator", "club organizer", "club organizers", "faculty coordinator", "faculty coordinators"];
+
+    const departmentRoles = activeRolesList.filter(roleName => {
+      const rLower = roleName.toLowerCase().trim();
+      return !leadershipRoleKeywords.includes(rLower);
+    });
+
+    let currentOrder = 3;
+    departmentRoles.forEach(roleName => {
+      const groupMembers: MemberData[] = [];
+
+      dbMembers.forEach(member => {
+        const memId = member.id || member.email || `${member.name}-${member.role}`;
+        if (!assignedMemberIds.has(memId)) {
+          if (matchMemberToRole(member, roleName)) {
+            groupMembers.push(member);
+            assignedMemberIds.add(memId);
+          }
+        }
+      });
+
+      if (groupMembers.length > 0) {
+        activeSections.push({
+          definition: {
+            id: roleName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+            title: roleName,
+            order: currentOrder++
+          },
+          members: groupMembers
+        });
+      }
+    });
+
+    // =========================================================================
+    // STEP 4: Unassigned / Additional Team Members
+    // =========================================================================
+    const unassignedMembers = dbMembers.filter(member => {
+      const memId = member.id || member.email || `${member.name}-${member.role}`;
+      return !assignedMemberIds.has(memId);
+    });
+
+    if (unassignedMembers.length > 0) {
+      activeSections.push({
+        definition: {
+          id: "other-members",
+          title: "Additional Team Members",
+          order: 999
+        },
+        members: unassignedMembers
       });
     }
 
     return activeSections;
-  }, [dbMembers]);
+  }, [dbMembers, configuredRoles]);
 
-  // Tab list
+  // Tab list generated in the exact same hierarchy
   const filterTabs = useMemo(() => {
     const tabs = [{ id: "all", label: "All Members", count: dbMembers.length }];
     groupedSections.forEach(sec => {

@@ -4,10 +4,6 @@ import {
   Clock, 
   CheckCircle2, 
   ArrowRight,
-  BookOpen,
-  MessageSquare,
-  History,
-  Headphones,
   Flame,
   Layers
 } from "lucide-react";
@@ -367,53 +363,6 @@ const JuryDashboardView: React.FC<JuryDashboardViewProps> = ({
               </div>
             )}
           </div>
-        </div>
-
-        {/* Quick Action Grid (4 Cards) */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {/* Action 1: Guidelines */}
-          <button 
-            onClick={() => alert("Opening Judging Guidelines...")}
-            className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group cursor-pointer"
-          >
-            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
-              <BookOpen className="h-4.5 w-4.5" />
-            </div>
-            <span className="text-xs font-bold text-slate-700">Guidelines</span>
-          </button>
-
-          {/* Action 2: Messages */}
-          <button 
-            onClick={() => alert("Opening Jury Communication Hub...")}
-            className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group cursor-pointer"
-          >
-            <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center group-hover:bg-sky-600 group-hover:text-white transition-colors">
-              <MessageSquare className="h-4.5 w-4.5" />
-            </div>
-            <span className="text-xs font-bold text-slate-700">Messages</span>
-          </button>
-
-          {/* Action 3: History */}
-          <button 
-            onClick={() => onNavigateTab("Assignments")}
-            className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group cursor-pointer"
-          >
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-              <History className="h-4.5 w-4.5" />
-            </div>
-            <span className="text-xs font-bold text-slate-700">History</span>
-          </button>
-
-          {/* Action 4: Support */}
-          <button 
-            onClick={() => alert("Connecting to Jury Technical Support...")}
-            className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all text-center flex flex-col items-center justify-center gap-2.5 group cursor-pointer"
-          >
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-colors">
-              <Headphones className="h-4.5 w-4.5" />
-            </div>
-            <span className="text-xs font-bold text-slate-700">Support</span>
-          </button>
         </div>
       </div>
     </div>

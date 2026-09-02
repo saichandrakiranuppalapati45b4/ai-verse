@@ -261,7 +261,20 @@ const UserManagementPage: React.FC = () => {
           console.warn("[UserManagement] Notice fetching organizers from Firestore:", orgErr);
         }
 
-        setUsers(combinedList);
+        // Filter out system administrative accounts and participant accounts from Club User Management
+        const validUsers = combinedList.filter((u) => {
+          const email = (u.email || "").toLowerCase().trim();
+          const role = String(u.role || "").toLowerCase().trim();
+          const name = (u.name || "").toLowerCase().trim();
+
+          if (SYSTEM_STAFF_EMAILS.includes(email) || email === "participant@aiverse.in") return false;
+          if (role === "participant" || role.includes("participant") || email.includes("participant") || email.startsWith("team")) return false;
+          if (name === "participant user" || name === "system admin" || name === "jury evaluator") return false;
+
+          return true;
+        });
+
+        setUsers(validUsers);
       } catch (err) {
         console.error("Error fetching users from database:", err);
       }

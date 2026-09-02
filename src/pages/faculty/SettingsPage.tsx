@@ -21,12 +21,17 @@ import {
   Trash2,
   Settings2,
   FileArchive,
-  ChevronDown,
   Award,
   Eye,
   EyeOff,
   Key,
-  ShieldCheck
+  ShieldCheck,
+  ArrowUp,
+  ArrowDown,
+  Edit3,
+  Check,
+  RotateCcw,
+  Layers
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -137,7 +142,8 @@ const SettingsPage: React.FC = () => {
   const [isArchiving, setIsArchiving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [newRoleInput, setNewRoleInput] = useState("");
-  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
+  const [editingRoleIndex, setEditingRoleIndex] = useState<number | null>(null);
+  const [editingRoleValue, setEditingRoleValue] = useState("");
 
   // Toast trigger helper
   const addToast = (text: string, type: ToastMessage["type"] = "success") => {
@@ -257,13 +263,13 @@ const SettingsPage: React.FC = () => {
     const trimmed = newRoleInput.trim();
     if (!trimmed) return;
     const currentRoles = currentConfig.availableRoles || ["Faculty Coordinator", "Student Lead", "Organizer", "Volunteer"];
-    if (currentRoles.includes(trimmed)) {
+    if (currentRoles.some(r => r.toLowerCase() === trimmed.toLowerCase())) {
       addToast("Role already exists!", "warning");
       return;
     }
     handleChange("availableRoles", [...currentRoles, trimmed]);
     setNewRoleInput("");
-    addToast(`"${trimmed}" added. Save Changes to apply!`, "info");
+    addToast(`"${trimmed}" added to role hierarchy. Save Changes to apply!`, "info");
   };
 
   const handleRemoveRole = (roleToRemove: string) => {
@@ -272,6 +278,60 @@ const SettingsPage: React.FC = () => {
       const nextRoles = currentRoles.filter(r => r !== roleToRemove);
       handleChange("availableRoles", nextRoles);
       addToast(`"${roleToRemove}" removed.`, "warning");
+    }
+  };
+
+  const handleMoveRoleUp = (index: number) => {
+    if (index <= 0) return;
+    const currentRoles = [...(currentConfig.availableRoles || [])];
+    const temp = currentRoles[index - 1];
+    currentRoles[index - 1] = currentRoles[index];
+    currentRoles[index] = temp;
+    handleChange("availableRoles", currentRoles);
+    addToast(`Moved "${currentRoles[index - 1]}" to Position #${index}. Save Changes to apply!`, "info");
+  };
+
+  const handleMoveRoleDown = (index: number) => {
+    const currentRoles = [...(currentConfig.availableRoles || [])];
+    if (index >= currentRoles.length - 1) return;
+    const temp = currentRoles[index + 1];
+    currentRoles[index + 1] = currentRoles[index];
+    currentRoles[index] = temp;
+    handleChange("availableRoles", currentRoles);
+    addToast(`Moved "${currentRoles[index + 1]}" to Position #${index + 2}. Save Changes to apply!`, "info");
+  };
+
+  const handleSaveEditRole = (index: number) => {
+    const trimmed = editingRoleValue.trim();
+    if (!trimmed) {
+      addToast("Role name cannot be empty.", "warning");
+      return;
+    }
+    const currentRoles = [...(currentConfig.availableRoles || [])];
+    currentRoles[index] = trimmed;
+    handleChange("availableRoles", currentRoles);
+    setEditingRoleIndex(null);
+    setEditingRoleValue("");
+    addToast(`Role renamed to "${trimmed}". Save Changes to apply!`, "info");
+  };
+
+  const handleResetDefaultRoles = () => {
+    if (window.confirm("Reset all roles to the recommended default hierarchy?")) {
+      const defaultRolesList = [
+        "Faculty Coordinators",
+        "Student Leads",
+        "Technical",
+        "Design",
+        "Content and Media",
+        "Video and Photography",
+        "Logistics and Operations",
+        "PR and HR",
+        "Event Management",
+        "Student Organizers",
+        "Volunteers"
+      ];
+      handleChange("availableRoles", defaultRolesList);
+      addToast("Roles reset to standard hierarchy. Click Save Changes to apply!", "info");
     }
   };
 
@@ -628,75 +688,206 @@ const SettingsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Card: Roles & Positions */}
+          {/* Card: Roles & Positions Hierarchy */}
           <div className="bg-white p-6 rounded-card border border-slate-100 shadow-card text-left space-y-5">
-            <div className="flex items-center gap-3 border-b border-slate-50 pb-3">
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
-                <Settings2 className="h-5 w-5" />
+            <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                  <Layers className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-slate-800">Roles & Positions Hierarchy</h2>
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-extrabold border border-blue-100">
+                      {(currentConfig.availableRoles || []).length} Roles
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                    The top-to-bottom order below dictates the exact sections and order on the Public Team Page.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-base font-bold text-slate-800">Roles & Positions</h2>
-                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Manage available roles that populate the Add Team Member page.</p>
+            </div>
+
+            {/* Explanatory Banner */}
+            <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl flex items-start gap-2.5">
+              <div className="p-1 bg-blue-100 text-blue-600 rounded-lg shrink-0 mt-0.5">
+                <CheckCircle2 className="h-3.5 w-3.5" />
               </div>
+              <p className="text-xs text-blue-900 font-medium leading-relaxed">
+                Use the <strong>Up (↑)</strong> and <strong>Down (↓)</strong> arrows to rearrange roles. Position #1 will appear at the top of the <strong>Public Team page</strong>, followed in sequential order.
+              </p>
             </div>
 
             <div className="space-y-4">
               {/* Add New Role */}
-              <div className="flex gap-2.5">
+              <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="e.g. Lead Designer"
+                  placeholder="e.g. Lead Coordinator, Technical Lead..."
                   value={newRoleInput}
                   onChange={(e) => setNewRoleInput(e.target.value)}
-                  className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 bg-slate-50/20 focus:outline-none focus:border-blue-500"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddRole();
+                    }
+                  }}
+                  className="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 bg-slate-50/30 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
                 <button
                   type="button"
                   onClick={handleAddRole}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs transition-colors shrink-0"
+                  className="px-4 py-2.5 bg-[#2563EB] hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors shrink-0 flex items-center gap-1.5 shadow-xs cursor-pointer"
                 >
-                  Add Role
+                  <span>+ Add Role</span>
                 </button>
               </div>
 
-              {/* Roles List */}
-              <div className="space-y-2 relative">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Roles</label>
-                
-                <button
-                  type="button"
-                  onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                  className="w-full flex items-center justify-between px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  <span>View All Active Roles ({(currentConfig.availableRoles || []).length})</span>
-                  <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isRoleDropdownOpen ? "rotate-180" : ""}`} />
-                </button>
+              {/* Roles List - Full View with Up/Down/Edit/Delete */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Role Display Order (#1 = Top Section on Team Page)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleResetDefaultRoles}
+                    className="text-[10px] font-bold text-slate-400 hover:text-blue-600 transition-colors flex items-center gap-1 cursor-pointer"
+                    title="Reset to recommended default order"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    <span>Reset Defaults</span>
+                  </button>
+                </div>
 
-                {isRoleDropdownOpen && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                    {(currentConfig.availableRoles || []).map((role) => (
-                      <div 
-                        key={role} 
-                        className="flex items-center justify-between px-4 py-3 hover:bg-slate-50 border-b border-slate-50 last:border-0 group transition-colors"
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                  {(currentConfig.availableRoles || []).map((role, index) => {
+                    const isFirst = index === 0;
+                    const isLast = index === (currentConfig.availableRoles || []).length - 1;
+                    const isEditing = editingRoleIndex === index;
+
+                    return (
+                      <div
+                        key={`${role}-${index}`}
+                        className="flex items-center justify-between px-3.5 py-2.5 hover:bg-slate-50/80 transition-colors group"
                       >
-                        <span className="text-xs font-bold text-slate-700">{role}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveRole(role)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all focus:opacity-100"
-                          title="Delete Role"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {/* Left: Position Rank & Role Name */}
+                        <div className="flex items-center gap-3 flex-1 min-w-0 pr-2">
+                          <span className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 text-[11px] font-black flex items-center justify-center shrink-0 border border-blue-100">
+                            {index + 1}
+                          </span>
+                          
+                          {isEditing ? (
+                            <div className="flex items-center gap-1.5 flex-1">
+                              <input
+                                type="text"
+                                value={editingRoleValue}
+                                onChange={(e) => setEditingRoleValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleSaveEditRole(index);
+                                  if (e.key === "Escape") setEditingRoleIndex(null);
+                                }}
+                                autoFocus
+                                className="flex-1 px-2.5 py-1 text-xs font-bold text-slate-800 border border-blue-500 rounded-lg bg-white focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEditRole(index)}
+                                className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors cursor-pointer"
+                                title="Save"
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingRoleIndex(null)}
+                                className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded-lg transition-colors cursor-pointer"
+                                title="Cancel"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="truncate">
+                              <span className="text-xs font-bold text-slate-800 block truncate">
+                                {role}
+                              </span>
+                              <span className="text-[10px] font-medium text-slate-400 block">
+                                Section {index + 1} on Public Team Page
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right: Order & Action Buttons */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveRoleUp(index)}
+                            disabled={isFirst}
+                            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                              isFirst
+                                ? "text-slate-200 border-slate-100 cursor-not-allowed bg-slate-50/50"
+                                : "text-slate-600 border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200"
+                            }`}
+                            title="Move Up in Team Page Order"
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleMoveRoleDown(index)}
+                            disabled={isLast}
+                            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                              isLast
+                                ? "text-slate-200 border-slate-100 cursor-not-allowed bg-slate-50/50"
+                                : "text-slate-600 border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200"
+                            }`}
+                            title="Move Down in Team Page Order"
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingRoleIndex(index);
+                              setEditingRoleValue(role);
+                            }}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors cursor-pointer"
+                            title="Rename Role"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRole(role)}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors cursor-pointer"
+                            title="Delete Role"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
-                    ))}
-                    {(currentConfig.availableRoles || []).length === 0 && (
-                      <div className="px-4 py-3 text-xs text-slate-500 font-semibold text-center">
-                        No active roles defined.
-                      </div>
-                    )}
-                  </div>
-                )}
+                    );
+                  })}
+
+                  {(currentConfig.availableRoles || []).length === 0 && (
+                    <div className="px-4 py-8 text-center space-y-2">
+                      <p className="text-xs font-bold text-slate-500">No roles configured.</p>
+                      <button
+                        type="button"
+                        onClick={handleResetDefaultRoles}
+                        className="text-xs font-bold text-blue-600 underline cursor-pointer"
+                      >
+                        Click to load recommended roles
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

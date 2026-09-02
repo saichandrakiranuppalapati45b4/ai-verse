@@ -42,24 +42,21 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Helper function to normalize system role across the auth system
 export const normalizeRole = (
   rawRole: any, 
-  defaultRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty"
+  defaultRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "participant"
 ): "faculty" | "organizer" | "member" | "jury" | "participant" => {
   if (!rawRole) return defaultRole;
   const lower = String(rawRole).toLowerCase().trim();
-  if (lower === "faculty" || lower.includes("super admin") || lower.includes("faculty advisor") || lower.includes("faculty coordinator") || lower.includes("admin")) {
+  if (lower === "faculty" || lower === "admin" || lower.includes("super admin") || lower.includes("faculty advisor") || lower.includes("faculty coordinator") || lower.includes("system admin")) {
     return "faculty";
   }
-  if (lower === "organizer" || lower.includes("organizer") || lower.includes("lead organizer") || lower.includes("student organizer")) {
+  if (lower === "organizer" || lower.includes("lead organizer") || lower.includes("student organizer") || lower.includes("co-organizer") || lower.includes("co organizer") || lower.includes("secretary") || lower.includes("facilitator") || lower === "organizer") {
     return "organizer";
   }
-  if (lower === "jury" || lower.includes("jury")) {
+  if (lower === "jury" || lower.includes("jury") || lower.includes("evaluator")) {
     return "jury";
   }
-  if (lower === "participant" || lower.includes("participant")) {
+  if (lower === "participant" || lower.includes("participant") || lower === "member" || lower.includes("student member") || lower.includes("student") || lower.includes("attendee") || lower.includes("volunteer")) {
     return "participant";
-  }
-  if (lower === "member" || lower.includes("member") || lower.includes("volunteer")) {
-    return "member";
   }
   return defaultRole;
 };
@@ -88,27 +85,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(true);
       }
 
-      const savedUserStr = localStorage.getItem("aether_mock_user");
-      let localUser: UserProfile | null = null;
-      if (savedUserStr) {
-        try {
-          localUser = JSON.parse(savedUserStr);
-        } catch (e) {}
-      }
-
-      // Allow authorized emails, participant role accounts, and any @aiverse.in team emails
-      const isAllowed = ALLOWED_EMAILS.includes(userEmail) || localUser?.role === "participant" || userEmail.includes("participant") || userEmail.endsWith("@aiverse.in");
-      
-      if (!isAllowed) {
-        console.warn(`[AuthContext] Denying access to unauthorized user: ${userEmail}`);
-        await supabase.auth.signOut().catch(() => {});
-        activeUserIdRef.current = null;
-        setUser(null);
-        localStorage.removeItem("aether_mock_user");
-        setLoading(false);
-        return;
-      }
-
       // For team emails (e.g. alphaa@aiverse.in), the user doc is stored under
       // the sanitized email ID (e.g. alphaa_aiverse_in), not the Supabase Auth UID.
       const sanitizedEmailId = userEmail.replace(/[^a-z0-9]/g, '_');
@@ -126,9 +102,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
       
-      let forcedRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty";
-      let forcedDisplayRole = "Super Admin";
-      let defaultName = "System Admin";
+      let forcedRole: "faculty" | "organizer" | "member" | "jury" | "participant" = "participant";
+      let forcedDisplayRole = "Participant";
+      let defaultName = userEmail.split("@")[0] || "Participant";
       
       if (userEmail === "admin@aiverse.in") {
         forcedRole = "faculty";
@@ -316,14 +292,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         if (!supaAuthError && supaAuthData.user) {
           const supaUserRecord = await userService.getUserByEmail(cleanEmail);
-          const rawRole = supaUserRecord?.role || "faculty";
-          const role = normalizeRole(rawRole, "faculty");
+          const isFacultyEmail = cleanEmail === "admin@aiverse.in" || cleanEmail === "facultycoordinator@aiverse.in";
+          const defaultRole = isFacultyEmail ? "faculty" : (cleanEmail.includes("organizer") ? "organizer" : (cleanEmail.includes("jury") ? "jury" : "participant"));
+          const rawRole = supaUserRecord?.role || defaultRole;
+          const role = normalizeRole(rawRole, defaultRole);
           const customUser: UserProfile = {
             uid: supaAuthData.user.id,
             email: cleanEmail,
             name: supaUserRecord?.name || supaUserRecord?.display_name || cleanEmail.split("@")[0],
             role,
-            displayRole: supaUserRecord?.position || (role === "faculty" ? "Super Admin" : role),
+            displayRole: supaUserRecord?.position || (role === "faculty" ? "Super Admin" : (role === "organizer" ? "Student Organizer" : (role === "jury" ? "Jury Evaluator" : "Participant"))),
             requiresPasswordChange: false,
             teamName: supaUserRecord?.team_name || undefined,
             eventTitle: supaUserRecord?.event_title || undefined,
@@ -401,10 +379,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        const rawRole = foundDocData.role || (cleanEmail.includes("organizer") ? "organizer" : (cleanEmail.includes("jury") ? "jury" : (cleanEmail.includes("participant") ? "participant" : "faculty")));
-        const role = normalizeRole(rawRole, "faculty");
+        const isFacultyEmail = cleanEmail === "admin@aiverse.in" || cleanEmail === "facultycoordinator@aiverse.in";
+        const defaultRole = isFacultyEmail ? "faculty" : (cleanEmail.includes("organizer") ? "organizer" : (cleanEmail.includes("jury") ? "jury" : "participant"));
+        const rawRole = foundDocData.role || defaultRole;
+        const role = normalizeRole(rawRole, defaultRole);
         const name = foundDocData.name || foundDocData.displayName || foundDocData.teamLeadName || cleanEmail.split('@')[0];
-        const displayRole = foundDocData.displayRole || (role === "faculty" ? "Super Admin" : role);
+        const displayRole = foundDocData.displayRole || (role === "faculty" ? (cleanEmail === "facultycoordinator@aiverse.in" ? "Faculty Coordinator" : "Super Admin") : (role === "organizer" ? "Student Organizer" : (role === "jury" ? "Jury Evaluator" : "Participant")));
 
         const customUser: UserProfile = {
           uid: foundDocId,
@@ -431,11 +411,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error("Invalid password. Please check your credentials.");
         }
 
-        let role: "faculty" | "organizer" | "member" | "jury" | "participant" = "faculty";
-        let displayRole = "Super Admin";
-        let name = "Super Admin";
+        let role: "faculty" | "organizer" | "member" | "jury" | "participant" = "participant";
+        let displayRole = "Participant";
+        let name = "Participant User";
 
-        if (cleanEmail === "facultycoordinator@aiverse.in") {
+        if (cleanEmail === "admin@aiverse.in") {
+          role = "faculty";
+          displayRole = "Super Admin";
+          name = "Super Admin";
+        } else if (cleanEmail === "facultycoordinator@aiverse.in") {
           role = "faculty";
           displayRole = "Faculty Coordinator";
           name = "Faculty Coordinator";
