@@ -532,51 +532,59 @@ const TeamPage: React.FC = () => {
             return (
               <section key={definition.id} id={definition.id} className="text-left">
                 {/* Clean, Simple Role Header */}
-                <div className="flex items-center gap-3 mb-8 pb-3 border-b border-slate-200/80">
-                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-                    {definition.title}
-                  </h2>
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2.5 py-0.5 rounded-full">
-                    {members.length}
-                  </span>
+                <div className="flex items-center justify-between gap-3 mb-4 sm:mb-8 pb-3 border-b border-slate-200/80">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                      {definition.title}
+                    </h2>
+                    <span className="text-[11px] sm:text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2 sm:px-2.5 py-0.5 rounded-full">
+                      {members.length}
+                    </span>
+                  </div>
+
+                  {members.length > 1 && (
+                    <span className="sm:hidden text-[10px] font-bold text-slate-400 tracking-wider uppercase flex items-center gap-1 bg-slate-100/80 px-2 py-0.5 rounded-md">
+                      Swipe &rarr;
+                    </span>
+                  )}
                 </div>
 
-                {/* Large Profile Image Team Cards Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-7">
+                {/* Team Cards: Compact Horizontal Side-Scroll on Mobile, Responsive Grid on Desktop */}
+                <div className="flex overflow-x-auto snap-x snap-mandatory gap-3 sm:gap-7 pb-4 sm:pb-0 -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 sm:overflow-visible [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   {members.map((member, idx) => {
                     const formattedRole = formatRoleLabel(member.position || member.role || member.roleType || "Member");
 
                     return (
                       <div
                         key={member.id || idx}
-                        className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 flex flex-col justify-between shadow-xs hover:shadow-xl hover:border-blue-200 hover:-translate-y-1.5 transition-all duration-300 group"
+                        className="w-[190px] xs:w-[210px] sm:w-auto shrink-0 sm:shrink snap-start bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 p-3 sm:p-5 flex flex-col justify-between shadow-xs hover:shadow-xl hover:border-blue-200 hover:-translate-y-1.5 transition-all duration-300 group"
                       >
                         <div>
-                          {/* Large Profile Image Frame */}
-                          <div className="w-full aspect-[4/4.2] rounded-2xl overflow-hidden bg-slate-100 border border-slate-100/80 shadow-2xs relative mb-4">
+                          {/* Profile Image Frame (Compact on Mobile) */}
+                          <div className="w-full aspect-[1/1] sm:aspect-[4/4.2] rounded-xl sm:rounded-2xl overflow-hidden bg-slate-100 border border-slate-100/80 shadow-2xs relative mb-2.5 sm:mb-4">
                             <img 
                               src={member.image || BLANK_AVATAR} 
                               alt={member.name} 
                               className={`w-full h-full ${
-                                member.image ? 'object-cover object-top group-hover:scale-105' : 'object-contain p-8'
+                                member.image ? 'object-cover object-top group-hover:scale-105' : 'object-contain p-6 sm:p-8'
                               } transition-transform duration-500`} 
                             />
                           </div>
 
                           {/* Member Details */}
-                          <div className="space-y-1.5 px-1">
-                            <h3 className="text-base sm:text-lg font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors">
+                          <div className="space-y-1 sm:space-y-1.5 px-0.5 sm:px-1">
+                            <h3 className="text-sm sm:text-lg font-black text-slate-900 leading-tight group-hover:text-blue-600 transition-colors line-clamp-1 sm:line-clamp-2">
                               {member.name}
                             </h3>
                             
                             <div>
-                              <span className="inline-block text-xs font-bold text-blue-600 bg-blue-50/80 border border-blue-100/70 px-2.5 py-0.5 rounded-full">
+                              <span className="inline-block text-[10px] sm:text-xs font-bold text-blue-600 bg-blue-50/80 border border-blue-100/70 px-2 sm:px-2.5 py-0.5 rounded-full line-clamp-1">
                                 {formattedRole}
                               </span>
                             </div>
 
                             {member.bio && (
-                              <p className="text-xs text-slate-500 pt-1 line-clamp-2 leading-relaxed font-normal">
+                              <p className="text-[11px] sm:text-xs text-slate-500 pt-0.5 sm:pt-1 line-clamp-2 leading-relaxed font-normal">
                                 {member.bio}
                               </p>
                             )}
@@ -584,19 +592,19 @@ const TeamPage: React.FC = () => {
                         </div>
 
                         {/* Social & Contact Buttons */}
-                        <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between px-1">
-                          <span className="text-[11px] font-semibold text-slate-400">Connect</span>
+                        <div className="pt-2.5 mt-2.5 sm:pt-4 sm:mt-4 border-t border-slate-100 flex items-center justify-between px-0.5 sm:px-1">
+                          <span className="text-[10px] sm:text-[11px] font-semibold text-slate-400">Connect</span>
                           
-                          <div className="flex items-center gap-1.5 text-slate-400">
+                          <div className="flex items-center gap-1 sm:gap-1.5 text-slate-400">
                             {member.github && (
                               <a 
                                 href={member.github} 
                                 target="_blank" 
                                 rel="noreferrer" 
-                                className="p-2 rounded-xl bg-slate-50 hover:bg-slate-900 hover:text-white transition-all shadow-2xs" 
+                                className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-slate-50 hover:bg-slate-900 hover:text-white transition-all shadow-2xs" 
                                 title="GitHub"
                               >
-                                <GithubIcon className="h-3.5 w-3.5" />
+                                <GithubIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               </a>
                             )}
                             {member.linkedin && (
@@ -604,19 +612,19 @@ const TeamPage: React.FC = () => {
                                 href={member.linkedin} 
                                 target="_blank" 
                                 rel="noreferrer" 
-                                className="p-2 rounded-xl bg-slate-50 hover:bg-blue-600 hover:text-white transition-all shadow-2xs" 
+                                className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-slate-50 hover:bg-blue-600 hover:text-white transition-all shadow-2xs" 
                                 title="LinkedIn"
                               >
-                                <LinkedinIcon className="h-3.5 w-3.5" />
+                                <LinkedinIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               </a>
                             )}
                             {member.email && (
                               <a 
                                 href={`mailto:${member.email}`} 
-                                className="p-2 rounded-xl bg-slate-50 hover:bg-sky-500 hover:text-white transition-all shadow-2xs" 
+                                className="p-1.5 sm:p-2 rounded-lg sm:rounded-xl bg-slate-50 hover:bg-sky-500 hover:text-white transition-all shadow-2xs" 
                                 title="Email"
                               >
-                                <Mail className="h-3.5 w-3.5" />
+                                <Mail className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                               </a>
                             )}
                           </div>
