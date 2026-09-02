@@ -43,7 +43,7 @@ export const Footer: React.FC = () => {
           {/* Column 1: Logo & description */}
           <div className="md:col-span-4 space-y-6">
             <Link to="/" className="inline-flex items-center gap-2.5 group font-extrabold tracking-tight select-none">
-              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-lg object-contain shadow-md shadow-blue-600/20 group-hover:scale-105 transition-transform duration-300" />
+              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-10 h-10 sm:w-11 sm:h-11 rounded-lg object-contain shadow-md shadow-blue-600/20 group-hover:scale-105 transition-transform duration-300 shrink-0" />
               <span className="text-slate-900 font-sans text-2xl font-black tracking-tight">AI Verse</span>
             </Link>
             <p className="text-sm text-slate-500 leading-relaxed max-w-sm font-medium">

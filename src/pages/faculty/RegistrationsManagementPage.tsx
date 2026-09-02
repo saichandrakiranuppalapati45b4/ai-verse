@@ -358,9 +358,18 @@ const RegistrationsManagementPage: React.FC = () => {
       }
 
       // 2. Identify target personal mail (Priority: teamLeadPersonalEmail -> teamLeadEmail -> teamLeadCollegeEmail)
+      const isQuizReg = Boolean(
+        reg.category === "QUIZ" ||
+        reg.category === "Quiz" ||
+        (reg as any).isQuiz === true ||
+        (reg as any).eventCategory === "Quiz" ||
+        (reg as any).eventCategory === "QUIZ" ||
+        (reg as any).sendConfirmationEmail === false
+      );
+
       const targetEmail = (reg.teamLeadPersonalEmail || reg.teamLeadEmail || reg.teamLeadCollegeEmail || "").trim();
 
-      if (targetEmail) {
+      if (targetEmail && !isQuizReg) {
         const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
         const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
         const ticketUrl = `${siteBaseUrl}/ticket/${reg.id}`;
@@ -389,7 +398,7 @@ const RegistrationsManagementPage: React.FC = () => {
           setConfirmSuccessMsg(`Registration confirmed in database. (Email notice: ${emailResult.error || "failed"})`);
         }
       } else {
-        setConfirmSuccessMsg("Registration confirmed successfully!");
+        setConfirmSuccessMsg(isQuizReg ? "Quiz registration confirmed in database (no confirmation email sent)." : "Registration confirmed successfully!");
       }
 
       setTimeout(() => setConfirmSuccessMsg(null), 6000);

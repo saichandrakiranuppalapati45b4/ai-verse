@@ -21,7 +21,7 @@ import seminarImg from "../../assets/images/seminar.png";
 interface Event {
   id: string;
   title: string;
-  type: "Workshop" | "Hackathon" | "Seminar" | "Networking";
+  type: "Workshop" | "Hackathon" | "Seminar" | "Networking" | "Quiz";
   category?: string;
   date: string;
   time: string;
@@ -72,6 +72,8 @@ const EventsPage: React.FC = () => {
             eventType = "Seminar";
           } else if (catUpper === "NETWORKING") {
             eventType = "Networking";
+          } else if (catUpper === "QUIZ" || catUpper === "QUIZZES") {
+            eventType = "Quiz";
           }
           
           let img = sparkImg;
@@ -274,6 +276,8 @@ const EventsPage: React.FC = () => {
         return "bg-amber-50/80 text-amber-600 border border-amber-100/50";
       case "Networking":
         return "bg-emerald-50/80 text-emerald-600 border border-emerald-100/50";
+      case "Quiz":
+        return "bg-purple-50/80 text-purple-600 border border-purple-100/50";
       default: // Workshop
         return "bg-blue-50/80 text-[#2563EB] border border-blue-100/50";
     }

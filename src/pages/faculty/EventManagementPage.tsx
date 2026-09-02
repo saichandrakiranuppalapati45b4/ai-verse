@@ -73,7 +73,7 @@ interface EventItem {
   title: string;
   date: string;
   location: string;
-  category: "HACKATHONS" | "LECTURES" | "WORKSHOPS" | "TECH_EVENTS" | "ALUMNI_MEETUPS";
+  category: "HACKATHONS" | "LECTURES" | "WORKSHOPS" | "TECH_EVENTS" | "ALUMNI_MEETUPS" | "QUIZ" | string;
   status: "Draft" | "Active" | "Opened" | "Completed";
   currentReg: number;
   maxReg: number;
@@ -1421,21 +1421,50 @@ const EventManagementPage: React.FC = () => {
     setPasswordErrorMsg(null);
     setIsProvisioningLoginAccess(true);
 
+    const isQuizEvent = Boolean(
+      eventAccessEvent?.category === "QUIZ" ||
+      eventAccessEvent?.category === "Quiz" ||
+      eventAccessEvent?.category?.toLowerCase()?.includes("quiz")
+    );
+
     try {
       const allIds: string[] = [];
 
       for (const reg of eventAccessRegistrations) {
         const teamEmail = generateTeamEmail(reg);
-        const targetEmail = reg.teamLeadPersonalEmail || reg.personalEmail || reg.teamLeadEmail || reg.email;
+        const targetEmail = (
+          reg.teamLeadPersonalEmail ||
+          reg.personalEmail ||
+          reg.leadPersonalEmail ||
+          reg.email ||
+          reg.teamLeadEmail ||
+          ""
+        ).trim();
+
+        // For Quiz: authEmail is the participant's personal mail!
+        // For Hackathons: keep teamEmail (e.g. teamname@aiverse.in)
+        const authEmail = isQuizEvent ? (targetEmail || teamEmail) : teamEmail;
+        const userPhone = (
+          reg.phoneNumber ||
+          reg.leadPhone ||
+          reg.phone ||
+          reg.teamLeadPhone ||
+          ""
+        ).trim();
+
         allIds.push(reg.id);
 
         // Update Firestore document with credentials
         try {
           await updateDoc(doc(db, "registrations", reg.id), {
-            teamEmail,
+            teamEmail: authEmail,
+            personalEmail: targetEmail || authEmail,
+            phone: userPhone,
+            phoneNumber: userPhone,
             teamPassword: commonPassword,
             accessGranted: true,
             loginAccessGranted: true,
+            accessRevokedAt: null,
             accessProvisionedAt: Date.now(),
           });
         } catch (dbErr) {
@@ -1446,12 +1475,19 @@ const EventManagementPage: React.FC = () => {
         try {
           await setDoc(doc(db, "team_credentials", reg.id), {
             registrationId: reg.id,
-            teamName: reg.groupName || reg.teamLeadName || reg.name,
-            teamEmail,
+            teamName: reg.groupName || reg.teamLeadName || reg.name || (isQuizEvent ? "Individual Registration" : "Team"),
+            teamEmail: authEmail,
+            personalEmail: targetEmail || authEmail,
+            phone: userPhone,
+            phoneNumber: userPhone,
             teamPassword: commonPassword,
             teamLeadEmail: targetEmail || "",
             eventId: eventAccessEvent?.id || "",
             eventTitle: eventAccessEvent?.title || "",
+            isQuiz: isQuizEvent,
+            accessGranted: true,
+            loginAccessGranted: true,
+            accessRevokedAt: null,
             updatedAt: Date.now(),
           }, { merge: true });
         } catch (credErr) {
@@ -1470,35 +1506,48 @@ const EventManagementPage: React.FC = () => {
             });
             
             const { error: signUpError } = await secondarySupabase.auth.signUp({
-              email: teamEmail,
+              email: authEmail,
               password: commonPassword,
               options: {
                 data: {
-                  name: reg.groupName || reg.teamLeadName || reg.name || "Team",
-                  role: "participant"
+                  name: isQuizEvent
+                    ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant")
+                    : (reg.groupName || reg.teamLeadName || reg.name || "Team"),
+                  phone: userPhone,
+                  role: "participant",
+                  is_quiz: isQuizEvent,
+                  event_title: eventAccessEvent?.title || "",
+                  registration_id: reg.id
                 }
               }
             });
             
             if (signUpError && signUpError.message !== "User already registered") {
-              console.warn("Supabase Auth creation error for:", teamEmail, signUpError);
+              console.warn("Supabase Auth creation error for:", authEmail, signUpError);
             }
 
             // Create or reactivate profile in Supabase public.users
             try {
-              const existingSupaUser = await userService.getUserByEmail(teamEmail);
+              const existingSupaUser = await userService.getUserByEmail(authEmail);
               if (!existingSupaUser) {
                 await userService.addUser({
-                  email: teamEmail,
-                  name: reg.groupName || reg.teamLeadName || reg.name || "Team",
+                  email: authEmail,
+                  personal_email: targetEmail || authEmail,
+                  phone: userPhone || null,
+                  name: isQuizEvent
+                    ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant")
+                    : (reg.groupName || reg.teamLeadName || reg.name || "Team"),
                   role: "participant",
                   status: "Active",
                   event_title: eventAccessEvent?.title || "",
-                  registration_id: reg.id
+                  registration_id: reg.id,
+                  team_name: reg.groupName || reg.teamLeadName || reg.name || (isQuizEvent ? "Individual Registration" : "Team")
                 });
               } else {
                 await userService.updateUser(existingSupaUser.id, {
-                  status: "Active"
+                  status: "Active",
+                  phone: userPhone || existingSupaUser.phone || null,
+                  personal_email: targetEmail || existingSupaUser.personal_email || authEmail
                 });
               }
             } catch (uErr) {
@@ -1511,27 +1560,60 @@ const EventManagementPage: React.FC = () => {
 
         // Create / update user account in 'users' Firestore collection
         try {
-          const userDocId = teamEmail.replace(/[^a-zA-Z0-9]/g, "_");
+          const userDocId = authEmail.replace(/[^a-zA-Z0-9]/g, "_");
           await setDoc(doc(db, "users", userDocId), {
-            email: teamEmail,
+            email: authEmail,
+            personalEmail: targetEmail || authEmail,
+            phone: userPhone,
+            phoneNumber: userPhone,
             password: commonPassword,
             role: "participant",
-            teamName: reg.groupName || reg.teamLeadName || reg.name || "Team",
+            teamName: reg.groupName || reg.teamLeadName || reg.name || (isQuizEvent ? "Individual Registration" : "Team"),
             teamLeadName: reg.teamLeadName || reg.name || "",
+            name: isQuizEvent ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant") : (reg.teamLeadName || reg.name || ""),
+            displayName: isQuizEvent ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant") : (reg.teamLeadName || reg.name || ""),
             teamLeadEmail: targetEmail || "",
             registrationId: reg.id,
             eventId: eventAccessEvent?.id || "",
             eventTitle: eventAccessEvent?.title || "",
+            isQuiz: isQuizEvent,
             accessGranted: true,
+            loginAccessGranted: true,
+            accessRevokedAt: null,
             createdAt: Date.now(),
             updatedAt: Date.now(),
           }, { merge: true });
+
+          // Also save in users_by_phone collection so phone-based lookup is instant
+          if (userPhone) {
+            const digits = userPhone.replace(/\D/g, "");
+            const last10 = digits.slice(-10);
+            if (last10) {
+              await setDoc(doc(db, "users_by_phone", last10), {
+                email: authEmail,
+                personalEmail: targetEmail || authEmail,
+                phone: userPhone,
+                phoneNumber: userPhone,
+                password: commonPassword,
+                name: isQuizEvent ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant") : (reg.teamLeadName || reg.name || "Team"),
+                teamName: reg.groupName || reg.teamLeadName || reg.name || (isQuizEvent ? "Individual Registration" : "Team"),
+                registrationId: reg.id,
+                eventId: eventAccessEvent?.id || "",
+                eventTitle: eventAccessEvent?.title || "",
+                isQuiz: isQuizEvent,
+                accessGranted: true,
+                loginAccessGranted: true,
+                accessRevokedAt: null,
+                updatedAt: Date.now(),
+              }, { merge: true });
+            }
+          }
         } catch (userErr) {
           console.warn("Firestore users collection error:", userErr);
         }
 
-        // Send Email via Resend to Team Lead
-        if (targetEmail) {
+        // Send Email via Resend to Team Lead (ONLY for Hackathons / non-quiz events)
+        if (targetEmail && !isQuizEvent) {
           const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
           const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
           const loginUrl = `${siteBaseUrl}/login`;
@@ -1540,7 +1622,7 @@ const EventManagementPage: React.FC = () => {
             teamLeadName: reg.teamLeadName || reg.name || "Participant",
             eventTitle: eventAccessEvent?.title || "AI Verse Event",
             groupName: reg.groupName,
-            teamEmail,
+            teamEmail: authEmail,
             password: commonPassword,
             loginUrl,
           });
@@ -1556,7 +1638,11 @@ const EventManagementPage: React.FC = () => {
 
       setProvisionedTeamIds((prev) => Array.from(new Set([...prev, ...allIds])));
       setIsPasswordModalOpen(false);
-      setLoginAccessSuccessMsg(`Successfully generated team accounts (${allIds.length}) & dispatched login credentials via Resend to all team leads!`);
+      setLoginAccessSuccessMsg(
+        isQuizEvent
+          ? `Successfully provisioned credentials for ${allIds.length} quiz participant(s)! (No email dispatched as configured).`
+          : `Successfully generated team accounts (${allIds.length}) & dispatched login credentials via Resend to all team leads!`
+      );
       setTimeout(() => {
         setLoginAccessSuccessMsg(null);
       }, 7000);
@@ -1609,22 +1695,62 @@ const EventManagementPage: React.FC = () => {
           console.warn("Firestore revoke team_credentials error:", credErr);
         }
 
-        // Also revoke in users collection
+        // Also revoke in users collection & users_by_phone
         try {
-          const teamEmail = generateTeamEmail(reg);
-          const userDocId = teamEmail.replace(/[^a-zA-Z0-9]/g, "_");
-          await setDoc(doc(db, "users", userDocId), {
-            accessGranted: false,
-            updatedAt: Date.now(),
-          }, { merge: true });
+          const isQuiz = Boolean(
+            eventAccessEvent?.category === "QUIZ" ||
+            eventAccessEvent?.category === "Quiz" ||
+            eventAccessEvent?.category?.toLowerCase()?.includes("quiz") ||
+            reg.isQuiz === true
+          );
+          const targetEmails = [
+            generateTeamEmail(reg),
+            reg.teamEmail,
+            reg.personalEmail,
+            reg.email,
+            reg.collegeEmail
+          ].filter(Boolean);
+
+          for (const em of targetEmails) {
+            const userDocId = em.replace(/[^a-zA-Z0-9]/g, "_");
+            await setDoc(doc(db, "users", userDocId), {
+              accessGranted: false,
+              loginAccessGranted: false,
+              updatedAt: Date.now(),
+            }, { merge: true });
+          }
+
+          // Revoke phone lookup
+          const uPhone = reg.phoneNumber || reg.phone || reg.leadPhone;
+          if (uPhone) {
+            const last10 = uPhone.replace(/\D/g, "").slice(-10);
+            if (last10) {
+              await setDoc(doc(db, "users_by_phone", last10), {
+                accessGranted: false,
+                loginAccessGranted: false,
+                updatedAt: Date.now(),
+              }, { merge: true });
+            }
+          }
         } catch (userErr) {
           console.warn("Firestore revoke users error:", userErr);
         }
 
         // Delete from Supabase Auth (auth.users) and public.users
         try {
-          const teamEmail = reg.teamEmail || generateTeamEmail(reg);
-          await userService.deleteUserByEmail(teamEmail);
+          const isQuiz = Boolean(
+            eventAccessEvent?.category === "QUIZ" ||
+            eventAccessEvent?.category === "Quiz" ||
+            eventAccessEvent?.category?.toLowerCase()?.includes("quiz") ||
+            reg.isQuiz === true
+          );
+          const supaEmails = isQuiz
+            ? [reg.personalEmail, reg.email, reg.collegeEmail].filter(Boolean)
+            : [reg.teamEmail || generateTeamEmail(reg)].filter(Boolean);
+
+          for (const sEmail of supaEmails) {
+            await userService.deleteUserByEmail(sEmail);
+          }
         } catch (supaErr) {
           console.warn("Supabase revoke user error:", supaErr);
         }
@@ -1672,30 +1798,57 @@ const EventManagementPage: React.FC = () => {
         updatedAt: Date.now(),
       }, { merge: true });
 
-      // Also revoke in users collection
+      // Also revoke in users collection & users_by_phone
       try {
         const reg = eventAccessRegistrations.find((r) => r.id === regId);
         if (reg) {
-          const teamEmail = reg.teamEmail || generateTeamEmail(reg);
-          const userDocId = teamEmail.replace(/[^a-zA-Z0-9]/g, "_");
-          await setDoc(doc(db, "users", userDocId), {
-            accessGranted: false,
-            updatedAt: Date.now(),
-          }, { merge: true });
+          const isQuiz = Boolean(
+            eventAccessEvent?.category === "QUIZ" ||
+            eventAccessEvent?.category === "Quiz" ||
+            eventAccessEvent?.category?.toLowerCase()?.includes("quiz") ||
+            reg.isQuiz === true
+          );
+          const targetEmails = [
+            generateTeamEmail(reg),
+            reg.teamEmail,
+            reg.personalEmail,
+            reg.email,
+            reg.collegeEmail
+          ].filter(Boolean);
+
+          for (const em of targetEmails) {
+            const userDocId = em.replace(/[^a-zA-Z0-9]/g, "_");
+            await setDoc(doc(db, "users", userDocId), {
+              accessGranted: false,
+              loginAccessGranted: false,
+              updatedAt: Date.now(),
+            }, { merge: true });
+          }
+
+          // Revoke phone lookup
+          const uPhone = reg.phoneNumber || reg.phone || reg.leadPhone;
+          if (uPhone) {
+            const last10 = uPhone.replace(/\D/g, "").slice(-10);
+            if (last10) {
+              await setDoc(doc(db, "users_by_phone", last10), {
+                accessGranted: false,
+                loginAccessGranted: false,
+                updatedAt: Date.now(),
+              }, { merge: true });
+            }
+          }
+
+          // Delete from Supabase Auth
+          const supaEmails = isQuiz
+            ? [reg.personalEmail, reg.email, reg.collegeEmail].filter(Boolean)
+            : [reg.teamEmail || generateTeamEmail(reg)].filter(Boolean);
+
+          for (const sEmail of supaEmails) {
+            await userService.deleteUserByEmail(sEmail);
+          }
         }
       } catch (userErr) {
         console.warn("Firestore revoke user error:", userErr);
-      }
-
-      // Delete from Supabase Auth (auth.users) and public.users
-      try {
-        const reg = eventAccessRegistrations.find((r) => r.id === regId);
-        if (reg) {
-          const teamEmail = reg.teamEmail || generateTeamEmail(reg);
-          await userService.deleteUserByEmail(teamEmail);
-        }
-      } catch (supaErr) {
-        console.warn("Supabase revoke user error:", supaErr);
       }
 
       setProvisionedTeamIds((prev) => prev.filter((id) => id !== regId));
@@ -1866,7 +2019,7 @@ const EventManagementPage: React.FC = () => {
 
   // New Detailed Event Form State
   const [formTitle, setFormTitle] = useState("");
-  const [formCategory, setFormCategory] = useState<"Workshop" | "Hackathon" | "Seminar" | "Tech Event" | "Alumni Meetup">("Workshop");
+  const [formCategory, setFormCategory] = useState<"Workshop" | "Hackathon" | "Seminar" | "Tech Event" | "Alumni Meetup" | "Quiz">("Workshop");
   const [formPrimaryTag, setFormPrimaryTag] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formStartDate, setFormStartDate] = useState("");
@@ -2034,12 +2187,14 @@ const EventManagementPage: React.FC = () => {
   const getSpeakerSectionTitle = () => {
     if (formCategory === "Hackathon" || formCategory === "Tech Event") return "Jury Information";
     if (formCategory === "Workshop") return "Tech Speaker Information";
+    if (formCategory === "Quiz") return "Quiz Coordinator / Host Information";
     return "Speaker Information";
   };
 
   const getSpeakerPrefix = () => {
     if (formCategory === "Hackathon" || formCategory === "Tech Event") return "Jury";
     if (formCategory === "Workshop") return "Tech Speaker";
+    if (formCategory === "Quiz") return "Quiz Coordinator";
     return "Speaker";
   };
 
@@ -2071,7 +2226,7 @@ const EventManagementPage: React.FC = () => {
       return;
     }
 
-    const mappedCategory = formCategory === "Workshop" ? "WORKSHOPS" : formCategory === "Hackathon" ? "HACKATHONS" : formCategory === "Seminar" ? "LECTURES" : formCategory === "Tech Event" ? "TECH_EVENTS" : "ALUMNI_MEETUPS";
+    const mappedCategory = formCategory === "Workshop" ? "WORKSHOPS" : formCategory === "Hackathon" ? "HACKATHONS" : formCategory === "Seminar" ? "LECTURES" : formCategory === "Tech Event" ? "TECH_EVENTS" : formCategory === "Quiz" ? "QUIZ" : "ALUMNI_MEETUPS";
 
     let imageName = "sparkImg";
     let imageFile = sparkImg;
@@ -2434,11 +2589,12 @@ const EventManagementPage: React.FC = () => {
 
         setFormTitle(data.title || "");
 
-        let cat: "Workshop" | "Hackathon" | "Seminar" | "Tech Event" | "Alumni Meetup" = "Workshop";
-        if (data.category === "HACKATHONS") cat = "Hackathon";
-        else if (data.category === "LECTURES") cat = "Seminar";
-        else if (data.category === "TECH_EVENTS") cat = "Tech Event";
-        else if (data.category === "ALUMNI_MEETUPS") cat = "Alumni Meetup";
+        let cat: "Workshop" | "Hackathon" | "Seminar" | "Tech Event" | "Alumni Meetup" | "Quiz" = "Workshop";
+        if (data.category === "HACKATHONS" || data.category === "Hackathon") cat = "Hackathon";
+        else if (data.category === "LECTURES" || data.category === "Seminar") cat = "Seminar";
+        else if (data.category === "TECH_EVENTS" || data.category === "Tech Event") cat = "Tech Event";
+        else if (data.category === "ALUMNI_MEETUPS" || data.category === "Alumni Meetup") cat = "Alumni Meetup";
+        else if (data.category === "QUIZ" || data.category === "QUIZZES" || data.category === "Quiz") cat = "Quiz";
         setFormCategory(cat);
 
         setFormPrimaryTag(data.primaryTag || "");
@@ -2855,7 +3011,9 @@ const EventManagementPage: React.FC = () => {
                                     ? "bg-rose-50 text-rose-600 border-rose-100/50"
                                     : event.category === "LECTURES"
                                       ? "bg-amber-50 text-amber-600 border-amber-100/50"
-                                      : "bg-blue-50 text-[#2563EB] border-blue-100/50"
+                                      : event.category === "QUIZ" || event.category === "QUIZZES" || event.category === "Quiz"
+                                        ? "bg-purple-50 text-purple-600 border-purple-100/50"
+                                        : "bg-blue-50 text-[#2563EB] border-blue-100/50"
                                   }`}
                                 >
                                   {event.category || "WORKSHOPS"}
@@ -3044,6 +3202,7 @@ const EventManagementPage: React.FC = () => {
                         <option value="Seminar">Seminar</option>
                         <option value="Tech Event">Tech Event</option>
                         <option value="Alumni Meetup">Alumni Meetup</option>
+                        <option value="Quiz">Quiz</option>
                       </select>
                     </div>
 
@@ -3148,42 +3307,44 @@ const EventManagementPage: React.FC = () => {
               </div>
 
               {/* 3. Location */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
-                  <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
-                      <MapPin className="h-4 w-4" />
+              {formCategory !== "Quiz" && (
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                    <h3 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
+                        <MapPin className="h-4 w-4" />
+                      </div>
+                      Location
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-500">Virtual Event</span>
+                      <button
+                        type="button"
+                        onClick={() => setFormIsVirtual(!formIsVirtual)}
+                        className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formIsVirtual ? "bg-[#2563EB]" : "bg-slate-200"}`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formIsVirtual ? "translate-x-4" : "translate-x-0"}`}
+                        />
+                      </button>
                     </div>
-                    Location
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-500">Virtual Event</span>
-                    <button
-                      type="button"
-                      onClick={() => setFormIsVirtual(!formIsVirtual)}
-                      className={`w-9 h-5 rounded-full transition-colors relative flex items-center px-0.5 shrink-0 ${formIsVirtual ? "bg-[#2563EB]" : "bg-slate-200"}`}
-                    >
-                      <div
-                        className={`w-4 h-4 rounded-full bg-white shadow transition-all duration-200 transform ${formIsVirtual ? "translate-x-4" : "translate-x-0"}`}
-                      />
-                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Venue / Platform Link</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Main Auditorium or Zoom Link"
+                      value={formLocation}
+                      onChange={(e) => setFormLocation(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                    />
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Venue / Platform Link</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Main Auditorium or Zoom Link"
-                    value={formLocation}
-                    onChange={(e) => setFormLocation(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
-                  />
-                </div>
-              </div>
+              )}
 
               {/* 4. Registration Details */}
-              {!formIsPastEvent && (
+              {!formIsPastEvent && formCategory !== "Quiz" && (
                 <>
                   <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
                     <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
@@ -3766,93 +3927,93 @@ const EventManagementPage: React.FC = () => {
 
               {/* 5. Media */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
-                    <Upload className="h-4 w-4" />
-                  </div>
-                  Media
-                </h3>
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
+                      <Upload className="h-4 w-4" />
+                    </div>
+                    Media
+                  </h3>
 
-                <div className="space-y-4">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    className="hidden"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFileChange}
-                  />
+                  <div className="space-y-4">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      accept="image/*"
+                      multiple
+                      onChange={handleFileChange}
+                    />
 
-                  {formPosterImages.length > 0 ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {formPosterImages.map((img, idx) => (
-                          <div key={idx} className="relative w-full rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-slate-50 flex flex-col group">
-                            <div className="relative w-full flex justify-center items-center h-44 bg-slate-100/50">
-                              <img
-                                src={img.preview}
-                                alt={`Poster Preview ${idx + 1}`}
-                                className="w-full h-full object-contain p-2"
-                              />
+                    {formPosterImages.length > 0 ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {formPosterImages.map((img, idx) => (
+                            <div key={idx} className="relative w-full rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-slate-50 flex flex-col group">
+                              <div className="relative w-full flex justify-center items-center h-44 bg-slate-100/50">
+                                <img
+                                  src={img.preview}
+                                  alt={`Poster Preview ${idx + 1}`}
+                                  className="w-full h-full object-contain p-2"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 border-t border-emerald-100/60">
+                                <span className="flex items-center gap-1.5 truncate max-w-[150px]">
+                                  <CheckSquare className="h-3.5 w-3.5 shrink-0" />
+                                  {img.filename}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setFormPosterImages(prev => prev.filter((_, i) => i !== idx));
+                                  }}
+                                  className="text-red-500 hover:text-red-700 font-black ml-2 px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors"
+                                >
+                                  Remove
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-center justify-between text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-2 border-t border-emerald-100/60">
-                              <span className="flex items-center gap-1.5 truncate max-w-[150px]">
-                                <CheckSquare className="h-3.5 w-3.5 shrink-0" />
-                                {img.filename}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFormPosterImages(prev => prev.filter((_, i) => i !== idx));
-                                }}
-                                className="text-red-500 hover:text-red-700 font-black ml-2 px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full py-3 border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-2xl text-slate-500 hover:text-blue-600 font-bold text-xs bg-slate-50/20 hover:bg-blue-50/10 flex items-center justify-center gap-2 transition-all shadow-sm"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add More Images
+                        </button>
                       </div>
-
-                      <button
-                        type="button"
+                    ) : (
+                      <div
                         onClick={() => fileInputRef.current?.click()}
-                        className="w-full py-3 border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-2xl text-slate-500 hover:text-blue-600 font-bold text-xs bg-slate-50/20 hover:bg-blue-50/10 flex items-center justify-center gap-2 transition-all shadow-sm"
+                        className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-3xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50/40 hover:bg-blue-50/10 group min-h-[160px] overflow-hidden"
                       >
-                        <Plus className="h-4 w-4" />
-                        Add More Images
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-3xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50/40 hover:bg-blue-50/10 group min-h-[160px] overflow-hidden"
-                    >
-                      <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center transition-colors mb-3">
-                        <Upload className="h-5 w-5" />
-                      </div>
-                      <span className="text-xs font-black text-slate-700 block">Upload Event Poster</span>
-                      <span className="text-[10px] text-slate-450 font-semibold mt-1">Drag and drop your image here, or click to browse</span>
-                      <span className="text-[9px] text-slate-400 mt-0.5 font-semibold">(Any size, Max 5MB)</span>
+                        <div className="w-12 h-12 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center transition-colors mb-3">
+                          <Upload className="h-5 w-5" />
+                        </div>
+                        <span className="text-xs font-black text-slate-700 block">Upload Event Poster</span>
+                        <span className="text-[10px] text-slate-450 font-semibold mt-1">Drag and drop your image here, or click to browse</span>
+                        <span className="text-[9px] text-slate-400 mt-0.5 font-semibold">(Any size, Max 5MB)</span>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fileInputRef.current?.click();
-                        }}
-                        className="mt-4 px-4 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-650 hover:bg-slate-50 transition-all text-[11px] font-bold shadow-sm"
-                      >
-                        Browse Files
-                      </button>
-                    </div>
-                  )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            fileInputRef.current?.click();
+                          }}
+                          className="mt-4 px-4 py-1.5 border border-slate-200 rounded-xl bg-white text-slate-650 hover:bg-slate-50 transition-all text-[11px] font-bold shadow-sm"
+                        >
+                          Browse Files
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
               {/* Upload Ticket Design Card */}
-              {!formIsPastEvent && (
+              {!formIsPastEvent && formCategory !== "Quiz" && (
                 <div id="section-ticket-design" className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6 text-left">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                     <div className="flex items-center gap-3">
@@ -4284,114 +4445,116 @@ const EventManagementPage: React.FC = () => {
               )}
 
               {/* Speaker Information */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
-                <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
-                    <Users className="h-4 w-4" />
-                  </div>
-                  {getSpeakerSectionTitle()}
-                </h3>
+              {formCategory !== "Quiz" && (
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                  <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center text-[#2563EB]">
+                      <Users className="h-4 w-4" />
+                    </div>
+                    {getSpeakerSectionTitle()}
+                  </h3>
 
-                {/* Speaker Photo Upload Block */}
-                <div className="flex items-center gap-4 border border-slate-100 bg-slate-50/20 p-4 rounded-2xl">
-                  <div className="relative w-16 h-16 rounded-full overflow-hidden border border-slate-200 bg-white shadow-inner flex items-center justify-center shrink-0 group">
-                    <input
-                      type="file"
-                      ref={speakerFileInputRef}
-                      className="hidden"
-                      accept="image/*"
-                      onChange={handleSpeakerFileChange}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    {formSpeakerImagePreview ? (
-                      <img
-                        src={formSpeakerImagePreview}
-                        alt="Speaker Avatar"
-                        className="w-full h-full object-cover"
+                  {/* Speaker Photo Upload Block */}
+                  <div className="flex items-center gap-4 border border-slate-100 bg-slate-50/20 p-4 rounded-2xl">
+                    <div className="relative w-16 h-16 rounded-full overflow-hidden border border-slate-200 bg-white shadow-inner flex items-center justify-center shrink-0 group">
+                      <input
+                        type="file"
+                        ref={speakerFileInputRef}
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleSpeakerFileChange}
+                        onClick={(e) => e.stopPropagation()}
                       />
-                    ) : (
-                      <Users className="h-6 w-6 text-slate-350" />
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5 text-left">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{getSpeakerPrefix()} Photo</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => speakerFileInputRef.current?.click()}
-                        className="px-3 py-1.5 bg-white border border-slate-250 rounded-xl text-slate-700 font-bold text-[10px] shadow-sm hover:bg-slate-50 transition-colors"
-                      >
-                        {formSpeakerImagePreview ? "Change Photo" : "Upload Photo"}
-                      </button>
-                      {formSpeakerImagePreview && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormSpeakerImageFilename("");
-                            setFormSpeakerImagePreview("");
-                          }}
-                          className="px-3 py-1.5 bg-red-50 text-red-650 border border-red-100 rounded-xl font-bold text-[10px] hover:bg-red-100/50 transition-colors"
-                        >
-                          Remove
-                        </button>
+                      {formSpeakerImagePreview ? (
+                        <img
+                          src={formSpeakerImagePreview}
+                          alt="Speaker Avatar"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Users className="h-6 w-6 text-slate-350" />
                       )}
                     </div>
-                    {formSpeakerImageFilename && (
-                      <span className="text-[9px] font-bold text-emerald-600 block truncate max-w-[200px]">{formSpeakerImageFilename}</span>
-                    )}
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1.5 text-left">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{getSpeakerPrefix()} Photo</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => speakerFileInputRef.current?.click()}
+                          className="px-3 py-1.5 bg-white border border-slate-250 rounded-xl text-slate-700 font-bold text-[10px] shadow-sm hover:bg-slate-50 transition-colors"
+                        >
+                          {formSpeakerImagePreview ? "Change Photo" : "Upload Photo"}
+                        </button>
+                        {formSpeakerImagePreview && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormSpeakerImageFilename("");
+                              setFormSpeakerImagePreview("");
+                            }}
+                            className="px-3 py-1.5 bg-red-50 text-red-650 border border-red-100 rounded-xl font-bold text-[10px] hover:bg-red-100/50 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      {formSpeakerImageFilename && (
+                        <span className="text-[9px] font-bold text-emerald-600 block truncate max-w-[200px]">{formSpeakerImageFilename}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Dr. Elena Vos"
+                        value={formSpeakerName}
+                        onChange={(e) => setFormSpeakerName(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Role / Title</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Lead Research Scientist"
+                        value={formSpeakerRole}
+                        onChange={(e) => setFormSpeakerRole(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                      />
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Dr. Elena Vos"
-                      value={formSpeakerName}
-                      onChange={(e) => setFormSpeakerName(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Bio</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Short professional background summary..."
+                      value={formSpeakerBio}
+                      onChange={(e) => setFormSpeakerBio(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all resize-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Role / Title</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">LinkedIn Profile URL</label>
                     <input
                       type="text"
-                      placeholder="e.g. Lead Research Scientist"
-                      value={formSpeakerRole}
-                      onChange={(e) => setFormSpeakerRole(e.target.value)}
+                      placeholder="e.g. https://linkedin.com/in/username"
+                      value={formSpeakerLinkedin}
+                      onChange={(e) => setFormSpeakerLinkedin(e.target.value)}
                       className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
                     />
                   </div>
                 </div>
+              )}
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{getSpeakerPrefix()} Bio</label>
-                  <textarea
-                    rows={3}
-                    placeholder="Short professional background summary..."
-                    value={formSpeakerBio}
-                    onChange={(e) => setFormSpeakerBio(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all resize-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">LinkedIn Profile URL</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. https://linkedin.com/in/username"
-                    value={formSpeakerLinkedin}
-                    onChange={(e) => setFormSpeakerLinkedin(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* Add Bulk Registers Card (Shown for all categories EXCEPT Hackathon) */}
-              {!formIsPastEvent && formCategory !== "Hackathon" && (
+              {/* Add Bulk Registers Card (Shown for all categories EXCEPT Hackathon & Quiz) */}
+              {!formIsPastEvent && formCategory !== "Hackathon" && formCategory !== "Quiz" && (
                 <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
                   <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -4478,7 +4641,7 @@ const EventManagementPage: React.FC = () => {
               )}
 
               {/* Event Agenda */}
-              {!formIsPastEvent && (
+              {!formIsPastEvent && formCategory !== "Quiz" && (
                 <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
                   <h3 className="text-sm font-bold text-slate-800 tracking-tight border-b border-slate-50 pb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -4698,6 +4861,9 @@ const EventManagementPage: React.FC = () => {
                         ${formCategory === "Hackathon" ? "bg-[#2563EB]" : ""}
                         ${formCategory === "Seminar" ? "bg-sky-600" : ""}
                         ${formCategory === "Workshop" ? "bg-emerald-600" : ""}
+                        ${formCategory === "Quiz" ? "bg-purple-600" : ""}
+                        ${formCategory === "Tech Event" ? "bg-indigo-600" : ""}
+                        ${formCategory === "Alumni Meetup" ? "bg-amber-600" : ""}
                       `}>
                           {formCategory.toUpperCase()}
                         </span>
@@ -6686,9 +6852,13 @@ const EventManagementPage: React.FC = () => {
                   <Key className="h-5.5 w-5.5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900 tracking-tight">Set Common Team Password</h3>
+                  <h3 className="text-base font-black text-slate-900 tracking-tight">
+                    {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz"))
+                      ? "Set Common Participant Password"
+                      : "Set Common Team Password"}
+                  </h3>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Generate portal authentication for all {eventAccessRegistrations.length} team(s)
+                    Generate {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz")) ? "Supabase Auth" : "portal authentication"} for all {eventAccessRegistrations.length} {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz")) ? "participant(s)" : "team(s)"}
                   </p>
                 </div>
               </div>
@@ -6718,7 +6888,7 @@ const EventManagementPage: React.FC = () => {
                 <div className="relative">
                   <input
                     type={showCommonPassword ? "text" : "password"}
-                    placeholder="Enter common password for all teams..."
+                    placeholder="Enter common password..."
                     value={commonPassword}
                     onChange={(e) => setCommonPassword(e.target.value)}
                     className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:border-blue-600 font-mono text-sm text-slate-800 bg-slate-50/50 focus:bg-white transition-all pr-11"
@@ -6750,13 +6920,26 @@ const EventManagementPage: React.FC = () => {
               <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-100 text-xs space-y-2">
                 <div className="flex items-center gap-2 text-blue-800 font-extrabold uppercase text-[10px] tracking-wider">
                   <Mail className="h-3.5 w-3.5 text-blue-600" />
-                  Email & Credentials Format Preview
+                  Credentials & Login Format Preview
                 </div>
-                <div className="text-slate-700 font-medium leading-relaxed space-y-1">
-                  <p>• <strong>Team Email:</strong> <code className="bg-blue-100/70 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[11px]">(teamname)@aiverse.in</code></p>
-                  <p>• <strong>Password:</strong> <span className="font-mono text-blue-900 font-bold">{commonPassword ? commonPassword : "••••••••"}</span></p>
-                  <p className="text-[11px] text-slate-500 mt-1">An email will be sent to each team lead containing their team email and common password.</p>
-                </div>
+                {Boolean(
+                  eventAccessEvent?.category === "QUIZ" ||
+                  eventAccessEvent?.category === "Quiz" ||
+                  eventAccessEvent?.category?.toLowerCase()?.includes("quiz")
+                ) ? (
+                  <div className="text-slate-700 font-medium leading-relaxed space-y-1.5">
+                    <p>• <strong>Supabase Auth Email:</strong> <code className="bg-blue-100/80 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[11px]">Participant's Personal Mail</code></p>
+                    <p>• <strong>Password:</strong> <span className="font-mono text-blue-900 font-bold">{commonPassword ? commonPassword : "••••••••"}</span></p>
+                    <p>• <strong>Phone Login:</strong> <span className="text-emerald-700 font-bold">Direct Access</span> (Participants can log in directly using their registered phone number without a password)</p>
+                    <p className="text-[11px] text-emerald-700 font-bold mt-1">✓ No credentials email will be sent to quiz participants.</p>
+                  </div>
+                ) : (
+                  <div className="text-slate-700 font-medium leading-relaxed space-y-1">
+                    <p>• <strong>Team Email:</strong> <code className="bg-blue-100/70 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[11px]">(teamname)@aiverse.in</code></p>
+                    <p>• <strong>Password:</strong> <span className="font-mono text-blue-900 font-bold">{commonPassword ? commonPassword : "••••••••"}</span></p>
+                    <p className="text-[11px] text-slate-500 mt-1">An email will be sent to each team lead containing their team email and common password.</p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -6779,12 +6962,12 @@ const EventManagementPage: React.FC = () => {
                 {isProvisioningLoginAccess ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Sending Emails...
+                    {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz")) ? "Provisioning Access..." : "Sending Emails..."}
                   </>
                 ) : (
                   <>
                     <UserCheck className="h-4 w-4" />
-                    Confirm & Send Access
+                    {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz")) ? "Confirm & Provision Access" : "Confirm & Send Access"}
                   </>
                 )}
               </button>

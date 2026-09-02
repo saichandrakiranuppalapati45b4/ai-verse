@@ -273,17 +273,217 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  // Real-time access revocation watcher for participants
+  useEffect(() => {
+    if (!user || user.role !== "participant") return;
+
+    let unsub: (() => void) | null = null;
+
+    const handleRevokeImmediate = () => {
+      console.warn("[AuthContext] Real-time revocation detected on registration! Immediately redirecting to /login...");
+      localStorage.removeItem("aether_mock_user");
+      supabase.auth.signOut().catch(() => {});
+      setUser(null);
+      window.location.href = "/login";
+    };
+
+    // Watch the canonical registration document
+    if (user.registrationId) {
+      try {
+        unsub = onSnapshot(doc(db, "registrations", user.registrationId), (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (data.accessGranted === false || data.loginAccessGranted === false) {
+              handleRevokeImmediate();
+            }
+          }
+        }, (err) => console.warn("Revocation watcher error:", err));
+      } catch (e) {}
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [user]);
+
   const login = async (email: string, passwordInput: string) => {
     setLoading(true);
     const cleanEmail = email.toLowerCase().trim();
     const cleanPassword = passwordInput ? passwordInput.trim() : "";
 
-    if (!cleanEmail || !cleanPassword) {
+    const digitsOnly = cleanEmail.replace(/\D/g, "");
+    const isPhoneInput = !cleanEmail.includes("@") && digitsOnly.length >= 7;
+
+    if (!isPhoneInput && (!cleanEmail || !cleanPassword)) {
       setLoading(false);
       throw new Error("Please enter both email and password.");
     }
 
     try {
+      // 0. Check if user is attempting login with a Phone Number (Direct Login - No Password Required)
+      if (isPhoneInput) {
+        const last10 = digitsOnly.slice(-10);
+        let phoneUser: any = null;
+
+        // Try lookup in users_by_phone
+        try {
+          const pSnap = await getDoc(doc(db, "users_by_phone", last10));
+          if (pSnap.exists()) {
+            phoneUser = pSnap.data();
+          }
+        } catch (e) {}
+
+        // Fallback: lookup in users collection by phone / phoneNumber
+        if (!phoneUser) {
+          try {
+            const q1 = query(collection(db, "users"), where("phone", "==", cleanEmail));
+            const s1 = await getDocs(q1);
+            if (!s1.empty) {
+              phoneUser = s1.docs[0].data();
+            } else {
+              const q2 = query(collection(db, "users"), where("phoneNumber", "==", cleanEmail));
+              const s2 = await getDocs(q2);
+              if (!s2.empty) phoneUser = s2.docs[0].data();
+              else {
+                const q3 = query(collection(db, "users"), where("phone", "==", last10));
+                const s3 = await getDocs(q3);
+                if (!s3.empty) phoneUser = s3.docs[0].data();
+                else {
+                  const q4 = query(collection(db, "users"), where("phoneNumber", "==", last10));
+                  const s4 = await getDocs(q4);
+                  if (!s4.empty) phoneUser = s4.docs[0].data();
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Fallback: lookup in registrations collection
+        if (!phoneUser) {
+          try {
+            const queries = [
+              query(collection(db, "registrations"), where("phoneNumber", "==", cleanEmail)),
+              query(collection(db, "registrations"), where("phoneNumber", "==", last10)),
+              query(collection(db, "registrations"), where("phone", "==", cleanEmail)),
+              query(collection(db, "registrations"), where("phone", "==", last10)),
+              query(collection(db, "registrations"), where("leadPhone", "==", cleanEmail)),
+              query(collection(db, "registrations"), where("leadPhone", "==", last10)),
+            ];
+            for (const q of queries) {
+              const snap = await getDocs(q);
+              if (!snap.empty) {
+                phoneUser = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Fallback: lookup in team_credentials
+        if (!phoneUser) {
+          try {
+            const qCred = query(collection(db, "team_credentials"), where("phone", "==", last10));
+            const sCred = await getDocs(qCred);
+            if (!sCred.empty) {
+              phoneUser = sCred.docs[0].data();
+            }
+          } catch (e) {}
+        }
+
+        if (phoneUser) {
+          const regId = phoneUser.registrationId || phoneUser.id;
+          let hasAccess = false;
+
+          // 1. Check registration document as primary source of truth
+          if (regId) {
+            try {
+              const regDoc = await getDoc(doc(db, "registrations", regId));
+              if (regDoc.exists()) {
+                const rData = regDoc.data();
+                if (rData.accessGranted === true || rData.loginAccessGranted === true) {
+                  hasAccess = true;
+                }
+              }
+            } catch (e) {}
+          }
+
+          // 2. Fallback check on phoneUser object
+          if (!hasAccess && (phoneUser.accessGranted === true || phoneUser.loginAccessGranted === true)) {
+            hasAccess = true;
+          }
+
+          if (!hasAccess) {
+            setLoading(false);
+            throw new Error("Access Pending: Login access has not been activated by the event coordinator yet. Please wait for organizers to grant access.");
+          }
+
+          // DIRECT LOGIN: NO PASSWORD REQUIRED FOR PHONE LOGIN!
+          const targetEmail = (
+            phoneUser.personalEmail ||
+            phoneUser.teamLeadPersonalEmail ||
+            phoneUser.leadPersonalEmail ||
+            phoneUser.email ||
+            phoneUser.teamLeadEmail ||
+            phoneUser.teamEmail ||
+            ""
+          ).trim().toLowerCase();
+
+          const storedPassword = phoneUser.password || phoneUser.teamPassword;
+
+          // If Supabase account exists with stored password, authenticate Supabase session seamlessly
+          if (targetEmail && storedPassword) {
+            try {
+              const { data: supaAuthData, error: supaAuthErr } = await supabase.auth.signInWithPassword({
+                email: targetEmail,
+                password: storedPassword
+              });
+              if (!supaAuthErr && supaAuthData?.user) {
+                const supaUserRecord = await userService.getUserByEmail(targetEmail);
+                const role = normalizeRole(supaUserRecord?.role || phoneUser.role, "participant");
+                const customUser: UserProfile = {
+                  uid: supaAuthData.user.id,
+                  email: targetEmail,
+                  name: supaUserRecord?.name || phoneUser.name || phoneUser.fullName || phoneUser.teamLeadName || phoneUser.leadName || "Participant",
+                  role,
+                  displayRole: "Participant",
+                  requiresPasswordChange: false,
+                  teamName: phoneUser.teamName || (phoneUser.isQuiz ? "Individual Registration" : undefined),
+                  eventTitle: phoneUser.eventTitle,
+                  registrationId: regId
+                };
+                setUser(customUser);
+                localStorage.setItem("aether_mock_user", JSON.stringify(customUser));
+                setLoading(false);
+                return;
+              }
+            } catch (supaErr) {
+              console.log("[AuthContext] Supabase sign in via phone notice:", supaErr);
+            }
+          }
+
+          // Direct authenticated session via phone (without password)
+          const role = normalizeRole(phoneUser.role, "participant");
+          const customUser: UserProfile = {
+            uid: regId || last10,
+            email: targetEmail || `${last10}@aiverse.in`,
+            name: phoneUser.name || phoneUser.fullName || phoneUser.teamLeadName || phoneUser.leadName || "Participant",
+            role,
+            displayRole: "Participant",
+            requiresPasswordChange: false,
+            teamName: phoneUser.teamName || (phoneUser.isQuiz ? "Individual Registration" : undefined),
+            eventTitle: phoneUser.eventTitle,
+            registrationId: regId
+          };
+          setUser(customUser);
+          localStorage.setItem("aether_mock_user", JSON.stringify(customUser));
+          setLoading(false);
+          return;
+        } else {
+          setLoading(false);
+          throw new Error("No registered account found with this phone number. Please verify your phone number or log in with your email.");
+        }
+      }
+
       // 1. Try Supabase Auth sign in
       try {
         const { data: supaAuthData, error: supaAuthError } = await supabase.auth.signInWithPassword({
@@ -296,6 +496,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const defaultRole = isFacultyEmail ? "faculty" : (cleanEmail.includes("organizer") ? "organizer" : (cleanEmail.includes("jury") ? "jury" : "participant"));
           const rawRole = supaUserRecord?.role || defaultRole;
           const role = normalizeRole(rawRole, defaultRole);
+
+          if (role === "participant") {
+            let accessOk = false;
+            const regId = supaUserRecord?.registration_id;
+            if (regId) {
+              try {
+                const regDoc = await getDoc(doc(db, "registrations", regId));
+                if (regDoc.exists()) {
+                  const rData = regDoc.data();
+                  if (rData.accessGranted === true || rData.loginAccessGranted === true) {
+                    accessOk = true;
+                  }
+                }
+              } catch (e) {}
+            }
+            if (!accessOk) {
+              try {
+                const uDocId = cleanEmail.replace(/[^a-z0-9]/g, '_');
+                const uSnap = await getDoc(doc(db, "users", uDocId));
+                if (uSnap.exists()) {
+                  const uData = uSnap.data();
+                  if (uData.accessGranted === true || uData.loginAccessGranted === true) {
+                    accessOk = true;
+                  }
+                }
+              } catch (e) {}
+            }
+
+            if (!accessOk) {
+              await supabase.auth.signOut();
+              setLoading(false);
+              throw new Error("Access Pending: Login access has not been activated by the event coordinator yet. Please wait for organizers to grant access.");
+            }
+          }
+
           const customUser: UserProfile = {
             uid: supaAuthData.user.id,
             email: cleanEmail,
@@ -383,6 +618,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const defaultRole = isFacultyEmail ? "faculty" : (cleanEmail.includes("organizer") ? "organizer" : (cleanEmail.includes("jury") ? "jury" : "participant"));
         const rawRole = foundDocData.role || defaultRole;
         const role = normalizeRole(rawRole, defaultRole);
+
+        if (role === "participant" && !PREDEFINED_EMAILS.includes(cleanEmail)) {
+          let hasAccess = Boolean(foundDocData.accessGranted === true || foundDocData.loginAccessGranted === true);
+          if (!hasAccess && foundDocData.registrationId) {
+            try {
+              const rDoc = await getDoc(doc(db, "registrations", foundDocData.registrationId));
+              if (rDoc.exists()) {
+                const rData = rDoc.data();
+                if (rData.accessGranted === true || rData.loginAccessGranted === true) {
+                  hasAccess = true;
+                }
+              }
+            } catch (e) {}
+          }
+
+          if (!hasAccess) {
+            setLoading(false);
+            throw new Error("Access Pending: Login access has not been activated by the event coordinator yet. Please wait for organizers to grant access.");
+          }
+        }
+
         const name = foundDocData.name || foundDocData.displayName || foundDocData.teamLeadName || cleanEmail.split('@')[0];
         const displayRole = foundDocData.displayRole || (role === "faculty" ? (cleanEmail === "facultycoordinator@aiverse.in" ? "Faculty Coordinator" : "Super Admin") : (role === "organizer" ? "Student Organizer" : (role === "jury" ? "Jury Evaluator" : "Participant")));
 

@@ -818,19 +818,18 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
         description="Verify your real team details before project submission."
       />
 
-      {/* Standalone Left Sidebar - Dark Navy Theme */}
-      <aside className="w-64 border-r border-[#1E293B] bg-gradient-to-b from-[#0A1128] via-[#0F172A] to-[#0A0F1D] flex flex-col justify-between shrink-0 p-6 z-20 shadow-2xl">
+      {/* Standalone Left Sidebar - Modern Clean Light Theme */}
+      <aside className="w-64 border-r border-slate-200/90 bg-white flex flex-col justify-between shrink-0 p-6 z-20 shadow-xs">
         <div className="space-y-8">
           <Link to="/" className="flex items-center gap-3 group">
             <div className="relative">
-              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-9 h-9 rounded-xl object-contain shadow-md shadow-blue-500/30 ring-1 ring-blue-400/20" />
-              <div className="absolute -inset-0.5 bg-blue-500/20 rounded-xl blur-xs -z-10 group-hover:bg-blue-500/40 transition-all" />
+              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-9 h-9 rounded-xl object-contain shadow-sm shadow-blue-500/20 ring-1 ring-slate-200" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-white tracking-tight font-sans block leading-none">
+              <span className="text-lg font-extrabold text-slate-900 tracking-tight font-sans block leading-none">
                 AI Verse
               </span>
-              <span className="text-[10px] text-blue-400 font-semibold tracking-wider block mt-1">
+              <span className="text-[10px] text-blue-600 font-bold tracking-wider block mt-1 uppercase">
                 Participant Portal
               </span>
             </div>
@@ -839,22 +838,22 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
           <nav className="space-y-1.5">
             <button
               onClick={() => navigate("/participant/dashboard")}
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all text-left cursor-pointer"
             >
-              <LayoutDashboard className="w-5 h-5 text-slate-400" />
+              <LayoutDashboard className="w-5 h-5 text-slate-500" />
               Dashboard
             </button>
 
             <button
               onClick={() => navigate("/participant/set-password")}
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all text-left cursor-pointer"
             >
-              <Key className="w-5 h-5 text-slate-400" />
+              <Key className="w-5 h-5 text-slate-500" />
               Set Password
             </button>
 
             <button
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30 ring-1 ring-blue-400/30 text-left cursor-pointer"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30 text-left cursor-pointer"
             >
               <Users className="w-5 h-5 text-white" />
               Review Team
@@ -862,28 +861,28 @@ export const TeamReviewPage: React.FC<TeamReviewPageProps> = ({ embedded = false
 
             <button
               onClick={() => navigate("/participant/dashboard")}
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all text-left cursor-pointer"
             >
-              <Upload className="w-5 h-5 text-slate-400" />
+              <Upload className="w-5 h-5 text-slate-500" />
               Project Submission
             </button>
 
             <button
               onClick={() => navigate("/participant/dashboard")}
-              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white transition-all text-left cursor-pointer"
+              className="w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all text-left cursor-pointer"
             >
-              <BarChart2 className="w-5 h-5 text-slate-400" />
+              <BarChart2 className="w-5 h-5 text-slate-500" />
               Submission Status
             </button>
           </nav>
         </div>
 
-        <div className="pt-6 border-t border-slate-800/80">
+        <div className="pt-6 border-t border-slate-100">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-400 hover:text-red-400 font-semibold text-sm transition-colors text-left cursor-pointer rounded-xl hover:bg-red-500/10"
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-600 hover:text-red-600 font-semibold text-sm transition-colors text-left cursor-pointer rounded-xl hover:bg-red-50"
           >
-            <LogOut className="w-5 h-5 text-slate-400 hover:text-red-400" />
+            <LogOut className="w-5 h-5 text-slate-500 hover:text-red-600" />
             Logout
           </button>
         </div>

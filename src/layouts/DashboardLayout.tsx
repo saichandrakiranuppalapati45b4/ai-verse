@@ -81,7 +81,7 @@ const DashboardLayout: React.FC = () => {
           {/* Sidebar Header with AI Club Logo */}
           <div className="h-16 flex items-center justify-between px-6 border-b border-slate-100/90 bg-white shrink-0">
             <Link to="/" className="flex items-center gap-2.5 font-black text-[#2563EB] text-xl">
-              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-xl object-contain shrink-0 shadow-xs" />
+              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-10 h-10 rounded-xl object-contain shrink-0 shadow-xs" />
               {isSidebarOpen && (
                 <span className="tracking-tight font-sans text-slate-900 font-extrabold">AI Verse</span>
               )}
@@ -183,7 +183,7 @@ const DashboardLayout: React.FC = () => {
           <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             {isOrganizer ? (
               <Link to="/" className="flex items-center gap-2 sm:gap-2.5 font-black text-[#2563EB] text-base sm:text-lg hover:opacity-90 transition-opacity min-w-0">
-                <img src="/ai_verse.png" alt="AI Verse Logo" className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl object-contain shrink-0 shadow-xs" />
+                <img src="/ai_verse.png" alt="AI Verse Logo" className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-contain shrink-0 shadow-xs" />
                 <div className="leading-tight text-left min-w-0">
                   <span className="tracking-tight font-sans font-black block text-xs sm:text-sm text-slate-900 truncate">AI Verse Club</span>
                   <span className="text-[7.5px] sm:text-[8.5px] text-slate-400 font-bold uppercase tracking-wider block truncate">Attendance Portal</span>

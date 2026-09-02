@@ -23,7 +23,7 @@ import SEO from "../../components/layout/SEO";
 import TeamReviewPage from "./TeamReviewPage";
 import ProjectSubmissionPage from "./ProjectSubmissionPage";
 import { db } from "../../config/firebase";
-import { collection, getDocs, doc, getDoc, query, where } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, query, where, onSnapshot } from "firebase/firestore";
 import { getAllQuizzes } from "../../services/quizService";
 import type { Quiz, QuizSubmission } from "../../types/quiz";
 
@@ -34,6 +34,9 @@ export const ParticipantDashboardPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"dashboard" | "review-team" | "submission" | "quizzes">("review-team");
 
   // Real Database State
+  const [isQuizParticipant, setIsQuizParticipant] = useState<boolean>(false);
+  const [isAccessGranted, setIsAccessGranted] = useState<boolean>(true);
+  const [accessChecked, setAccessChecked] = useState<boolean>(false);
   const [targetRegId, setTargetRegId] = useState<string>("");
   const [teamName, setTeamName] = useState<string>("");
   const [eventTitle, setEventTitle] = useState<string>("");
@@ -142,12 +145,44 @@ export const ParticipantDashboardPage: React.FC = () => {
         }).catch(() => {});
 
         if (targetReg) {
+          // If access was revoked, immediately logout and redirect to /login
+          if (targetReg.accessGranted === false || targetReg.loginAccessGranted === false) {
+            console.warn("[ParticipantDashboard] Access was revoked. Redirecting to login...");
+            await logout();
+            window.location.href = "/login";
+            return;
+          }
+
+          const hasAccess = Boolean(
+            targetReg.accessGranted === true ||
+            targetReg.loginAccessGranted === true
+          );
+          setIsAccessGranted(hasAccess);
+          setAccessChecked(true);
+
+          const isQuiz = Boolean(
+            targetReg.isQuiz === true ||
+            targetReg.category === "Quiz" ||
+            targetReg.category === "QUIZ" ||
+            targetReg.eventCategory === "Quiz" ||
+            targetReg.eventCategory === "QUIZ" ||
+            targetReg.eventTitle?.toLowerCase().includes("quiz") ||
+            targetReg.groupName === "Individual Registration" ||
+            user?.teamName === "Individual Registration" ||
+            user?.eventTitle?.toLowerCase().includes("quiz")
+          );
+
+          if (isQuiz) {
+            setIsQuizParticipant(true);
+            setActiveTab("quizzes");
+          }
+
           const currentEventTitle = targetReg.eventTitle || "Hackathon";
           setTargetRegId(targetReg.id || "");
-          setTeamName(targetReg.groupName || user?.teamName || "My Team");
+          setTeamName(targetReg.groupName || user?.teamName || (isQuiz ? "Individual Registration" : "My Team"));
           setEventTitle(currentEventTitle);
           setTeamId(targetReg.id ? `AI-${targetReg.id.substring(0, 4).toUpperCase()}-${targetReg.id.substring(4, 7).toUpperCase()}` : "AI-REG-001");
-          setLeaderName(targetReg.teamLeadName || user?.name || "Participant");
+          setLeaderName(targetReg.teamLeadName || targetReg.fullName || targetReg.name || user?.name || "Participant");
 
           // Members
           const regMembers = Array.isArray(targetReg.members) ? targetReg.members : [];
@@ -185,6 +220,14 @@ export const ParticipantDashboardPage: React.FC = () => {
               const evDoc = await getDoc(doc(db, "events", targetReg.eventId));
               if (evDoc.exists()) {
                 const evData = evDoc.data();
+                if (
+                  evData.category === "Quiz" ||
+                  evData.category === "QUIZ" ||
+                  evData.title?.toLowerCase().includes("quiz")
+                ) {
+                  setIsQuizParticipant(true);
+                  setActiveTab("quizzes");
+                }
                 if (Array.isArray(evData.rounds) && evData.rounds.length > 0) {
                   setTotalRounds(evData.rounds.length);
                   const currentRDef = evData.rounds.find((r: any) => r.roundNumber === cRound);
@@ -198,6 +241,27 @@ export const ParticipantDashboardPage: React.FC = () => {
             }
           }
         } else {
+          let hasAccess = true;
+          if (user?.registrationId) {
+            try {
+              const regDoc = await getDoc(doc(db, "registrations", user.registrationId));
+              if (regDoc.exists()) {
+                const rData = regDoc.data();
+                hasAccess = Boolean(rData.accessGranted === true || rData.loginAccessGranted === true);
+              }
+            } catch (e) {}
+          }
+          setIsAccessGranted(hasAccess);
+          setAccessChecked(true);
+
+          const isQuizFallback = Boolean(
+            user?.teamName === "Individual Registration" ||
+            user?.eventTitle?.toLowerCase().includes("quiz")
+          );
+          if (isQuizFallback) {
+            setIsQuizParticipant(true);
+            setActiveTab("quizzes");
+          }
           setTeamName(user?.teamName || (user?.name ? `${user.name}'s Team` : "My Team"));
           setEventTitle("General Track");
           setTeamId(user?.uid ? `AI-${user.uid.substring(0, 4).toUpperCase()}-${user.uid.substring(4, 7).toUpperCase()}` : "AI-REG");
@@ -211,6 +275,27 @@ export const ParticipantDashboardPage: React.FC = () => {
     fetchRealData();
   }, [user]);
 
+  // Real-time access revocation watcher on target registration
+  useEffect(() => {
+    const regIdToWatch = targetRegId || user?.registrationId;
+    if (!regIdToWatch) return;
+
+    const unsubscribe = onSnapshot(doc(db, "registrations", regIdToWatch), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.accessGranted === false || data.loginAccessGranted === false) {
+          console.warn("[ParticipantDashboard] Real-time revoke detected on registration:", regIdToWatch);
+          logout().finally(() => {
+            window.location.href = "/login";
+          });
+        }
+      }
+    }, (err) => {
+      console.warn("Registration onSnapshot error:", err);
+    });
+
+    return () => unsubscribe();
+  }, [targetRegId, user?.registrationId, logout]);
 
   const getInitials = (name: string) => {
     if (!name) return "PU";
@@ -240,12 +325,16 @@ export const ParticipantDashboardPage: React.FC = () => {
   };
 
   // Sidebar items
-  const sidebarItems = [
-    { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
-    { id: "quizzes" as const, label: "Online Quiz", icon: HelpCircle },
-    { id: "review-team" as const, label: "Team", icon: Users },
-    { id: "submission" as const, label: "Submission", icon: Upload },
-  ];
+  const sidebarItems = isQuizParticipant
+    ? [
+        { id: "quizzes" as const, label: "Online Quiz", icon: HelpCircle },
+      ]
+    : [
+        { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
+        { id: "quizzes" as const, label: "Online Quiz", icon: HelpCircle },
+        { id: "review-team" as const, label: "Team", icon: Users },
+        { id: "submission" as const, label: "Submission", icon: Upload },
+      ];
 
   return (
     <div className="h-screen bg-[#F4F7FC] flex font-sans text-slate-800 antialiased overflow-hidden selection:bg-blue-500/20 selection:text-blue-600">
@@ -254,18 +343,24 @@ export const ParticipantDashboardPage: React.FC = () => {
         description="Manage team details, submit projects, and view evaluation status."
       />
 
-      {/* Fixed Left Sidebar - Modern Dark Navy Theme */}
-      <aside className="w-[260px] h-screen border-r border-[#1E293B] bg-gradient-to-b from-[#0A1128] via-[#0F172A] to-[#0A0F1D] flex flex-col justify-between shrink-0 z-20 sticky top-0 overflow-y-auto shadow-2xl">
+      {/* Fixed Left Sidebar - Modern Clean Light Theme */}
+      <aside className="w-[260px] h-screen border-r border-slate-200/90 bg-white flex flex-col justify-between shrink-0 z-20 sticky top-0 overflow-y-auto shadow-xs">
         <div className="p-5 space-y-6">
           {/* Logo Header */}
           <Link to="/" className="flex items-center gap-3 px-2 group">
             <div className="relative">
-              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-9 h-9 rounded-xl object-contain shadow-md shadow-blue-500/30 ring-1 ring-blue-400/20" />
-              <div className="absolute -inset-0.5 bg-blue-500/20 rounded-xl blur-xs -z-10 group-hover:bg-blue-500/40 transition-all" />
+              <img src="/ai_verse.png" alt="AI Verse Logo" className="w-9 h-9 rounded-xl object-contain shadow-sm shadow-blue-500/20 ring-1 ring-slate-200" />
             </div>
             <div>
-              <span className="text-lg font-extrabold text-white tracking-tight block leading-none">AI Verse</span>
-              <span className="text-[10px] text-blue-400 font-semibold tracking-wider block mt-1">Participant Portal</span>
+              <span className="text-lg font-extrabold text-slate-900 tracking-tight block leading-none">AI Verse</span>
+              <span className="text-[10px] text-blue-600 font-bold tracking-wider block mt-1 uppercase">
+                {isQuizParticipant ? "Quiz Portal" : "Participant Portal"}
+              </span>
+              {accessChecked && !isAccessGranted && (
+                <span className="inline-block mt-1 px-2 py-0.5 rounded text-[9px] font-black uppercase bg-amber-50 text-amber-700 border border-amber-200 tracking-wider">
+                  Access Pending
+                </span>
+              )}
             </div>
           </Link>
 
@@ -274,13 +369,17 @@ export const ParticipantDashboardPage: React.FC = () => {
             {sidebarItems.map((item) => (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  if (accessChecked && !isAccessGranted) return;
+                  setActiveTab(item.id);
+                }}
+                disabled={accessChecked && !isAccessGranted}
                 className={`w-full px-4 py-3 rounded-2xl flex items-center gap-3.5 text-sm font-semibold transition-all text-left cursor-pointer ${activeTab === item.id
-                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold shadow-lg shadow-blue-600/30 ring-1 ring-blue-400/30"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white"
-                  }`}
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold shadow-md shadow-blue-500/25 ring-1 ring-blue-500/30"
+                    : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+                  } ${accessChecked && !isAccessGranted ? "opacity-50 cursor-not-allowed" : ""}`}
               >
-                <item.icon className={`w-5 h-5 ${activeTab === item.id ? "text-white" : "text-slate-400"}`} />
+                <item.icon className={`w-5 h-5 ${activeTab === item.id ? "text-white" : "text-slate-500"}`} />
                 {item.label}
               </button>
             ))}
@@ -288,21 +387,23 @@ export const ParticipantDashboardPage: React.FC = () => {
         </div>
 
         {/* Bottom Section: User Profile + Logout */}
-        <div className="p-5 space-y-3 border-t border-slate-800/80">
+        <div className="p-5 space-y-3 border-t border-slate-100">
           {/* User Profile Card */}
-          <div className="flex items-center gap-3 px-3 py-2.5 bg-[#131E3A]/80 border border-blue-900/40 rounded-2xl shadow-inner">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-md shadow-blue-500/30 ring-1 ring-white/20">
+          <div className="flex items-center gap-3 px-3 py-2.5 bg-slate-50/90 border border-slate-200/80 rounded-2xl shadow-2xs">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-sm shadow-blue-500/20 ring-1 ring-white">
               {getInitials(leaderName || user?.name || "P")}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-white truncate">{leaderName || user?.name || "Participant"}</p>
-              <p className="text-[11px] text-blue-300/80 font-medium truncate">Team Participant</p>
+              <p className="text-sm font-bold text-slate-900 truncate">{leaderName || user?.name || "Participant"}</p>
+              <p className="text-[11px] text-slate-500 font-medium truncate">
+                {isQuizParticipant ? "Quiz Participant" : "Team Participant"}
+              </p>
             </div>
           </div>
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-400 hover:text-red-400 font-semibold text-sm transition-colors text-left cursor-pointer rounded-xl hover:bg-red-500/10"
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-600 hover:text-red-600 font-semibold text-sm transition-colors text-left cursor-pointer rounded-xl hover:bg-red-50"
           >
             <LogOut className="w-4.5 h-4.5" />
             Logout
@@ -313,19 +414,70 @@ export const ParticipantDashboardPage: React.FC = () => {
       {/* Main Content (Scrollable Right Panel) */}
       <div className="flex-1 min-w-0 h-screen flex flex-col bg-gradient-to-br from-[#F8FAFC] via-[#EEF2FF]/60 to-[#F1F5F9] overflow-y-auto">
 
-        {/* Tab Body */}
-        <main className="p-8 space-y-8 max-w-6xl w-full mx-auto flex-1">
+        {/* If Access is Pending (Organizers have not activated login access yet) */}
+        {accessChecked && !isAccessGranted ? (
+          <main className="p-8 max-w-xl w-full mx-auto flex-1 flex items-center justify-center">
+            <div className="bg-white border border-amber-200/90 rounded-3xl p-8 sm:p-10 shadow-lg text-center space-y-6 animate-in fade-in zoom-in-95 duration-200 w-full">
+              <div className="w-16 h-16 rounded-3xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600 shadow-inner">
+                <Clock className="w-8 h-8 animate-pulse" />
+              </div>
 
-          {/* Review Team Tab */}
-          {activeTab === "review-team" && (
-            <TeamReviewPage
-              embedded={true}
-              onConfirm={handleConfirmAndContinue}
-            />
-          )}
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200/80 px-3.5 py-1 rounded-full text-amber-800 text-[11px] font-extrabold uppercase tracking-wider shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                  Access Pending
+                </div>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+                  Login Access Not Activated Yet
+                </h2>
+                <p className="text-sm text-slate-600 font-medium leading-relaxed max-w-md mx-auto">
+                  Your registration for <span className="font-bold text-slate-900">{eventTitle || "this event"}</span> is recorded, but the event coordinators have not activated portal access yet.
+                </p>
+              </div>
 
-          {/* ==================== CLEAN, MODERN & ATTRACTIVE DASHBOARD ==================== */}
-          {activeTab === "dashboard" && (
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 text-left space-y-2">
+                <p className="font-bold text-slate-800 text-xs flex items-center justify-between">
+                  <span>Registration Status</span>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-mono font-bold">STATUS: PENDING ACTIVATION</span>
+                </p>
+                <p>• Name: <strong className="text-slate-800">{leaderName || user?.name || "Participant"}</strong></p>
+                {teamId && <p>• Participant ID: <span className="font-mono text-slate-700 font-bold">{teamId}</span></p>}
+                <p>• Event: <strong className="text-slate-800">{eventTitle}</strong></p>
+                <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-200">
+                  Once the event coordinators activate access from the admin portal, click refresh to enter your examination.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-6 py-3 bg-[#2563EB] hover:bg-blue-700 active:scale-95 text-white font-black text-xs rounded-2xl shadow-md shadow-blue-500/20 transition-all cursor-pointer flex items-center gap-2"
+                >
+                  Check Status / Refresh
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-2xl transition-all cursor-pointer"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          </main>
+        ) : (
+          /* Tab Body */
+          <main className="p-8 space-y-8 max-w-6xl w-full mx-auto flex-1">
+
+            {/* Review Team Tab (Only for Hackathons) */}
+            {activeTab === "review-team" && !isQuizParticipant && (
+              <TeamReviewPage
+                embedded={true}
+                onConfirm={handleConfirmAndContinue}
+              />
+            )}
+
+            {/* ==================== CLEAN, MODERN & ATTRACTIVE DASHBOARD (Only for Hackathons) ==================== */}
+            {activeTab === "dashboard" && !isQuizParticipant && (
             <div className="space-y-6 animate-in fade-in duration-300">
 
               {/* 1. HERO GREETING & CONTEXT BAR */}
@@ -756,8 +908,8 @@ export const ParticipantDashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Project Submission Tab */}
-          {activeTab === "submission" && (
+          {/* Project Submission Tab (Only for Hackathons) */}
+          {activeTab === "submission" && !isQuizParticipant && (
             <ProjectSubmissionPage
               targetRegId={targetRegId}
               initialData={{
@@ -775,9 +927,34 @@ export const ParticipantDashboardPage: React.FC = () => {
           )}
 
           {/* TAB 5: ONLINE QUIZ & ASSESSMENTS */}
-          {activeTab === "quizzes" && (
+          {(activeTab === "quizzes" || isQuizParticipant) && (
             <div className="max-w-4xl w-full mx-auto space-y-6">
-              <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+              {/* Quiz Participant Greeting Card */}
+              {isQuizParticipant && (
+                <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-7 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden text-left animate-in fade-in duration-200">
+                  <div className="space-y-1.5 relative z-10">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 px-3 py-1 rounded-full border border-purple-200/70 flex items-center gap-1.5 shadow-2xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
+                        {eventTitle || "Quiz Competition"}
+                      </span>
+                      {teamId && (
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
+                          Participant ID: <span className="font-mono text-slate-800 font-extrabold">{teamId}</span>
+                        </span>
+                      )}
+                    </div>
+                    <h1 className="text-xl sm:text-2xl font-black text-[#0F172A] tracking-tight">
+                      Welcome, {leaderName || user?.name || "Participant"}! 👋
+                    </h1>
+                    <p className="text-xs sm:text-sm text-slate-500 font-medium">
+                      All quizzes and assessments assigned to you are listed below. Click Start / Take Exam when the test goes live.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 text-left">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="bg-blue-50 text-blue-700 border border-blue-200/60 text-[10px] font-extrabold uppercase px-3 py-1 rounded-full">
@@ -908,6 +1085,7 @@ export const ParticipantDashboardPage: React.FC = () => {
           )}
 
         </main>
+        )}
       </div>
     </div>
   );

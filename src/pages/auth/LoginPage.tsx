@@ -1,10 +1,8 @@
 import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff, Box, Cpu, Network } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Box, Cpu, Network, CheckCircle, Smartphone } from "lucide-react";
 import Button from "../../components/ui/Button";
-
-
 
 import SEO from "../../components/layout/SEO";
 
@@ -19,14 +17,17 @@ const LoginPage: React.FC = () => {
 
   const navigate = useNavigate();
 
+  const digitsOnly = email.replace(/\D/g, "");
+  const isPhoneInput = !email.includes("@") && digitsOnly.length >= 7;
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) {
-      setError("Please enter your email address.");
+      setError("Please enter your email address or phone number.");
       return;
     }
 
-    if (!password) {
+    if (!isPhoneInput && !password) {
       setError("Please enter your password.");
       return;
     }
@@ -36,7 +37,7 @@ const LoginPage: React.FC = () => {
     setError("");
 
     try {
-      await login(cleanEmail, password);
+      await login(cleanEmail, isPhoneInput ? "" : password);
       
       // Check user session for destination
       const savedUserStr = localStorage.getItem("aether_mock_user");
@@ -107,59 +108,72 @@ const LoginPage: React.FC = () => {
 
         {/* Login Form */}
         <form onSubmit={handleFormSubmit} className="space-y-4 text-left">
-          {/* Email field */}
+          {/* Email / Phone field */}
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Email Address
+              Email Address or Phone Number
             </label>
             <div className="relative flex items-center">
-              <Mail className="absolute left-4 h-4 w-4 text-slate-400 pointer-events-none" />
+              {isPhoneInput ? (
+                <Smartphone className="absolute left-4 h-4 w-4 text-emerald-600 pointer-events-none" />
+              ) : (
+                <Mail className="absolute left-4 h-4 w-4 text-slate-400 pointer-events-none" />
+              )}
               <input
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@aiverse.in"
+                placeholder="Email Address or Registered Phone Number"
                 className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-aether-blue-500/20 focus:border-aether-blue-500 transition-all font-sans text-sm text-slate-800 placeholder-slate-400"
                 required
               />
             </div>
-
           </div>
 
-          {/* Password field */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Password
-              </label>
-              <button
-                type="button"
-                onClick={() => alert("Password reset link has been sent to your email!")}
-                className="text-xs font-semibold text-aether-blue-600 hover:text-aether-blue-700 transition-colors"
-              >
-                Forgot Password?
-              </button>
+          {/* Direct Phone Login Alert Banner */}
+          {isPhoneInput && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold flex items-center gap-2 animate-in fade-in">
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Direct Phone Login: No password required to log in!</span>
             </div>
-            <div className="relative flex items-center">
-              <Lock className="absolute left-4 h-4 w-4 text-slate-400 pointer-events-none" />
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full pl-11 pr-11 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-aether-blue-500/20 focus:border-aether-blue-500 transition-all font-sans text-sm text-slate-800 placeholder-slate-400"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 text-slate-400 hover:text-slate-600 transition-colors"
-                aria-label="Toggle password visibility"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+          )}
+
+          {/* Password field (only active when using email) */}
+          {!isPhoneInput && (
+            <div className="space-y-1.5 animate-in fade-in">
+              <div className="flex justify-between items-center">
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => alert("Password reset link has been sent to your email!")}
+                  className="text-xs font-semibold text-aether-blue-600 hover:text-aether-blue-700 transition-colors"
+                >
+                  Forgot Password?
+                </button>
+              </div>
+              <div className="relative flex items-center">
+                <Lock className="absolute left-4 h-4 w-4 text-slate-400 pointer-events-none" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full pl-11 pr-11 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-aether-blue-500/20 focus:border-aether-blue-500 transition-all font-sans text-sm text-slate-800 placeholder-slate-400"
+                  required={!isPhoneInput}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 text-slate-400 hover:text-slate-600 transition-colors"
+                  aria-label="Toggle password visibility"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Keep logged in checkbox */}
           <div className="flex items-center gap-2.5 pt-1">
@@ -180,9 +194,9 @@ const LoginPage: React.FC = () => {
             type="submit"
             disabled={isLoading}
             variant="gradient"
-            className="w-full py-3.5 mt-2 rounded-xl font-bold shadow-button hover:shadow-lg transition-all text-sm"
+            className="w-full py-3.5 mt-2 rounded-xl font-bold shadow-button hover:shadow-lg transition-all text-sm cursor-pointer"
           >
-            {isLoading ? "Signing in..." : "Login"}
+            {isLoading ? "Signing in..." : (isPhoneInput ? "Login Directly with Phone" : "Login")}
           </Button>
         </form>
 

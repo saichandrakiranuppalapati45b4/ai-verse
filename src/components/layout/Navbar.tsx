@@ -68,7 +68,7 @@ export const Navbar: React.FC = () => {
     >
       {/* Brand Logo */}
       <Link to="/" className="flex items-center gap-2.5 group font-extrabold text-aether-dark text-lg tracking-tight select-none">
-        <img src="/ai_verse.png" alt="AI Verse Logo" className="w-8 h-8 rounded-lg object-contain group-hover:scale-105 transition-transform" />
+        <img src="/ai_verse.png" alt="AI Verse Logo" className="w-10 h-10 sm:w-11 sm:h-11 rounded-lg object-contain group-hover:scale-105 transition-transform shrink-0" />
         <span className="text-aether-blue-600 font-sans text-xl font-black">AI</span>
         <span className="text-slate-900 font-sans text-xl font-black">Verse</span>
       </Link>

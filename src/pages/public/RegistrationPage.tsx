@@ -85,6 +85,12 @@ const RegistrationPage: React.FC = () => {
   const [showExampleProofModal, setShowExampleProofModal] = useState(false);
   const paymentProofFileInputRef = useRef<HTMLInputElement>(null);
 
+  const isQuiz = Boolean(
+    event?.category === "QUIZ" ||
+    event?.category === "Quiz" ||
+    event?.category?.toLowerCase()?.includes("quiz")
+  );
+
   // Check if lead's college email belongs strictly to vishnu.edu.in
   const isVishnuDomain = leadCollegeEmail.trim().toLowerCase().endsWith("@vishnu.edu.in");
 
@@ -92,19 +98,19 @@ const RegistrationPage: React.FC = () => {
 
   // Dynamic fee calculation per person
   const perPersonFee = React.useMemo(() => {
-    if (isVishnuDomain) {
-      return 0; // 100% Free for Vishnu Educational Society students regardless of food preference
+    if (isQuiz || isVishnuDomain) {
+      return 0; // 100% Free for Quiz or Vishnu Educational Society students
     }
     return Number(event?.registrationFee) || 0; // Standard event fee for all other colleges
-  }, [event, isVishnuDomain]);
+  }, [event, isVishnuDomain, isQuiz]);
 
-  const totalTeamMembers = members.length + 1;
-  const totalRegistrationFee = isVishnuDomain
+  const totalTeamMembers = isQuiz ? 1 : members.length + 1;
+  const totalRegistrationFee = (isQuiz || isVishnuDomain)
     ? 0
     : isPricingPerTeam
       ? (Number(event?.registrationFee) || 0)
       : perPersonFee * totalTeamMembers;
-  const requiresPaymentProof = !isVishnuDomain && totalRegistrationFee > 0;
+  const requiresPaymentProof = !isQuiz && !isVishnuDomain && totalRegistrationFee > 0;
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -182,16 +188,24 @@ const RegistrationPage: React.FC = () => {
   const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
   const validateStep1 = () => {
-    if (event && event.maxTeamSize > 1 && !groupName.trim()) {
+    if (!isQuiz && event && event.maxTeamSize > 1 && !groupName.trim()) {
       alert("Please enter a Group/Team Name.");
       return false;
     }
     if (!leadName.trim()) {
-      alert("Please enter the Team Lead's name.");
+      alert(isQuiz ? "Please enter your Full Name." : "Please enter the Team Lead's name.");
+      return false;
+    }
+    if (!leadStudentId.trim()) {
+      alert(isQuiz ? "Please enter your Regd No / Roll No." : "Please enter the Team Lead's Student ID.");
+      return false;
+    }
+    if (leadStudentId.includes("@")) {
+      alert(isQuiz ? "Regd No / Roll No should not be an email address. Please check your inputs." : "Team Lead Student ID should not be an email address. Please check your inputs.");
       return false;
     }
     if (!leadCollegeEmail.trim()) {
-      alert("Please enter the Team Lead's College / Institutional Email address.");
+      alert(isQuiz ? "Please enter your College Mail." : "Please enter the Team Lead's College / Institutional Email address.");
       return false;
     }
     if (leadCollegeEmail.trim().toLowerCase().endsWith("@gmail.com") || leadCollegeEmail.trim().toLowerCase().endsWith("@googlemail.com")) {
@@ -199,19 +213,11 @@ const RegistrationPage: React.FC = () => {
       return false;
     }
     if (!leadPersonalEmail.trim() || !EMAIL_REGEX.test(leadPersonalEmail.trim())) {
-      alert("Please enter a valid Team Lead Personal Email address (e.g. personal@gmail.com) for event updates and credentials.");
-      return false;
-    }
-    if (!leadStudentId.trim()) {
-      alert("Please enter the Team Lead's Student ID.");
-      return false;
-    }
-    if (leadStudentId.includes("@")) {
-      alert("Team Lead Student ID should not be an email address. Please check your inputs.");
+      alert(isQuiz ? "Please enter a valid Personal Mail address (e.g. personal@gmail.com)." : "Please enter a valid Team Lead Personal Email address (e.g. personal@gmail.com) for event updates and credentials.");
       return false;
     }
     if (!leadPhone.trim()) {
-      alert("Please enter the Team Lead's Phone Number.");
+      alert(isQuiz ? "Please enter your Phone Number." : "Please enter the Team Lead's Phone Number.");
       return false;
     }
     return true;
@@ -344,35 +350,44 @@ const RegistrationPage: React.FC = () => {
       const payload = {
         eventId: id,
         eventTitle: event.title,
-        groupName: event.maxTeamSize > 1 ? groupName : "Individual RSVP",
-        teamLeadName: leadName,
+        category: event.category || (isQuiz ? "QUIZ" : "Tech Event"),
+        isQuiz: Boolean(isQuiz),
+        groupName: isQuiz ? "Individual Registration" : (event.maxTeamSize > 1 ? groupName : "Individual RSVP"),
+        fullName: leadName.trim(),
+        teamLeadName: leadName.trim(),
         teamLeadEmail: leadPersonalEmail.trim() || leadCollegeEmail.trim(), // Primary communication email for credentials & updates
         teamLeadCollegeEmail: leadCollegeEmail.trim(),
         teamLeadPersonalEmail: leadPersonalEmail.trim(),
         collegeEmail: leadCollegeEmail.trim(),
         personalEmail: leadPersonalEmail.trim(),
         email: leadPersonalEmail.trim() || leadCollegeEmail.trim(),
-        teamLeadStudentId: leadStudentId,
-        teamLeadPhone: leadPhone,
-        phoneNumber: leadPhone,
-        members: members,
-        teamSize: members.length + 1,
+        teamLeadStudentId: leadStudentId.trim(),
+        studentId: leadStudentId.trim(),
+        rollNo: leadStudentId.trim(),
+        teamLeadPhone: leadPhone.trim(),
+        phoneNumber: leadPhone.trim(),
+        phone: leadPhone.trim(),
+        members: isQuiz ? [] : members,
+        teamSize: isQuiz ? 1 : members.length + 1,
         // Food preferences
         isVishnuStudent: isVishnuDomain,
         needsFood: false,
         foodOption: "none",
         foodPreference: foodPreferenceText,
         // Payment proof fields
-        isPaidEvent: Boolean(requiresPaymentProof),
-        pricingType: isPricingPerTeam ? "per_team" : "per_person",
-        registrationFee: isPricingPerTeam ? (event?.registrationFee || 0) : perPersonFee,
-        totalFeePaid: totalRegistrationFee,
-        paymentProofPreview: compressedProof,
-        paymentProofFilename: requiresPaymentProof ? (paymentProofFilename || "") : "",
-        paymentProof: compressedProof,
-        transactionId: requiresPaymentProof ? transactionId.trim() : "EXEMPT_VISHNU_FREE",
-        paymentStatus: requiresPaymentProof ? "Submitted (Pending Verification)" : "Free (Pending Review)",
-        status: "Pending",
+        isPaidEvent: isQuiz ? false : Boolean(requiresPaymentProof),
+        pricingType: isQuiz ? "per_person" : (isPricingPerTeam ? "per_team" : "per_person"),
+        registrationFee: isQuiz ? 0 : (isPricingPerTeam ? (event?.registrationFee || 0) : perPersonFee),
+        totalFeePaid: isQuiz ? 0 : totalRegistrationFee,
+        paymentProofPreview: isQuiz ? "" : compressedProof,
+        paymentProofFilename: isQuiz ? "" : (requiresPaymentProof ? (paymentProofFilename || "") : ""),
+        paymentProof: isQuiz ? "" : compressedProof,
+        transactionId: isQuiz ? "FREE_QUIZ_ENTRY" : (requiresPaymentProof ? transactionId.trim() : "EXEMPT_VISHNU_FREE"),
+        paymentStatus: isQuiz ? "Confirmed" : (requiresPaymentProof ? "Submitted (Pending Verification)" : "Free (Pending Review)"),
+        status: isQuiz ? "Confirmed" : "Pending",
+        confirmedAt: isQuiz ? Date.now() : null,
+        sendEmail: false,
+        sendConfirmationEmail: false,
         createdAt: Date.now()
       };
 
@@ -386,7 +401,7 @@ const RegistrationPage: React.FC = () => {
       // Increment registrations counter on event
       const docRef = doc(db, "events", id);
       await updateDoc(docRef, {
-        currentReg: increment(members.length + 1)
+        currentReg: increment(isQuiz ? 1 : members.length + 1)
       });
 
       setSuccess(true);
@@ -440,13 +455,13 @@ const RegistrationPage: React.FC = () => {
     event.category === "Hackathon" ||
     event.category?.toLowerCase()?.includes("hackathon");
 
-  if (!isHackathon) {
+  if (!isHackathon && !isQuiz) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans text-center px-4">
         <Info className="h-10 w-10 text-blue-600 mb-4" />
         <h2 className="text-xl font-bold text-slate-800">No Registration Required</h2>
         <p className="text-xs text-slate-500 mt-1 max-w-md leading-relaxed font-medium">
-          Registration is only required for Hackathons. The event <span className="font-bold text-slate-700">"{event.title}"</span> is an open public event with no registration required.
+          Registration is not open for this category. The event <span className="font-bold text-slate-700">"{event.title}"</span> is an open public event with no registration required.
         </p>
         <Link to={`/events/${event.id}`} className="mt-5">
           <Button variant="gradient" className="rounded-xl text-xs font-bold px-6 py-2.5">View Event Details</Button>
@@ -458,21 +473,36 @@ const RegistrationPage: React.FC = () => {
   if (success) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center font-sans text-center px-4 py-16">
-        <SEO title="Registration Completed - Under Review" description="Your registration was completed and is under review to confirm." />
+        <SEO 
+          title={isQuiz ? "Quiz Registration Confirmed" : "Registration Completed - Under Review"} 
+          description={isQuiz ? "Your quiz registration has been confirmed." : "Your registration was completed and is under review to confirm."} 
+        />
 
         {/* Success Checkmark Badge */}
-        <div className="w-16 h-16 rounded-full bg-white border border-amber-100 flex items-center justify-center text-amber-600 shadow-[0_8px_30px_rgba(217,119,6,0.15)] mb-6 animate-bounce">
+        <div className={`w-16 h-16 rounded-full bg-white border flex items-center justify-center mb-6 animate-bounce ${
+          isQuiz 
+            ? "border-emerald-100 text-emerald-600 shadow-[0_8px_30px_rgba(16,185,129,0.18)]" 
+            : "border-amber-100 text-amber-600 shadow-[0_8px_30px_rgba(217,119,6,0.15)]"
+        }`}>
           <Check className="h-8 w-8 stroke-[3]" />
         </div>
 
         {/* Successful Headline */}
         <h1 className="text-3xl sm:text-4xl font-black text-slate-800 tracking-tight leading-none">
-          Registration <span className="text-[#2563EB]">Completed!</span>
+          {isQuiz ? (
+            <>Quiz Registration <span className="text-emerald-600">Confirmed!</span></>
+          ) : (
+            <>Registration <span className="text-[#2563EB]">Completed!</span></>
+          )}
         </h1>
 
         {/* Subtitle description */}
         <p className="text-slate-600 text-sm mt-3 max-w-xl font-medium leading-relaxed">
-          Your registration was completed and <strong className="text-amber-700 font-bold">it is currently under review to confirm</strong> by the event coordinators.
+          {isQuiz ? (
+            <>Your registration for <strong className="text-slate-800 font-bold">{event.title}</strong> is confirmed. You are officially enrolled in this quiz.</>
+          ) : (
+            <>Your registration was completed and <strong className="text-amber-700 font-bold">it is currently under review to confirm</strong> by the event coordinators.</>
+          )}
         </p>
 
         {/* Details Grid Container */}
@@ -481,14 +511,24 @@ const RegistrationPage: React.FC = () => {
           <div className="lg:col-span-7 space-y-6 text-left">
 
             {/* Confirmed Registration card */}
-            <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] border-l-4 border-l-amber-500 flex items-center gap-4">
-              <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                <Users className="h-5 w-5" />
+            <div className={`bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] border-l-4 flex items-center gap-4 ${
+              isQuiz ? "border-l-emerald-500" : "border-l-amber-500"
+            }`}>
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                isQuiz ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+              }`}>
+                {isQuiz ? <CheckCircle2 className="h-5 w-5" /> : <Users className="h-5 w-5" />}
               </div>
               <div className="leading-normal">
-                <span className="text-[9px] font-black text-amber-600 tracking-widest uppercase block">Application Submitted (Under Review)</span>
-                <span className="text-sm font-black text-slate-800 mt-0.5 block">{groupName || leadName}</span>
-                <span className="text-[10px] text-slate-450 font-semibold block mt-0.5">Event: <span className="font-bold text-slate-750">{event.title}</span></span>
+                <span className={`text-[9px] font-black tracking-widest uppercase block ${
+                  isQuiz ? "text-emerald-600" : "text-amber-600"
+                }`}>
+                  {isQuiz ? "Registration Confirmed" : "Application Submitted (Under Review)"}
+                </span>
+                <span className="text-sm font-black text-slate-800 mt-0.5 block">{leadName}</span>
+                <span className="text-[10px] text-slate-450 font-semibold block mt-0.5">
+                  Roll No: <span className="font-bold text-slate-750">{leadStudentId}</span> • Event: <span className="font-bold text-slate-750">{event.title}</span>
+                </span>
               </div>
             </div>
 
@@ -497,44 +537,86 @@ const RegistrationPage: React.FC = () => {
               <h3 className="text-base font-extrabold text-slate-850 leading-tight">What's Next?</h3>
               <div className="space-y-6">
 
-                {/* Step 1 */}
-                <div className="flex gap-4">
-                  <div className="w-7 h-7 rounded-full bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center font-bold text-xs shrink-0">
-                    1
-                  </div>
-                  <div className="leading-normal text-left">
-                    <h4 className="text-xs font-black text-slate-850">Verification & Approval</h4>
-                    <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
-                      Faculty coordinators are reviewing your registration details and payment proof.
-                    </p>
-                  </div>
-                </div>
+                {isQuiz ? (
+                  <>
+                    <div className="flex gap-4">
+                      <div className="w-7 h-7 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center font-bold text-xs shrink-0">
+                        1
+                      </div>
+                      <div className="leading-normal text-left">
+                        <h4 className="text-xs font-black text-slate-850">Registration Confirmed</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
+                          Your participant details have been stored and confirmed for the quiz.
+                        </p>
+                      </div>
+                    </div>
 
-                {/* Step 2 */}
-                <div className="flex gap-4">
-                  <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-xs shrink-0">
-                    2
-                  </div>
-                  <div className="leading-normal text-left">
-                    <h4 className="text-xs font-black text-slate-855">Confirmation & Credentials</h4>
-                    <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
-                      Once verified, official confirmation and login credentials will be delivered to your registered personal email.
-                    </p>
-                  </div>
-                </div>
+                    <div className="flex gap-4">
+                      <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-xs shrink-0">
+                        2
+                      </div>
+                      <div className="leading-normal text-left">
+                        <h4 className="text-xs font-black text-slate-855">Attend on Event Schedule</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
+                          Please be present on {event.date} at {event.time} to participate in the quiz.
+                        </p>
+                      </div>
+                    </div>
 
-                {/* Step 3 */}
-                <div className="flex gap-4">
-                  <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-xs shrink-0">
-                    3
-                  </div>
-                  <div className="leading-normal text-left">
-                    <h4 className="text-xs font-black text-slate-850">Access Event Pass</h4>
-                    <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
-                      You can view your provisional check-in pass and track your confirmation status anytime on the ticket page.
-                    </p>
-                  </div>
-                </div>
+                    <div className="flex gap-4">
+                      <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-xs shrink-0">
+                        3
+                      </div>
+                      <div className="leading-normal text-left">
+                        <h4 className="text-xs font-black text-slate-850">Access Event Pass</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
+                          You can view your confirmed registration pass and event details anytime.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Step 1 */}
+                    <div className="flex gap-4">
+                      <div className="w-7 h-7 rounded-full bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center font-bold text-xs shrink-0">
+                        1
+                      </div>
+                      <div className="leading-normal text-left">
+                        <h4 className="text-xs font-black text-slate-850">Verification & Approval</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
+                          Faculty coordinators are reviewing your registration details and payment proof.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className="flex gap-4">
+                      <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-xs shrink-0">
+                        2
+                      </div>
+                      <div className="leading-normal text-left">
+                        <h4 className="text-xs font-black text-slate-855">Confirmation & Credentials</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
+                          Once verified, official confirmation and login credentials will be delivered to your registered personal email.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 3 */}
+                    <div className="flex gap-4">
+                      <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-bold text-xs shrink-0">
+                        3
+                      </div>
+                      <div className="leading-normal text-left">
+                        <h4 className="text-xs font-black text-slate-850">Access Event Pass</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
+                          You can view your provisional check-in pass and track your confirmation status anytime on the ticket page.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
 
               </div>
             </div>
@@ -628,7 +710,7 @@ const RegistrationPage: React.FC = () => {
             <div className="absolute left-0 right-0 top-1/2 h-[2px] bg-slate-200 -translate-y-1/2 -z-10" />
             <div
               className="absolute left-0 top-1/2 h-[2px] bg-blue-600 -translate-y-1/2 -z-10 transition-all duration-300"
-              style={{ width: `${((step - 1) / 2) * 100}%` }}
+              style={{ width: isQuiz ? (step >= 3 ? "100%" : "0%") : `${((step - 1) / 2) * 100}%` }}
             />
 
             {/* Step 1 Node */}
@@ -641,35 +723,37 @@ const RegistrationPage: React.FC = () => {
               <span className={`text-[10px] font-bold mt-2 uppercase tracking-wide
                 ${step >= 1 ? "text-blue-600" : "text-slate-400"}
               `}>
-                Group Info
+                {isQuiz ? "Participant Details" : "Group Info"}
               </span>
             </div>
 
-            {/* Step 2 Node */}
-            <div className="flex flex-col items-center">
-              <div className={`w-8 h-8 rounded-full border-2 font-black text-xs flex items-center justify-center shadow-sm transition-all duration-300
-                ${step > 2 ? "bg-blue-600 border-blue-600 text-white" : step === 2 ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-400"}
-              `}>
-                {step > 2 ? <Check className="h-4 w-4 stroke-[3]" /> : 2}
+            {/* Step 2 Node (only for non-quiz events) */}
+            {!isQuiz && (
+              <div className="flex flex-col items-center">
+                <div className={`w-8 h-8 rounded-full border-2 font-black text-xs flex items-center justify-center shadow-sm transition-all duration-300
+                  ${step > 2 ? "bg-blue-600 border-blue-600 text-white" : step === 2 ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-400"}
+                `}>
+                  {step > 2 ? <Check className="h-4 w-4 stroke-[3]" /> : 2}
+                </div>
+                <span className={`text-[10px] font-bold mt-2 uppercase tracking-wide
+                  ${step >= 2 ? "text-blue-600" : "text-slate-400"}
+                `}>
+                  Group Members
+                </span>
               </div>
-              <span className={`text-[10px] font-bold mt-2 uppercase tracking-wide
-                ${step >= 2 ? "text-blue-600" : "text-slate-400"}
-              `}>
-                Group Members
-              </span>
-            </div>
+            )}
 
-            {/* Step 3 Node */}
+            {/* Step 3 Node (or Step 2 for Quiz) */}
             <div className="flex flex-col items-center">
               <div className={`w-8 h-8 rounded-full border-2 font-black text-xs flex items-center justify-center shadow-sm transition-all duration-300
                 ${step >= 3 ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-400"}
               `}>
-                3
+                {isQuiz ? 2 : 3}
               </div>
               <span className={`text-[10px] font-bold mt-2 uppercase tracking-wide
                 ${step >= 3 ? "text-blue-600" : "text-slate-400"}
               `}>
-                Review & Submit
+                {isQuiz ? "Review & Confirm" : "Review & Submit"}
               </span>
             </div>
           </div>
@@ -677,11 +761,19 @@ const RegistrationPage: React.FC = () => {
 
         {/* Title */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-slate-800 tracking-tight">Event Registration</h1>
+          <h1 className="text-3xl font-black text-slate-800 tracking-tight">
+            {isQuiz ? "Quiz Registration" : "Event Registration"}
+          </h1>
           <p className="text-slate-500 text-xs sm:text-sm mt-1.5 font-semibold">
-            {step === 1 && "Complete the first step to secure your spot. Start by forming your innovation group."}
-            {step === 2 && "Add the members who will be joining your group."}
-            {step === 3 && "Review all registration details before committing final submission details."}
+            {isQuiz
+              ? step === 1
+                ? "Enter your details to register for the quiz."
+                : "Review your information before confirming your quiz registration."
+              : step === 1
+                ? "Complete the first step to secure your spot. Start by forming your innovation group."
+                : step === 2
+                  ? "Add the members who will be joining your group."
+                  : "Review all registration details before committing final submission details."}
           </p>
         </div>
 
@@ -690,118 +782,220 @@ const RegistrationPage: React.FC = () => {
             {/* Left Main Workspace (span 8) */}
             <div className="lg:col-span-8 space-y-6">
               <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6">
-                {event.maxTeamSize > 1 && (
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Group Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Neural Nexus Alpha"
-                      value={groupName}
-                      onChange={(e) => setGroupName(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-855 bg-slate-50/30 focus:bg-white transition-all"
-                    />
+                {isQuiz ? (
+                  /* Quiz Single Participant Form */
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Full Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Enter full name"
+                        value={leadName}
+                        onChange={(e) => setLeadName(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Regd No / Roll No <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 21B01A1201 / Roll No"
+                        value={leadStudentId}
+                        onChange={(e) => setLeadStudentId(e.target.value)}
+                        className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
+                          leadStudentId.includes("@") ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
+                        }`}
+                      />
+                      {leadStudentId.includes("@") && (
+                        <span className="text-[10px] text-red-500 font-semibold mt-1 block">Regd No / Roll No should not contain '@'</span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          College Mail <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="e.g. student@college.edu.in or rollno@university.ac.in"
+                          value={leadCollegeEmail}
+                          onChange={(e) => setLeadCollegeEmail(e.target.value)}
+                          className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
+                            leadCollegeEmail.trim().toLowerCase().endsWith("@gmail.com") ||
+                            leadCollegeEmail.trim().toLowerCase().endsWith("@googlemail.com")
+                              ? "border-red-400 focus:border-red-500 bg-red-50/10"
+                              : "border-slate-200 focus:border-blue-500"
+                          }`}
+                        />
+                        {leadCollegeEmail.trim().toLowerCase().endsWith("@gmail.com") || leadCollegeEmail.trim().toLowerCase().endsWith("@googlemail.com") ? (
+                          <span className="text-[10px] text-red-500 font-semibold mt-1 block">
+                            @gmail.com is not allowed here. Please enter your college / institutional email ID. Use the Personal Email field below for Gmail.
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium mt-1 block">
+                            Accepts any college / institutional email domain (except @gmail.com)
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          Personal Mail <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="personal@gmail.com"
+                          value={leadPersonalEmail}
+                          onChange={(e) => setLeadPersonalEmail(e.target.value)}
+                          className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
+                            leadPersonalEmail.trim() && !EMAIL_REGEX.test(leadPersonalEmail.trim()) ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
+                          }`}
+                        />
+                        {leadPersonalEmail.trim() && !EMAIL_REGEX.test(leadPersonalEmail.trim()) ? (
+                          <span className="text-[10px] text-red-500 font-semibold mt-1 block">Enter a valid personal email (e.g. name@gmail.com)</span>
+                        ) : (
+                          <span className="text-[10px] text-blue-600 font-bold mt-1 block">Used for official updates & notifications</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Phone Number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="e.g. 9876543210"
+                        value={leadPhone}
+                        onChange={(e) => setLeadPhone(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                      />
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    {event.maxTeamSize > 1 && (
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Group Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Neural Nexus Alpha"
+                          value={groupName}
+                          onChange={(e) => setGroupName(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-855 bg-slate-50/30 focus:bg-white transition-all"
+                        />
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Name</label>
+                        <input
+                          type="text"
+                          placeholder="Full legal name"
+                          value={leadName}
+                          onChange={(e) => setLeadName(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Student ID</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Roll No / Student ID"
+                          value={leadStudentId}
+                          onChange={(e) => setLeadStudentId(e.target.value)}
+                          className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
+                            leadStudentId.includes("@") ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
+                          }`}
+                        />
+                        {leadStudentId.includes("@") && (
+                          <span className="text-[10px] text-red-500 font-semibold mt-1 block">Student ID should not contain '@'</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          Team Lead College Email <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="e.g. student@college.edu.in or rollno@university.ac.in"
+                          value={leadCollegeEmail}
+                          onChange={(e) => setLeadCollegeEmail(e.target.value)}
+                          className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
+                            leadCollegeEmail.trim().toLowerCase().endsWith("@gmail.com") ||
+                            leadCollegeEmail.trim().toLowerCase().endsWith("@googlemail.com")
+                              ? "border-red-400 focus:border-red-500 bg-red-50/10"
+                              : "border-slate-200 focus:border-blue-500"
+                          }`}
+                        />
+                        {leadCollegeEmail.trim().toLowerCase().endsWith("@gmail.com") || leadCollegeEmail.trim().toLowerCase().endsWith("@googlemail.com") ? (
+                          <span className="text-[10px] text-red-500 font-semibold mt-1 block">
+                            @gmail.com is not allowed here. Please enter your college / institutional email ID. Use the Personal Email field below for Gmail.
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium mt-1 block">
+                            Accepts any college / institutional email domain (except @gmail.com)
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          Team Lead Personal Email <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          placeholder="personal@gmail.com"
+                          value={leadPersonalEmail}
+                          onChange={(e) => setLeadPersonalEmail(e.target.value)}
+                          className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
+                            leadPersonalEmail.trim() && !EMAIL_REGEX.test(leadPersonalEmail.trim()) ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
+                          }`}
+                        />
+                        {leadPersonalEmail.trim() && !EMAIL_REGEX.test(leadPersonalEmail.trim()) ? (
+                          <span className="text-[10px] text-red-500 font-semibold mt-1 block">Enter a valid personal email (e.g. name@gmail.com)</span>
+                        ) : (
+                          <span className="text-[10px] text-blue-600 font-bold mt-1 block">Used for official updates, notifications & login credentials</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          Lead Phone Number <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="tel"
+                          placeholder="1234567890"
+                          value={leadPhone}
+                          onChange={(e) => setLeadPhone(e.target.value)}
+                          className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
+                        />
+                      </div>
+                    </div>
+                  </>
                 )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Name</label>
-                    <input
-                      type="text"
-                      placeholder="Full legal name"
-                      value={leadName}
-                      onChange={(e) => setLeadName(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Student ID</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Roll No / Student ID"
-                      value={leadStudentId}
-                      onChange={(e) => setLeadStudentId(e.target.value)}
-                      className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
-                        leadStudentId.includes("@") ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
-                      }`}
-                    />
-                    {leadStudentId.includes("@") && (
-                      <span className="text-[10px] text-red-500 font-semibold mt-1 block">Student ID should not contain '@'</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      Team Lead College Email <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="e.g. student@college.edu.in or rollno@university.ac.in"
-                      value={leadCollegeEmail}
-                      onChange={(e) => setLeadCollegeEmail(e.target.value)}
-                      className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
-                        leadCollegeEmail.trim().toLowerCase().endsWith("@gmail.com") ||
-                        leadCollegeEmail.trim().toLowerCase().endsWith("@googlemail.com")
-                          ? "border-red-400 focus:border-red-500 bg-red-50/10"
-                          : "border-slate-200 focus:border-blue-500"
-                      }`}
-                    />
-                    {leadCollegeEmail.trim().toLowerCase().endsWith("@gmail.com") || leadCollegeEmail.trim().toLowerCase().endsWith("@googlemail.com") ? (
-                      <span className="text-[10px] text-red-500 font-semibold mt-1 block">
-                        @gmail.com is not allowed here. Please enter your college / institutional email ID. Use the Personal Email field below for Gmail.
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-slate-400 font-medium mt-1 block">
-                        Accepts any college / institutional email domain (except @gmail.com)
-                      </span>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      Team Lead Personal Email <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      placeholder="personal@gmail.com"
-                      value={leadPersonalEmail}
-                      onChange={(e) => setLeadPersonalEmail(e.target.value)}
-                      className={`w-full px-4 py-2.5 border rounded-2xl focus:outline-none font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all ${
-                        leadPersonalEmail.trim() && !EMAIL_REGEX.test(leadPersonalEmail.trim()) ? "border-red-400 focus:border-red-500 bg-red-50/10" : "border-slate-200 focus:border-blue-500"
-                      }`}
-                    />
-                    {leadPersonalEmail.trim() && !EMAIL_REGEX.test(leadPersonalEmail.trim()) ? (
-                      <span className="text-[10px] text-red-500 font-semibold mt-1 block">Enter a valid personal email (e.g. name@gmail.com)</span>
-                    ) : (
-                      <span className="text-[10px] text-blue-600 font-bold mt-1 block">Used for official updates, notifications & login credentials</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                      Lead Phone Number <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      placeholder="1234567890"
-                      value={leadPhone}
-                      onChange={(e) => setLeadPhone(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-850 bg-slate-50/30 focus:bg-white transition-all"
-                    />
-                  </div>
-                </div>
 
                 <div className="pt-4 flex justify-end">
                   <Button
                     variant="gradient"
                     onClick={() => {
                       if (validateStep1()) {
-                        if (event.maxTeamSize > 1) {
+                        if (isQuiz) {
+                          setStep(3); // Directly redirect to the review page!
+                        } else if (event.maxTeamSize > 1) {
                           setStep(2);
                         } else {
                           setStep(3); // Skip step 2 for individual events
@@ -810,7 +1004,7 @@ const RegistrationPage: React.FC = () => {
                     }}
                     className="rounded-2xl px-6 py-3 font-bold text-xs flex items-center gap-1.5"
                   >
-                    Proceed to Member Details
+                    {isQuiz ? "Proceed to Review" : "Proceed to Member Details"}
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -842,7 +1036,27 @@ const RegistrationPage: React.FC = () => {
                 </div>
               </div>
 
-              {event.maxTeamSize > 1 && (
+              {isQuiz ? (
+                <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50">
+                    Registration Info
+                  </h3>
+                  <div className="space-y-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-purple-50 text-purple-600 border border-purple-100 flex items-center justify-center shrink-0">
+                        <Check className="h-3 w-3 stroke-[2.5]" />
+                      </div>
+                      <span className="text-xs text-slate-650 font-semibold">Participation: <span className="font-extrabold text-slate-800">Individual Participant</span></span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
+                        <Check className="h-3 w-3 stroke-[2.5]" />
+                      </div>
+                      <span className="text-xs text-slate-650 font-semibold">Entry: <span className="font-extrabold text-emerald-600">Free Registration</span></span>
+                    </div>
+                  </div>
+                </div>
+              ) : event.maxTeamSize > 1 && (
                 <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-4 text-left">
                   <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider pb-3 border-b border-slate-50">
                     Requirements
@@ -1079,54 +1293,63 @@ const RegistrationPage: React.FC = () => {
             {/* Left Column (span 8): Group Identity + Team Roster */}
             <div className="lg:col-span-8 space-y-6">
 
-              {/* Group Identity Card */}
+              {/* Identity Card */}
               <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6 text-left">
                 <div className="flex justify-between items-center border-b border-slate-55 pb-3">
                   <h3 className="text-sm font-black text-slate-800 tracking-tight flex items-center gap-2">
                     <Users className="h-4.5 w-4.5 text-blue-600" />
-                    Group Identity
+                    {isQuiz ? "Participant Details" : "Group Identity"}
                   </h3>
                   <button
                     onClick={() => setStep(1)}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-bold"
+                    className="text-xs text-blue-600 hover:text-blue-700 font-bold cursor-pointer"
                   >
                     Edit
                   </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-y-5 gap-x-8">
-                  {event.maxTeamSize > 1 && (
+                  {!isQuiz && event.maxTeamSize > 1 && (
                     <div className="space-y-1">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Group Name</span>
                       <span className="text-xs font-black text-slate-800 block">{groupName || "Individual RSVP"}</span>
                     </div>
                   )}
                   <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Team Lead Name</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {isQuiz ? "Full Name" : "Team Lead Name"}
+                    </span>
                     <span className="text-xs font-black text-slate-800 block">{leadName}</span>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Lead College Email</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {isQuiz ? "Regd No / Roll No" : "Lead Student ID"}
+                    </span>
+                    <span className="text-xs font-black text-slate-800 block">{leadStudentId}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {isQuiz ? "College Mail" : "Lead College Email"}
+                    </span>
                     <span className="text-xs font-black text-slate-800 block">{leadCollegeEmail}</span>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Lead Personal Email (For Updates)</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {isQuiz ? "Personal Mail" : "Lead Personal Email (For Updates)"}
+                    </span>
                     <span className="text-xs font-black text-blue-600 block">{leadPersonalEmail}</span>
                   </div>
                   <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Lead Phone Number</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      {isQuiz ? "Phone Number" : "Lead Phone Number"}
+                    </span>
                     <span className="text-xs font-black text-slate-800 block">{leadPhone}</span>
                   </div>
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Lead Student ID</span>
-                    <span className="text-xs font-black text-slate-800 block">{leadStudentId}</span>
-                  </div>
-
                 </div>
               </div>
 
-              {/* Team Roster Card */}
-              {members.length > 0 && (
+              {/* Team Roster Card (Only for non-quiz with members) */}
+              {!isQuiz && members.length > 0 && (
                 <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-6 text-left">
                   <div className="flex justify-between items-center border-b border-slate-55 pb-3">
                     <h3 className="text-sm font-black text-slate-800 tracking-tight flex items-center gap-2">
@@ -1389,20 +1612,20 @@ const RegistrationPage: React.FC = () => {
 
                   <div className="pt-3 border-t border-slate-100/80 space-y-2 text-[11px] font-bold text-slate-400">
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-semibold">Pricing Model</span>
+                      <span className="text-slate-400 font-semibold">{isQuiz ? "Event Category" : "Pricing Model"}</span>
                       <span className="text-slate-800 font-bold">
-                        {isPricingPerTeam ? `₹${event.registrationFee} (Flat Fee per Team)` : `₹${perPersonFee} per Person`}
+                        {isQuiz ? "Quiz Competition" : isPricingPerTeam ? `₹${event.registrationFee} (Flat Fee per Team)` : `₹${perPersonFee} per Person`}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-semibold">Total Team Size</span>
-                      <span className="text-slate-800 font-bold">{members.length + 1} Attendees</span>
+                      <span className="text-slate-400 font-semibold">{isQuiz ? "Participation" : "Total Team Size"}</span>
+                      <span className="text-slate-800 font-bold">{isQuiz ? "Individual (1 Attendee)" : `${members.length + 1} Attendees`}</span>
                     </div>
 
                     <div className="flex justify-between items-center pt-2 border-t border-slate-100 text-xs">
                       <span className="text-slate-700 font-black">Total Registration Fee</span>
                       <span className="font-black text-sm text-emerald-600">
-                        {totalRegistrationFee > 0 ? `₹${totalRegistrationFee}` : "₹0 (100% Free)"}
+                        {isQuiz || totalRegistrationFee === 0 ? "₹0 (100% Free Entry)" : `₹${totalRegistrationFee}`}
                       </span>
                     </div>
                   </div>
@@ -1475,27 +1698,27 @@ const RegistrationPage: React.FC = () => {
                     variant="gradient"
                     onClick={handleSubmit}
                     disabled={submitting || !agreedTerms || !confirmedInfo}
-                    className="w-full rounded-2xl py-3 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-blue-600/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full rounded-2xl py-3 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-blue-600/10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {submitting ? (
                       <>
                         <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                        Submitting...
+                        {isQuiz ? "Confirming Registration..." : "Submitting..."}
                       </>
                     ) : (
                       <>
-                        Submit Registration
-                        <Send className="h-4 w-4" />
+                        {isQuiz ? "Confirm Registration" : "Submit Registration"}
+                        {isQuiz ? <Check className="h-4 w-4 stroke-[3]" /> : <Send className="h-4 w-4" />}
                       </>
                     )}
                   </Button>
 
                   <button
-                    onClick={() => setStep(2)}
-                    className="w-full py-2.5 bg-white border border-slate-200 text-slate-550 hover:bg-slate-50 font-bold rounded-2xl text-[10px] flex items-center justify-center gap-1.5 transition-colors"
+                    onClick={() => setStep(isQuiz ? 1 : 2)}
+                    className="w-full py-2.5 bg-white border border-slate-200 text-slate-550 hover:bg-slate-50 font-bold rounded-2xl text-[10px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <ArrowLeft className="h-4 w-4" />
-                    Back to Members
+                    {isQuiz ? "Back to Edit Details" : "Back to Members"}
                   </button>
                 </div>
               </div>

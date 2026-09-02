@@ -30,7 +30,7 @@ import galleryCollabImg from "../../assets/images/gallery_collab.png";
 interface EventItem {
   id: string;
   title: string;
-  category: "WORKSHOPS" | "HACKATHONS" | "LECTURES";
+  category: "WORKSHOPS" | "HACKATHONS" | "LECTURES" | "QUIZ" | string;
   status: "Draft" | "Active" | "Opened" | "Completed" | "Archived";
   date: string;
   time?: string;
@@ -63,7 +63,7 @@ const OrgEventsPage: React.FC = () => {
 
   // Form States (Create/Edit)
   const [formTitle, setFormTitle] = useState("");
-  const [formCategory, setFormCategory] = useState<"Workshop" | "Hackathon" | "Seminar">("Workshop");
+  const [formCategory, setFormCategory] = useState<"Workshop" | "Hackathon" | "Seminar" | "Quiz">("Workshop");
   const [formRole, setFormRole] = useState("Lead Coordinator");
   const [formDate, setFormDate] = useState("");
   const [formStartTime, setFormStartTime] = useState("10:00 AM");
@@ -179,7 +179,8 @@ const OrgEventsPage: React.FC = () => {
     setFormTitle(event.title);
     setFormCategory(
       event.category === "WORKSHOPS" ? "Workshop" :
-      event.category === "HACKATHONS" ? "Hackathon" : "Seminar"
+      event.category === "HACKATHONS" ? "Hackathon" :
+      event.category === "QUIZ" ? "Quiz" : "Seminar"
     );
     setFormRole(event.role || "Lead Coordinator");
     setFormDate(event.date || "");
@@ -203,7 +204,8 @@ const OrgEventsPage: React.FC = () => {
 
     const mappedCategory = 
       formCategory === "Workshop" ? "WORKSHOPS" :
-      formCategory === "Hackathon" ? "HACKATHONS" : "LECTURES";
+      formCategory === "Hackathon" ? "HACKATHONS" :
+      formCategory === "Quiz" ? "QUIZ" : "LECTURES";
 
     let displayDate = formDate;
     if (formDate.includes("-")) {
@@ -369,9 +371,11 @@ const OrgEventsPage: React.FC = () => {
                       ? "bg-rose-500/85 text-white" 
                       : event.category === "LECTURES" 
                       ? "bg-amber-500/85 text-white" 
+                      : event.category === "QUIZ"
+                      ? "bg-purple-500/85 text-white"
                       : "bg-aether-blue-600/85 text-white"
                   }`}>
-                    {event.category === "WORKSHOPS" ? "Workshop" : event.category === "HACKATHONS" ? "Hackathon" : "Seminar"}
+                    {event.category === "WORKSHOPS" ? "Workshop" : event.category === "HACKATHONS" ? "Hackathon" : event.category === "QUIZ" ? "Quiz" : "Seminar"}
                   </span>
 
                   {/* Completed Badge (Top-Right) */}
@@ -516,6 +520,7 @@ const OrgEventsPage: React.FC = () => {
                     <option value="Workshop">Workshop</option>
                     <option value="Hackathon">Hackathon</option>
                     <option value="Seminar">Seminar</option>
+                    <option value="Quiz">Quiz</option>
                   </select>
                 </div>
                 <div className="space-y-1">
