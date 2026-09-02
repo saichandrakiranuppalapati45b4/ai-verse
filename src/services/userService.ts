@@ -1,4 +1,15 @@
 import { supabase } from "../config/supabase";
+import { db } from "../config/firebase";
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  deleteDoc, 
+  updateDoc, 
+  query, 
+  where, 
+  increment 
+} from "firebase/firestore";
 
 export interface SupabaseUser {
   id: string;
@@ -255,5 +266,162 @@ export const userService = {
     }
 
     return data || [];
+  },
+
+  /**
+   * Complete cascade deletion of a participant / team registration across BOTH Firebase and Supabase:
+   * 1. Supabase: Deletes from auth.users (cascades sessions/tokens) and public.users by emails and registration_id.
+   * 2. Firebase Firestore:
+   *    - Deletes doc from 'registrations/{id}'
+   *    - Deletes matching documents in 'users' collection (by registrationId, teamEmail, or teamLeadEmail)
+   *    - Deletes matching quiz documents in 'quizSubmissions', 'quizSessions', 'quizAnswers'
+   *    - Deletes matching documents in 'attendance' and 'certificates'
+   *    - Decrements 'currentReg' counter on 'events/{eventId}'
+   */
+  async deleteParticipantCascade(reg: {
+    id: string;
+    eventId?: string;
+    teamSize?: number;
+    teamEmail?: string;
+    teamLeadEmail?: string;
+    teamLeadPersonalEmail?: string;
+    teamLeadCollegeEmail?: string;
+    groupName?: string;
+    members?: Array<{ email?: string }>;
+  }): Promise<{ success: boolean; supabaseResult?: any }> {
+    const emailsToPurge = new Set<string>();
+
+    if (reg.teamEmail) emailsToPurge.add(reg.teamEmail.toLowerCase().trim());
+    if (reg.teamLeadEmail) emailsToPurge.add(reg.teamLeadEmail.toLowerCase().trim());
+    if (reg.teamLeadPersonalEmail) emailsToPurge.add(reg.teamLeadPersonalEmail.toLowerCase().trim());
+    if (reg.teamLeadCollegeEmail) emailsToPurge.add(reg.teamLeadCollegeEmail.toLowerCase().trim());
+
+    if (Array.isArray(reg.members)) {
+      reg.members.forEach((m) => {
+        if (m.email) emailsToPurge.add(m.email.toLowerCase().trim());
+      });
+    }
+
+    if (reg.groupName && reg.groupName !== "Individual RSVP") {
+      const cleanGroup = reg.groupName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (cleanGroup) {
+        emailsToPurge.add(`${cleanGroup}@aiverse.in`);
+      }
+    }
+
+    const emailList = Array.from(emailsToPurge).filter(Boolean);
+    let supabaseResult: any = null;
+
+    // 1. SUPABASE CASCADE DELETION
+    try {
+      // Call PostgreSQL RPC function to delete from auth.users & public.users
+      const { data, error } = await supabase.rpc("delete_participant_cascade", {
+        p_reg_id: reg.id,
+        p_emails: emailList,
+      });
+
+      if (error) {
+        console.warn("[userService] Supabase RPC delete_participant_cascade notice:", error);
+      } else {
+        supabaseResult = data;
+      }
+    } catch (supaErr) {
+      console.warn("[userService] Supabase RPC deletion error:", supaErr);
+    }
+
+    // Direct fallback deletes on public.users
+    try {
+      await supabase.from("users").delete().eq("registration_id", reg.id);
+    } catch (e) {}
+    try {
+      await supabase.from("users").delete().eq("id", reg.id);
+    } catch (e) {}
+    for (const em of emailList) {
+      try {
+        await supabase.from("users").delete().eq("email", em);
+      } catch (e) {}
+      try {
+        await supabase.from("users").delete().eq("personal_email", em);
+      } catch (e) {}
+    }
+
+    // 2. FIREBASE FIRESTORE CASCADE DELETION
+    try {
+      // (a) Delete registration doc
+      if (reg.id) {
+        await deleteDoc(doc(db, "registrations", reg.id));
+      }
+
+      // (b) Delete Firestore user docs for this participant
+      try {
+        const usersRef = collection(db, "users");
+        
+        // Find by registrationId
+        const qByRegId = query(usersRef, where("registrationId", "==", reg.id));
+        const snapByRegId = await getDocs(qByRegId);
+        for (const d of snapByRegId.docs) {
+          await deleteDoc(doc(db, "users", d.id));
+        }
+
+        // Also delete by email if participant role
+        for (const em of emailList) {
+          const qByEmail = query(usersRef, where("email", "==", em));
+          const snapByEmail = await getDocs(qByEmail);
+          for (const d of snapByEmail.docs) {
+            const data = d.data();
+            const role = (data.role || data.roleType || "").toLowerCase();
+            if (role === "participant" || role.includes("participant") || data.registrationId === reg.id) {
+              await deleteDoc(doc(db, "users", d.id));
+            }
+          }
+        }
+      } catch (fsUserErr) {
+        console.warn("[userService] Firestore users delete notice:", fsUserErr);
+      }
+
+      // (c) Delete Quiz Submissions, Sessions, and Answers
+      const quizCollections = ["quizSubmissions", "quizSessions", "quizAnswers"];
+      for (const colName of quizCollections) {
+        try {
+          const colRef = collection(db, colName);
+          const snap = await getDocs(query(colRef, where("registrationId", "==", reg.id)));
+          for (const d of snap.docs) {
+            await deleteDoc(doc(db, colName, d.id));
+          }
+        } catch (qzErr) {
+          console.warn(`[userService] Notice deleting ${colName}:`, qzErr);
+        }
+      }
+
+      // (d) Delete Attendance & Certificates
+      for (const colName of ["attendance", "certificates"]) {
+        try {
+          const colRef = collection(db, colName);
+          const snap = await getDocs(query(colRef, where("registrationId", "==", reg.id)));
+          for (const d of snap.docs) {
+            await deleteDoc(doc(db, colName, d.id));
+          }
+        } catch (attErr) {
+          console.warn(`[userService] Notice deleting ${colName}:`, attErr);
+        }
+      }
+
+      // (e) Decrement Event Registration Counter
+      if (reg.eventId) {
+        try {
+          const size = Math.max(1, Number(reg.teamSize) || 1);
+          await updateDoc(doc(db, "events", reg.eventId), {
+            currentReg: increment(-size)
+          });
+        } catch (e) {
+          console.warn("[userService] Error updating event counter:", e);
+        }
+      }
+
+      return { success: true, supabaseResult };
+    } catch (fsErr) {
+      console.error("[userService] Error during Firestore cascade deletion:", fsErr);
+      return { success: false, supabaseResult };
+    }
   },
 };

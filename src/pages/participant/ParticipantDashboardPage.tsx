@@ -345,7 +345,7 @@ export const ParticipantDashboardPage: React.FC = () => {
                   </div>
 
                   <h1 className="text-2xl sm:text-3xl font-black text-[#0F172A] tracking-tight">
-                    Welcome back, {(leaderName || user?.name || "Participant").split(" ")[0]}! 👋
+                    Welcome back, {teamName || user?.teamName || leaderName || user?.name || "Participant"}! 👋
                   </h1>
                   <p className="text-xs sm:text-sm text-slate-500 font-medium max-w-xl">
                     Here is your live competition status, assigned assessments, and project deliverables for <span className="font-bold text-slate-700">{eventTitle}</span>.
@@ -490,7 +490,7 @@ export const ParticipantDashboardPage: React.FC = () => {
                     <p className="text-xs font-bold text-emerald-700 mt-0.5 truncate">Team: {teamName}</p>
                   </div>
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-semibold text-slate-500">
-                    <span>Lead: {leaderName.split(" ")[0]}</span>
+                    <span className="truncate max-w-[120px]" title={leaderName}>Lead: {leaderName}</span>
                     <button 
                       onClick={() => setActiveTab("review-team")}
                       className="font-extrabold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"

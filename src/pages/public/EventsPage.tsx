@@ -6,8 +6,7 @@ import {
   Calendar, 
   MapPin, 
   TrendingUp, 
-  Lightbulb,
-  Users
+  Lightbulb
 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
@@ -336,10 +335,6 @@ const EventsPage: React.FC = () => {
                           <span className="flex items-center gap-1.5">
                             <MapPin className="h-3.5 w-3.5 text-slate-400" />
                             {event.location}
-                          </span>
-                          <span className="flex items-center gap-1.5">
-                            <Users className="h-3.5 w-3.5 text-slate-400" />
-                            {event.currentReg} Registered
                           </span>
                         </div>
 
