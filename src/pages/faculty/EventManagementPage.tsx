@@ -1697,12 +1697,6 @@ const EventManagementPage: React.FC = () => {
 
         // Also revoke in users collection & users_by_phone
         try {
-          const isQuiz = Boolean(
-            eventAccessEvent?.category === "QUIZ" ||
-            eventAccessEvent?.category === "Quiz" ||
-            eventAccessEvent?.category?.toLowerCase()?.includes("quiz") ||
-            reg.isQuiz === true
-          );
           const targetEmails = [
             generateTeamEmail(reg),
             reg.teamEmail,
