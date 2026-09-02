@@ -11,6 +11,7 @@ export interface SendResendEmailParams {
   text?: string;
   from?: string;
   reply_to?: string | string[];
+  headers?: Record<string, string>;
 }
 
 const sanitizeEmailField = (val?: string | string[], fallback: string = ""): string => {
@@ -27,6 +28,7 @@ export const sendResendEmail = async ({
   text,
   from,
   reply_to,
+  headers,
 }: SendResendEmailParams): Promise<{ success: boolean; data?: any; error?: string }> => {
   const recipients = Array.isArray(to) ? to : [to];
   const defaultFrom = (import.meta.env.VITE_RESEND_FROM_EMAIL as string) || "AI Verse <events@aiversevitb.dpdns.org>";
@@ -34,6 +36,14 @@ export const sendResendEmail = async ({
 
   const senderEmail = sanitizeEmailField(from, defaultFrom);
   const replyToEmail = sanitizeEmailField(reply_to, defaultReplyTo);
+
+  // Anti-spam transactional headers for optimal Primary Inbox delivery
+  const emailHeaders: Record<string, string> = {
+    "Auto-Submitted": "auto-generated",
+    "X-Auto-Response-Suppress": "All",
+    "X-Entity-Ref-ID": `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    ...(headers || {})
+  };
 
   try {
     const response = await fetch("/api/send-email", {
@@ -45,7 +55,8 @@ export const sendResendEmail = async ({
         html, 
         text, 
         from: senderEmail, 
-        reply_to: replyToEmail 
+        reply_to: replyToEmail,
+        headers: emailHeaders,
       }),
     });
 

@@ -26,7 +26,7 @@ export default defineConfig(({ mode }) => {
             req.on('data', (chunk: any) => { body += chunk; });
             req.on('end', async () => {
               try {
-                const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
+                const { to, subject, html, text, from, reply_to, headers: customHeaders } = JSON.parse(body || '{}');
                 const RESEND_API_KEY = resendApiKey;
                 if (!RESEND_API_KEY) {
                   res.statusCode = 500;
@@ -50,6 +50,9 @@ export default defineConfig(({ mode }) => {
                 };
                 if (text) {
                   emailPayload.text = text;
+                }
+                if (customHeaders && typeof customHeaders === "object") {
+                  emailPayload.headers = customHeaders;
                 }
 
                 const response = await fetch("https://api.resend.com/emails", {
@@ -94,7 +97,7 @@ export default defineConfig(({ mode }) => {
             req.on('data', (chunk: any) => { body += chunk; });
             req.on('end', async () => {
               try {
-                const { to, subject, html, text, from, reply_to } = JSON.parse(body || '{}');
+                const { to, subject, html, text, from, reply_to, headers: customHeaders } = JSON.parse(body || '{}');
                 const RESEND_API_KEY = resendApiKey;
                 if (!RESEND_API_KEY) {
                   res.statusCode = 500;
@@ -118,6 +121,9 @@ export default defineConfig(({ mode }) => {
                 };
                 if (text) {
                   emailPayload.text = text;
+                }
+                if (customHeaders && typeof customHeaders === "object") {
+                  emailPayload.headers = customHeaders;
                 }
 
                 const response = await fetch("https://api.resend.com/emails", {

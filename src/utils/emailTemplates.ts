@@ -66,6 +66,9 @@ export function buildRegistrationConfirmationEmail(data: RegistrationEmailData):
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
   <title>${subject}</title>
   <style type="text/css">
     body { margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; }
@@ -74,9 +77,8 @@ export function buildRegistrationConfirmationEmail(data: RegistrationEmailData):
   </style>
 </head>
 <body style="margin: 0; padding: 32px 16px; background-color: #f1f5f9;">
-  <div style="display: none; max-height: 0px; overflow: hidden;">
+  <div style="display: none; font-size: 1px; color: #f1f5f9; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
     Your registration for ${eventTitle} is confirmed. View your entry pass and event details.
-    &#847; &zwnj; &nbsp; &#8199; &shy;
   </div>
 
   <table width="100%" border="0" cellspacing="0" cellpadding="0">
@@ -250,6 +252,9 @@ export function buildTeamCredentialsEmail(data: CredentialsEmailData): {
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
   <title>${subject}</title>
 </head>
 <body style="margin: 0; padding: 32px 16px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
@@ -384,13 +389,16 @@ export function buildRoundPromotionEmail(data: PromotionEmailData): {
 
   const displayTeam = groupName && groupName !== "Individual RSVP" ? groupName : (teamLeadName || "Participant");
   const stageTitle = roundName || `Stage ${toRound}`;
-  const subject = `🎉 Congratulations! Team ${displayTeam} Promoted to Round ${toRound} | ${eventTitle}`;
+  const subject = `Round ${toRound} Advancement: Team ${displayTeam} | ${eventTitle}`;
 
   const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
   <title>${subject}</title>
   <style type="text/css">
     body { margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; }
@@ -399,9 +407,8 @@ export function buildRoundPromotionEmail(data: PromotionEmailData): {
   </style>
 </head>
 <body style="margin: 0; padding: 32px 16px; background-color: #f1f5f9;">
-  <div style="display: none; max-height: 0px; overflow: hidden;">
-    Congratulations! Team ${displayTeam} has successfully qualified and been promoted to Round ${toRound} in ${eventTitle}.
-    &#847; &zwnj; &nbsp; &#8199; &shy;
+  <div style="display: none; font-size: 1px; color: #f1f5f9; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+    Team ${displayTeam} has successfully qualified and been promoted to Round ${toRound} in ${eventTitle}.
   </div>
 
   <table width="100%" border="0" cellspacing="0" cellpadding="0">
@@ -597,13 +604,16 @@ export function buildWelcomeMemberEmail(data: WelcomeMemberEmailData): {
     portalUrl = "https://aiversevitb.dpdns.org/login"
   } = data;
 
-  const subject = `Welcome to AI Verse, ${name}! 👋`;
+  const subject = `Welcome to AI Verse, ${name}`;
 
   const html = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light" />
+  <meta name="supported-color-schemes" content="light" />
   <title>${subject}</title>
   <style type="text/css">
     body { margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; }
@@ -612,9 +622,8 @@ export function buildWelcomeMemberEmail(data: WelcomeMemberEmailData): {
   </style>
 </head>
 <body style="margin: 0; padding: 40px 16px; background-color: #f8fafc;">
-  <div style="display: none; max-height: 0px; overflow: hidden;">
+  <div style="display: none; font-size: 1px; color: #f8fafc; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
     Welcome to AI Verse! We are thrilled to welcome you to the team as our ${role}.
-    &#847; &zwnj; &nbsp; &#8199; &shy;
   </div>
 
   <table width="100%" border="0" cellspacing="0" cellpadding="0">

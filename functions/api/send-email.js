@@ -21,7 +21,7 @@ export async function onRequestPost(context) {
     );
   }
 
-  const { to, subject, html, text, from, reply_to } = body;
+  const { to, subject, html, text, from, reply_to, headers: customHeaders } = body;
 
   if (!to || !subject || !html) {
     return Response.json(
@@ -46,6 +46,9 @@ export async function onRequestPost(context) {
   };
   if (text) {
     emailPayload.text = text;
+  }
+  if (customHeaders && typeof customHeaders === "object") {
+    emailPayload.headers = customHeaders;
   }
 
   try {
