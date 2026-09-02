@@ -288,6 +288,60 @@ const TeamPage: React.FC = () => {
     return 5;
   };
 
+  // Rank within any department / role: 1. Lead -> 2. Co-Lead -> 3. Associate -> 4. Other/Member
+  const getSubRoleRank = (member: MemberData): number => {
+    const pos = (member.position || "").toLowerCase().trim();
+    const role = (member.role || "").toLowerCase().trim();
+    const roleType = (member.roleType || "").toLowerCase().trim();
+
+    // Priority 1: Direct exact match on position/sub_role
+    if (pos === "lead" || pos === "head" || pos === "student lead" || pos === "team lead") return 1;
+    if (pos === "co-lead" || pos === "co lead" || pos === "colead" || pos === "co-head" || pos === "co head" || pos === "vice lead" || pos === "vice-lead") return 2;
+    if (pos === "associate" || pos === "assoc" || pos === "associate lead" || pos === "core member") return 3;
+
+    // Priority 2: Check full combined string
+    const combined = `${pos} ${role} ${roleType}`.toLowerCase().trim();
+
+    // Co-Lead must precede generic 'lead'
+    if (
+      combined.includes("co-lead") || 
+      combined.includes("co lead") || 
+      combined.includes("colead") || 
+      combined.includes("co-head") || 
+      combined.includes("co head") || 
+      combined.includes("vice lead") ||
+      combined.includes("vice-lead")
+    ) {
+      return 2;
+    }
+
+    if (
+      combined.includes("lead") || 
+      combined.includes("head") || 
+      combined.includes("president") || 
+      combined.includes("convener")
+    ) {
+      return 1;
+    }
+
+    if (
+      combined.includes("associate") || 
+      combined.includes("assoc") || 
+      combined.includes("executive")
+    ) {
+      return 3;
+    }
+
+    return 4;
+  };
+
+  const compareMembersByRank = (a: MemberData, b: MemberData): number => {
+    const rankA = getSubRoleRank(a);
+    const rankB = getSubRoleRank(b);
+    if (rankA !== rankB) return rankA - rankB;
+    return (a.name || "").localeCompare(b.name || "");
+  };
+
   // Intelligent member-to-role matching for other departments
   const matchMemberToRole = (member: MemberData, targetRole: string): boolean => {
     const mRole = (member.role || "").toLowerCase().trim();
@@ -335,6 +389,7 @@ const TeamPage: React.FC = () => {
     });
 
     if (facultyMembers.length > 0) {
+      facultyMembers.sort(compareMembersByRank);
       facultyMembers.forEach(m => assignedMemberIds.add(m.id || m.email || `${m.name}-${m.role}`));
       activeSections.push({
         definition: {
@@ -397,6 +452,9 @@ const TeamPage: React.FC = () => {
       });
 
       if (groupMembers.length > 0) {
+        // Sort inside each department by Sub-Role hierarchy: Lead (1) -> Co-Lead (2) -> Associate (3) -> Other (4)
+        groupMembers.sort(compareMembersByRank);
+
         activeSections.push({
           definition: {
             id: roleName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
@@ -417,6 +475,7 @@ const TeamPage: React.FC = () => {
     });
 
     if (unassignedMembers.length > 0) {
+      unassignedMembers.sort(compareMembersByRank);
       activeSections.push({
         definition: {
           id: "other-members",

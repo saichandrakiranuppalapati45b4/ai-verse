@@ -14,7 +14,7 @@ import galleryCollab from "../../assets/images/gallery_collab.png";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs } from "firebase/firestore";
-import { Calendar, ImageIcon, X, FolderOpen, Sparkles, ChevronRight, ExternalLink } from "lucide-react";
+import { Calendar, X, FolderOpen, Sparkles, ChevronRight, ExternalLink } from "lucide-react";
 
 interface AlbumItem {
   id: string;
@@ -224,12 +224,6 @@ const GalleryPage: React.FC = () => {
                     <span className={`px-2.5 py-1 text-[9px] font-bold rounded-lg uppercase tracking-wider ${getCategoryStyles(album.category)}`}>
                       {album.category}
                     </span>
-                  </div>
-
-                  {/* Photos count overlay */}
-                  <div className="absolute bottom-4 right-4 z-10 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[9px] font-bold text-slate-700 uppercase tracking-wider shadow-sm flex items-center gap-1.5 border border-slate-100">
-                    <ImageIcon className="w-3.5 h-3.5 text-[#2563EB]" />
-                    <span>{(album.images && album.images.length) || album.photosCount} Photos</span>
                   </div>
                 </div>
 

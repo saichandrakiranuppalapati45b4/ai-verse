@@ -119,12 +119,22 @@ const AboutPage: React.FC = () => {
         );
         
         if (filtered.length > 0) {
+          const getRank = (m: any): number => {
+            const pos = (m.position || "").toLowerCase().trim();
+            const role = (m.roleType || m.role || "").toLowerCase().trim();
+            const combined = `${pos} ${role}`.toLowerCase().trim();
+            if (combined.includes("faculty") || combined.includes("convener")) return 0;
+            if (pos === "lead" || pos === "head" || combined.includes("lead organizer") || (combined.includes("lead") && !combined.includes("co-lead") && !combined.includes("co lead"))) return 1;
+            if (pos === "co-lead" || pos === "co lead" || pos === "colead" || combined.includes("co-lead") || combined.includes("co lead") || combined.includes("co-organizer")) return 2;
+            if (pos === "associate" || pos === "assoc" || combined.includes("associate") || combined.includes("assoc")) return 3;
+            return 4;
+          };
+
           filtered.sort((a, b) => {
-            const isFacultyA = (a.roleType || a.role || "").toLowerCase().includes("faculty");
-            const isFacultyB = (b.roleType || b.role || "").toLowerCase().includes("faculty");
-            if (isFacultyA && !isFacultyB) return -1;
-            if (!isFacultyA && isFacultyB) return 1;
-            return 0;
+            const rankA = getRank(a);
+            const rankB = getRank(b);
+            if (rankA !== rankB) return rankA - rankB;
+            return (a.name || "").localeCompare(b.name || "");
           });
           
           const mapped = filtered.map(m => ({

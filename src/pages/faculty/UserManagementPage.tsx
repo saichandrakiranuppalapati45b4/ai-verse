@@ -51,6 +51,7 @@ export interface UserItem {
   personalEmail?: string;
   phone?: string;
   role: "Faculty Coordinator" | "Student Organizer" | "Volunteer" | "Guest" | "Student Member" | "Organizer" | "Convener" | "Event Manager" | "System Admin" | "Jury Evaluator" | string;
+  position?: string;
   status: "Active" | "Pending" | "Deactivated" | string;
   image?: string;
   showInAbout?: "Yes" | "No";
@@ -159,6 +160,7 @@ const UserManagementPage: React.FC = () => {
                 personalEmail: u.personal_email || "",
                 phone: u.phone || "",
                 role: (u.role || "Guest") as any,
+                position: u.position || "",
                 status: (u.status || "Active") as any,
                 image: u.image || "",
                 showInAbout: u.show_in_about ? "Yes" : "No",
@@ -192,6 +194,7 @@ const UserManagementPage: React.FC = () => {
                   github: combinedList[idx].github || data.github || "",
                   phone: combinedList[idx].phone || data.phone || data.phoneNumber || "",
                   role: combinedList[idx].role || data.role || data.roleType || "Guest",
+                  position: combinedList[idx].position || data.position || data.sub_role || data.subRole || "",
                   showInAbout: combinedList[idx].showInAbout || (data.showInAbout === true || data.showInAbout === "Yes" || data.showInAboutPage === true || data.showInAboutPage === "Yes" ? "Yes" : "No")
                 };
               }
@@ -205,6 +208,7 @@ const UserManagementPage: React.FC = () => {
                 personalEmail: data.personalEmail || data.personal_email || "",
                 phone: data.phone || data.phoneNumber || "",
                 role: data.role || data.roleType || "Guest",
+                position: data.position || data.sub_role || data.subRole || "",
                 status: data.status || "Active",
                 image: data.image || "",
                 showInAbout: data.showInAbout === true || data.showInAbout === "Yes" || data.showInAboutPage === true || data.showInAboutPage === "Yes" ? "Yes" : "No",
@@ -297,6 +301,7 @@ const UserManagementPage: React.FC = () => {
   const [inviteEmail, setInviteEmail] = useState("");
   const [invitePersonalEmail, setInvitePersonalEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserItem["role"]>("Student Member");
+  const [invitePosition, setInvitePosition] = useState<string>("");
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
   // Dropdown actions states
@@ -331,6 +336,7 @@ const UserManagementPage: React.FC = () => {
     "Personal Mail ID": "",
     "Phone Number": "",
     "Role Type": "",
+    "Sub Role": "",
     "Professional Bio": "",
     "LinkedIn URL": "",
     "GitHub URL": ""
@@ -391,6 +397,7 @@ const UserManagementPage: React.FC = () => {
       "Personal Mail ID",
       "Phone Number",
       roleHeader, 
+      "\"Sub Role (Lead | Co-Lead | Associate)\"",
       "Professional Bio", 
       "LinkedIn URL", 
       "GitHub URL"
@@ -425,7 +432,7 @@ const UserManagementPage: React.FC = () => {
       const phone = row["Phone Number"] || row["phone"] || "";
       const roleOptions = availableRoles.join(" | ");
       const roleType = row[`Role Type (Options: ${roleOptions})`] || row["Role Type"] || row["role"] || "";
-      const position = row["position"] || "";
+      const position = row["Sub Role (Lead | Co-Lead | Associate)"] || row["Sub Role"] || row["sub_role"] || row["subRole"] || row["Position"] || row["position"] || "";
       const bio = row["Professional Bio"] || row["bio"] || "";
       const linkedin = row["LinkedIn URL"] || row["linkedin"] || "";
       const github = row["GitHub URL"] || row["github"] || "";
@@ -585,8 +592,8 @@ const UserManagementPage: React.FC = () => {
             if (!newGrid[gridIndex]) newGrid[gridIndex] = { ...initialGridRow };
             
             // Handle paste depending on number of columns
-            if (row.length >= 9) {
-              // Photo, Name, College Mail, Personal Mail ID, Phone, Role, Bio, LinkedIn, GitHub
+            if (row.length >= 10) {
+              // Photo, Name, College Mail, Personal Mail ID, Phone, Role, Sub Role, Bio, LinkedIn, GitHub
               newGrid[gridIndex] = {
                 "Profile Photo": row[0] || "",
                 "Full Name": row[1] || "",
@@ -594,6 +601,21 @@ const UserManagementPage: React.FC = () => {
                 "Personal Mail ID": row[3] || "",
                 "Phone Number": row[4] || "",
                 "Role Type": row[5] || "",
+                "Sub Role": row[6] || "",
+                "Professional Bio": row[7] || "",
+                "LinkedIn URL": row[8] || "",
+                "GitHub URL": row[9] || ""
+              };
+            } else if (row.length === 9) {
+              // Name, College Mail, Personal Mail ID, Phone, Role, Sub Role, Bio, LinkedIn, GitHub
+              newGrid[gridIndex] = {
+                "Profile Photo": "",
+                "Full Name": row[0] || "",
+                "College Mail": row[1] || "",
+                "Personal Mail ID": row[2] || "",
+                "Phone Number": row[3] || "",
+                "Role Type": row[4] || "",
+                "Sub Role": row[5] || "",
                 "Professional Bio": row[6] || "",
                 "LinkedIn URL": row[7] || "",
                 "GitHub URL": row[8] || ""
@@ -607,6 +629,7 @@ const UserManagementPage: React.FC = () => {
                 "Personal Mail ID": row[2] || "",
                 "Phone Number": row[3] || "",
                 "Role Type": row[4] || "",
+                "Sub Role": "",
                 "Professional Bio": row[5] || "",
                 "LinkedIn URL": row[6] || "",
                 "GitHub URL": row[7] || ""
@@ -620,6 +643,7 @@ const UserManagementPage: React.FC = () => {
                 "Personal Mail ID": "",
                 "Phone Number": row[2] || "",
                 "Role Type": row[3] || "",
+                "Sub Role": "",
                 "Professional Bio": row[4] || "",
                 "LinkedIn URL": row[5] || "",
                 "GitHub URL": row[6] || ""
@@ -632,6 +656,7 @@ const UserManagementPage: React.FC = () => {
                 "Personal Mail ID": row[2] || "",
                 "Phone Number": row[3] || "",
                 "Role Type": row[4] || "",
+                "Sub Role": "",
                 "Professional Bio": row[5] || "",
                 "LinkedIn URL": row[6] || "",
                 "GitHub URL": row[7] || ""
@@ -664,7 +689,7 @@ const UserManagementPage: React.FC = () => {
 
           for (let i = startIndex; i < results.data.length; i++) {
             const row = results.data[i] as string[];
-            if (row.length >= 9) {
+            if (row.length >= 10) {
               newGrid.push({
                 "Profile Photo": row[0] || "",
                 "Full Name": row[1] || "",
@@ -672,6 +697,20 @@ const UserManagementPage: React.FC = () => {
                 "Personal Mail ID": row[3] || "",
                 "Phone Number": row[4] || "",
                 "Role Type": row[5] || "",
+                "Sub Role": row[6] || "",
+                "Professional Bio": row[7] || "",
+                "LinkedIn URL": row[8] || "",
+                "GitHub URL": row[9] || ""
+              });
+            } else if (row.length === 9) {
+              newGrid.push({
+                "Profile Photo": "",
+                "Full Name": row[0] || "",
+                "College Mail": row[1] || "",
+                "Personal Mail ID": row[2] || "",
+                "Phone Number": row[3] || "",
+                "Role Type": row[4] || "",
+                "Sub Role": row[5] || "",
                 "Professional Bio": row[6] || "",
                 "LinkedIn URL": row[7] || "",
                 "GitHub URL": row[8] || ""
@@ -684,6 +723,7 @@ const UserManagementPage: React.FC = () => {
                 "Personal Mail ID": row[2] || "",
                 "Phone Number": row[3] || "",
                 "Role Type": row[4] || "",
+                "Sub Role": "",
                 "Professional Bio": row[5] || "",
                 "LinkedIn URL": row[6] || "",
                 "GitHub URL": row[7] || ""
@@ -696,6 +736,7 @@ const UserManagementPage: React.FC = () => {
                 "Personal Mail ID": "",
                 "Phone Number": row[2] || "",
                 "Role Type": row[3] || "",
+                "Sub Role": "",
                 "Professional Bio": row[4] || "",
                 "LinkedIn URL": row[5] || "",
                 "GitHub URL": row[6] || ""
@@ -925,6 +966,7 @@ const UserManagementPage: React.FC = () => {
         personal_email: formPersonalEmail,
         personalEmail: formPersonalEmail,
         role: formRoleType as any,
+        position: formPosition,
         image: finalPhoto,
         showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
         bio: formBio,
@@ -999,6 +1041,7 @@ const UserManagementPage: React.FC = () => {
           email: inviteEmail,
           personal_email: invitePersonalEmail,
           role: inviteRole,
+          position: invitePosition,
           status: "Active",
           show_in_about: false
         });
@@ -1013,6 +1056,7 @@ const UserManagementPage: React.FC = () => {
         personalEmail: invitePersonalEmail,
         personal_email: invitePersonalEmail,
         role: inviteRole,
+        position: invitePosition,
         status: "Active",
         showInAbout: "No"
       };
@@ -1031,6 +1075,7 @@ const UserManagementPage: React.FC = () => {
         personal_email: invitePersonalEmail,
         personalEmail: invitePersonalEmail,
         role: inviteRole,
+        position: invitePosition,
         status: "Active",
         showInAbout: "No"
       };
@@ -1067,6 +1112,7 @@ const UserManagementPage: React.FC = () => {
       setInviteName("");
       setInviteEmail("");
       setInvitePersonalEmail("");
+      setInvitePosition("");
       setIsInviteModalOpen(false);
     } catch (err) {
       console.error("Error adding user to database:", err);
@@ -1089,6 +1135,7 @@ const UserManagementPage: React.FC = () => {
           email: formEmail,
           personal_email: formPersonalEmail,
           role: formRoleType,
+          position: formPosition,
           image: finalPhoto,
           show_in_about: formShowInAbout === "Yes",
           bio: formBio,
@@ -1109,6 +1156,8 @@ const UserManagementPage: React.FC = () => {
           personalEmail: formPersonalEmail,
           personal_email: formPersonalEmail,
           role: formRoleType,
+          roleType: formRoleType,
+          position: formPosition,
           image: finalPhoto,
           showInAbout: formShowInAbout === "Yes",
           showInAboutPage: formShowInAbout === "Yes",
@@ -1127,6 +1176,7 @@ const UserManagementPage: React.FC = () => {
         personal_email: formPersonalEmail,
         personalEmail: formPersonalEmail,
         role: formRoleType as any,
+        position: formPosition,
         image: finalPhoto,
         showInAbout: formShowInAbout === "Yes" ? "Yes" : "No",
         bio: formBio,
@@ -1140,6 +1190,7 @@ const UserManagementPage: React.FC = () => {
       setFormEmail("");
       setFormPersonalEmail("");
       setFormRoleType("Organizer");
+      setFormPosition("");
       setFormPhotoPreview("");
       setFormShowInAbout("No");
     } catch (err) {
@@ -1370,9 +1421,9 @@ const UserManagementPage: React.FC = () => {
                 </span>
                 Role & Position
               </h3>
-              <div className="mt-4">
+              <div className="mt-4 space-y-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Role Type</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Role Type</label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {availableRoles.map((role) => (
                       <button
@@ -1382,10 +1433,31 @@ const UserManagementPage: React.FC = () => {
                         className={`py-3 px-3 rounded-2xl border text-center font-bold text-xs transition-all ${
                           formRoleType === role
                             ? "bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-600/20"
-                            : "bg-white border-slate-200 text-slate-655 hover:bg-slate-50"
+                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
                         }`}
                       >
                         {formatRoleLabel(role)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sub Role Selector */}
+                <div className="pt-3 border-t border-slate-100">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Sub Role</label>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {["Lead", "Co-Lead", "Associate"].map((sub) => (
+                      <button
+                        key={sub}
+                        type="button"
+                        onClick={() => setFormPosition(formPosition === sub ? "" : sub)}
+                        className={`py-2.5 px-3 rounded-2xl border text-center font-bold text-xs transition-all ${
+                          formPosition === sub
+                            ? "bg-slate-900 border-slate-900 text-white shadow-sm"
+                            : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {sub}
                       </button>
                     ))}
                   </div>
@@ -1882,9 +1954,16 @@ const UserManagementPage: React.FC = () => {
                       </div>
                     </td>
 
-                    {/* Role Badge */}
+                    {/* Role & Sub Role Badge */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {renderRoleBadge(getDisplayRole(user.role, availableRoles))}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {renderRoleBadge(getDisplayRole(user.role, availableRoles))}
+                        {user.position && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-100 text-slate-700 border border-slate-200">
+                            {user.position}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Status Dot */}
@@ -2212,6 +2291,20 @@ const UserManagementPage: React.FC = () => {
                 </select>
               </div>
 
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Sub Role</label>
+                <select
+                  value={invitePosition}
+                  onChange={(e) => setInvitePosition(e.target.value)}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-2xl focus:outline-none focus:border-blue-500 font-medium text-sm text-slate-800 cursor-pointer"
+                >
+                  <option value="">Select Sub Role (Optional)</option>
+                  <option value="Lead">Lead</option>
+                  <option value="Co-Lead">Co-Lead</option>
+                  <option value="Associate">Associate</option>
+                </select>
+              </div>
+
               <div className="flex items-center gap-3 pt-4 border-t border-slate-50">
                 <button
                   type="button"
@@ -2361,6 +2454,20 @@ const UserManagementPage: React.FC = () => {
                                 {!availableRoles.some(r => r.toLowerCase().includes("member")) && (
                                   <option value="Student Member" className="text-slate-800 font-medium py-1">Student Member</option>
                                 )}
+                              </select>
+                              <ChevronDown className="absolute right-3.5 pointer-events-none h-3.5 w-3.5 text-slate-400" />
+                            </div>
+                          ) : col === "Sub Role" ? (
+                            <div className="relative flex items-center p-1.5">
+                              <select
+                                value={row[col] || ""}
+                                onChange={(e) => handleGridChange(rIndex, col, e.target.value)}
+                                className="w-full min-w-[140px] appearance-none pl-3 pr-8 py-2 bg-slate-50 border border-slate-200/90 rounded-xl focus:outline-none focus:border-blue-500 focus:bg-white text-slate-800 text-xs font-semibold cursor-pointer transition-all shadow-2xs"
+                              >
+                                <option value="">Select Sub Role</option>
+                                <option value="Lead" className="text-slate-800 font-medium py-1">Lead</option>
+                                <option value="Co-Lead" className="text-slate-800 font-medium py-1">Co-Lead</option>
+                                <option value="Associate" className="text-slate-800 font-medium py-1">Associate</option>
                               </select>
                               <ChevronDown className="absolute right-3.5 pointer-events-none h-3.5 w-3.5 text-slate-400" />
                             </div>

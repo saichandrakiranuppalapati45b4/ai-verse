@@ -47,6 +47,7 @@ const AttendanceManagementPage = React.lazy(() => import("../pages/faculty/Atten
 const ProfilePage = React.lazy(() => import("../pages/faculty/ProfilePage"));
 const FacResultsPage = React.lazy(() => import("../pages/faculty/FacResultsPage"));
 const QuizManagementPage = React.lazy(() => import("../pages/faculty/QuizManagementPage"));
+const ContactInquiriesPage = React.lazy(() => import("../pages/faculty/ContactInquiriesPage"));
 
 // Participant & Quiz Pages (separate chunk for quiz takers)
 const ParticipantSetPasswordPage = React.lazy(() => import("../pages/auth/ParticipantSetPasswordPage"));
@@ -129,6 +130,7 @@ const AppRoutes: React.FC = () => {
               </ProtectedRoute>
             }
           />
+          <Route path="contacts" element={<ContactInquiriesPage />} />
           <Route path="attendance" element={<AttendanceManagementPage />} />
           <Route path="analytics" element={<div className="p-6 bg-white rounded-card shadow-card border border-slate-100"><h2 className="text-xl font-bold mb-2">Analytics</h2><p className="text-sm text-slate-500">Detailed overview of attendance trends.</p></div>} />
           <Route

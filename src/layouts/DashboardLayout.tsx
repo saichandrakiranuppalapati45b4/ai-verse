@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Bell,
   ClipboardCheck,
-  BarChart2
+  BarChart2,
+  Mail
 } from "lucide-react";
 
 const DashboardLayout: React.FC = () => {
@@ -44,6 +45,7 @@ const DashboardLayout: React.FC = () => {
     { path: "/faculty/registrations", label: "Registrations", icon: ClipboardList },
     { path: "/faculty/attendance", label: "Attendance", icon: ClipboardCheck },
     { path: "/faculty/users", label: "User Management", icon: Users },
+    { path: "/faculty/contacts", label: "Contact Inquiries", icon: Mail },
     { path: "/faculty/results", label: "Results", icon: BarChart2 },
     { path: "/faculty/gallery", label: "Gallery", icon: Image },
     { path: "/faculty/settings", label: "Settings", icon: Settings },
@@ -53,7 +55,8 @@ const DashboardLayout: React.FC = () => {
     menuItems = menuItems.filter(item =>
       item.path !== "/faculty/gallery" &&
       item.path !== "/faculty/settings" &&
-      item.path !== "/faculty/users"
+      item.path !== "/faculty/users" &&
+      item.path !== "/faculty/contacts"
     );
   }
 
