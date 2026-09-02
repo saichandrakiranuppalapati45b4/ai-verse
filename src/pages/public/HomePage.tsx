@@ -106,6 +106,43 @@ const HomePage: React.FC = () => {
             const currentYear = new Date().getFullYear();
             const parsedWithYear = Date.parse(`${dateStr}, ${currentYear}`);
             if (!isNaN(parsedWithYear)) return parsedWithYear;
+
+            const monthNames: Record<string, number> = {
+              jan: 0, january: 0,
+              feb: 1, february: 1,
+              mar: 2, march: 2,
+              apr: 3, april: 3,
+              may: 4,
+              jun: 5, june: 5,
+              jul: 6, july: 6,
+              aug: 7, august: 7,
+              sep: 8, sept: 8, september: 8,
+              oct: 9, october: 9,
+              nov: 10, november: 10,
+              dec: 11, december: 11
+            };
+
+            const tokens = dateStr.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+            let foundMonth = -1;
+            let foundDay = -1;
+            let foundYear = currentYear;
+
+            for (const t of tokens) {
+              if (monthNames[t] !== undefined) {
+                foundMonth = monthNames[t];
+              } else {
+                const n = parseInt(t, 10);
+                if (!isNaN(n)) {
+                  if (n > 1900 && n < 2100) foundYear = n;
+                  else if (n >= 1 && n <= 31 && foundDay === -1) foundDay = n;
+                }
+              }
+            }
+
+            if (foundMonth !== -1 && foundDay !== -1) {
+              return new Date(foundYear, foundMonth, foundDay).getTime();
+            }
+
             return Infinity;
           };
 

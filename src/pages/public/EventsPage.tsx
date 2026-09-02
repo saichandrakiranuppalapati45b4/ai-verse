@@ -109,7 +109,84 @@ const EventsPage: React.FC = () => {
             allowRegistrations: data.allowRegistrations !== undefined ? data.allowRegistrations : true
           });
         });
-        setEvents(list);
+
+        // Helper function to extract exact numerical timestamp from event date
+        const getEventTimestamp = (ev: { date?: string; endDate?: string; createdAt?: number }): number => {
+          if (ev.endDate) {
+            const parsedEnd = Date.parse(ev.endDate);
+            if (!isNaN(parsedEnd)) return parsedEnd;
+          }
+          if (ev.date) {
+            const dStr = ev.date.trim();
+            const parsedDirect = Date.parse(dStr);
+            if (!isNaN(parsedDirect)) return parsedDirect;
+
+            const currentYear = new Date().getFullYear();
+            const parsedWithYear = Date.parse(`${dStr}, ${currentYear}`);
+            if (!isNaN(parsedWithYear)) return parsedWithYear;
+
+            const monthNames: Record<string, number> = {
+              jan: 0, january: 0,
+              feb: 1, february: 1,
+              mar: 2, march: 2,
+              apr: 3, april: 3,
+              may: 4,
+              jun: 5, june: 5,
+              jul: 6, july: 6,
+              aug: 7, august: 7,
+              sep: 8, sept: 8, september: 8,
+              oct: 9, october: 9,
+              nov: 10, november: 10,
+              dec: 11, december: 11
+            };
+
+            const tokens = dStr.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+            let foundMonth = -1;
+            let foundDay = -1;
+            let foundYear = currentYear;
+
+            for (const t of tokens) {
+              if (monthNames[t] !== undefined) {
+                foundMonth = monthNames[t];
+              } else {
+                const n = parseInt(t, 10);
+                if (!isNaN(n)) {
+                  if (n > 1900 && n < 2100) foundYear = n;
+                  else if (n >= 1 && n <= 31 && foundDay === -1) foundDay = n;
+                }
+              }
+            }
+
+            if (foundMonth !== -1 && foundDay !== -1) {
+              return new Date(foundYear, foundMonth, foundDay).getTime();
+            }
+          }
+
+          if (typeof ev.createdAt === "number") return ev.createdAt;
+          return 0;
+        };
+
+        // Partition and sort by actual event date:
+        // Upcoming / active events appear first in chronological order (soonest first),
+        // followed by concluded/completed events in reverse chronological order (most recent first).
+        const startOfToday = new Date().setHours(0, 0, 0, 0);
+        const upcomingEvents: Event[] = [];
+        const pastEvents: Event[] = [];
+
+        list.forEach((ev) => {
+          const evTime = getEventTimestamp(ev);
+          const endOfDay = new Date(evTime).setHours(23, 59, 59, 999);
+          if (ev.status === "Completed" || ev.isPastEvent || (evTime > 0 && endOfDay < startOfToday)) {
+            pastEvents.push(ev);
+          } else {
+            upcomingEvents.push(ev);
+          }
+        });
+
+        upcomingEvents.sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
+        pastEvents.sort((a, b) => getEventTimestamp(b) - getEventTimestamp(a));
+
+        setEvents([...upcomingEvents, ...pastEvents]);
       } catch (err) {
         console.error("Error reading events from Firestore:", err);
       } finally {
@@ -130,6 +207,43 @@ const EventsPage: React.FC = () => {
     const currentYear = new Date().getFullYear();
     const parsedWithYear = Date.parse(`${dateStr}, ${currentYear}`);
     if (!isNaN(parsedWithYear)) return parsedWithYear;
+
+    const monthNames: Record<string, number> = {
+      jan: 0, january: 0,
+      feb: 1, february: 1,
+      mar: 2, march: 2,
+      apr: 3, april: 3,
+      may: 4,
+      jun: 5, june: 5,
+      jul: 6, july: 6,
+      aug: 7, august: 7,
+      sep: 8, sept: 8, september: 8,
+      oct: 9, october: 9,
+      nov: 10, november: 10,
+      dec: 11, december: 11
+    };
+
+    const tokens = dateStr.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+    let foundMonth = -1;
+    let foundDay = -1;
+    let foundYear = currentYear;
+
+    for (const t of tokens) {
+      if (monthNames[t] !== undefined) {
+        foundMonth = monthNames[t];
+      } else {
+        const n = parseInt(t, 10);
+        if (!isNaN(n)) {
+          if (n > 1900 && n < 2100) foundYear = n;
+          else if (n >= 1 && n <= 31 && foundDay === -1) foundDay = n;
+        }
+      }
+    }
+
+    if (foundMonth !== -1 && foundDay !== -1) {
+      return new Date(foundYear, foundMonth, foundDay).getTime();
+    }
+
     return Infinity;
   };
 

@@ -403,6 +403,87 @@ const EventDetailsPage: React.FC = () => {
     );
   }
 
+  const isPastEvent = (): boolean => {
+    if (!event) return false;
+    if (event.status === "Completed") return true;
+    if ((event as any).isPastEvent) return true;
+
+    // Check endDate or startDate
+    if (event.endDate) {
+      const parsedEnd = Date.parse(event.endDate);
+      if (!isNaN(parsedEnd)) {
+        const endOfDay = new Date(parsedEnd).setHours(23, 59, 59, 999);
+        if (Date.now() > endOfDay) return true;
+      }
+    }
+    if (event.startDate) {
+      const parsedStart = Date.parse(event.startDate);
+      if (!isNaN(parsedStart)) {
+        const endOfDay = new Date(parsedStart).setHours(23, 59, 59, 999);
+        if (Date.now() > endOfDay) return true;
+      }
+    }
+
+    // Check event.date string
+    if (event.date) {
+      const dStr = event.date.trim();
+      const direct = Date.parse(dStr);
+      if (!isNaN(direct)) {
+        const endOfDay = new Date(direct).setHours(23, 59, 59, 999);
+        if (Date.now() > endOfDay) return true;
+      }
+
+      const currentYear = new Date().getFullYear();
+      const withYear = Date.parse(`${dStr}, ${currentYear}`);
+      if (!isNaN(withYear)) {
+        const endOfDay = new Date(withYear).setHours(23, 59, 59, 999);
+        if (Date.now() > endOfDay) return true;
+      }
+
+      const monthNames: Record<string, number> = {
+        jan: 0, january: 0,
+        feb: 1, february: 1,
+        mar: 2, march: 2,
+        apr: 3, april: 3,
+        may: 4,
+        jun: 5, june: 5,
+        jul: 6, july: 6,
+        aug: 7, august: 7,
+        sep: 8, sept: 8, september: 8,
+        oct: 9, october: 9,
+        nov: 10, november: 10,
+        dec: 11, december: 11
+      };
+
+      const tokens = dStr.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+      let foundMonth = -1;
+      let foundDay = -1;
+      let foundYear = currentYear;
+
+      for (const t of tokens) {
+        if (monthNames[t] !== undefined) {
+          foundMonth = monthNames[t];
+        } else {
+          const n = parseInt(t, 10);
+          if (!isNaN(n)) {
+            if (n > 1900 && n < 2100) foundYear = n;
+            else if (n >= 1 && n <= 31 && foundDay === -1) foundDay = n;
+          }
+        }
+      }
+
+      if (foundMonth !== -1 && foundDay !== -1) {
+        const eventTime = new Date(foundYear, foundMonth, foundDay).getTime();
+        const endOfDay = new Date(eventTime).setHours(23, 59, 59, 999);
+        if (Date.now() > endOfDay) return true;
+      }
+    }
+
+    return false;
+  };
+
+  const isPast = isPastEvent();
+
   return (
     <div className="bg-[#F8FAFC] pb-24 text-left font-sans animate-in fade-in duration-200">
       <SEO 
@@ -511,7 +592,7 @@ const EventDetailsPage: React.FC = () => {
                 )}
 
                 {(event.type === "Hackathon" || (event as any).category === "HACKATHONS" || (event as any).category === "Hackathon" || (event as any).category?.toLowerCase()?.includes("hackathon")) ? (
-                  event.endDate && new Date(event.endDate).setHours(23, 59, 59, 999) < new Date().getTime() ? (
+                  isPast ? (
                     <Button variant="secondary" disabled className="w-full font-bold rounded-2xl py-3 text-xs flex items-center justify-center gap-2 text-slate-400 bg-slate-100 border border-slate-200 cursor-not-allowed">
                       Event Completed
                     </Button>
@@ -528,10 +609,17 @@ const EventDetailsPage: React.FC = () => {
                     </Link>
                   )
                 ) : (
-                  <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl text-center">
-                    <span className="text-xs font-bold text-slate-700 block">Open Public Event</span>
-                    <span className="text-[10px] font-medium text-slate-400 block mt-0.5">No registration required for this event</span>
-                  </div>
+                  isPast ? (
+                    <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl text-center">
+                      <span className="text-xs font-bold text-slate-500 block">Event Completed</span>
+                      <span className="text-[10px] font-medium text-slate-400 block mt-0.5">This event has already concluded</span>
+                    </div>
+                  ) : (
+                    <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-2xl text-center">
+                      <span className="text-xs font-bold text-slate-700 block">Open Public Event</span>
+                      <span className="text-[10px] font-medium text-slate-400 block mt-0.5">No registration required for this event</span>
+                    </div>
+                  )
                 )}
 
                 <span className="text-[10px] text-slate-400 font-bold text-center block pt-1">
@@ -598,37 +686,39 @@ const EventDetailsPage: React.FC = () => {
             </div>
 
             {/* Event Agenda */}
-            <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] space-y-6">
-              <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2 border-b border-slate-50 pb-3">
-                <SlidersHorizontal className="h-4.5 w-4.5 text-blue-600" />
-                Event Agenda
-              </h2>
-              
-              <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100 text-left">
-                {(event.agendaItems && event.agendaItems.length > 0
-                  ? event.agendaItems
-                  : [
-                      { time: event.agendaTime1, title: event.agendaTitle1, description: event.agendaDesc1 },
-                      { time: event.agendaTime2, title: event.agendaTitle2, description: event.agendaDesc2 },
-                      { time: event.agendaTime3, title: event.agendaTitle3, description: event.agendaDesc3 }
-                    ].filter(it => it.time || it.title)
-                ).map((item, idx) => (
-                  <div key={idx} className="relative group">
-                    <div className="absolute -left-[23px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white bg-blue-600 shadow-sm" />
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-black text-blue-600">{item.time}</span>
-                      <h4 className="text-sm font-bold text-slate-850">{item.title}</h4>
-                      <p className="text-xs text-slate-550 font-semibold leading-relaxed">
-                        {item.description}
-                      </p>
+            {!isPast && (
+              <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] space-y-6">
+                <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2 border-b border-slate-50 pb-3">
+                  <SlidersHorizontal className="h-4.5 w-4.5 text-blue-600" />
+                  Event Agenda
+                </h2>
+                
+                <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100 text-left">
+                  {(event.agendaItems && event.agendaItems.length > 0
+                    ? event.agendaItems
+                    : [
+                        { time: event.agendaTime1, title: event.agendaTitle1, description: event.agendaDesc1 },
+                        { time: event.agendaTime2, title: event.agendaTitle2, description: event.agendaDesc2 },
+                        { time: event.agendaTime3, title: event.agendaTitle3, description: event.agendaDesc3 }
+                      ].filter(it => it.time || it.title)
+                  ).map((item, idx) => (
+                    <div key={idx} className="relative group">
+                      <div className="absolute -left-[23px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white bg-blue-600 shadow-sm" />
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-black text-blue-600">{item.time}</span>
+                        <h4 className="text-sm font-bold text-slate-850">{item.title}</h4>
+                        <p className="text-xs text-slate-550 font-semibold leading-relaxed">
+                          {item.description}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Competition Rounds & Timeline (if configured) */}
-            {event.rounds && event.rounds.length > 0 && (
+            {!isPast && event.rounds && event.rounds.length > 0 && (
               <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.01)] space-y-6 text-left">
                 <div className="flex items-center justify-between border-b border-slate-50 pb-3">
                   <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
