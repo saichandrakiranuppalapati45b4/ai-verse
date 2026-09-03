@@ -24,7 +24,6 @@ import LoginPage from "../pages/auth/LoginPage";
 import NotFoundPage from "../pages/errors/NotFoundPage";
 
 // Public Pages (lazy-loaded, not needed on first paint)
-const AboutPage = React.lazy(() => import("../pages/public/AboutPage"));
 const EventsPage = React.lazy(() => import("../pages/public/EventsPage"));
 const EventDetailsPage = React.lazy(() => import("../pages/public/EventDetailsPage"));
 const GalleryPage = React.lazy(() => import("../pages/public/GalleryPage"));
@@ -64,7 +63,7 @@ const AppRoutes: React.FC = () => {
         {/* Public Routes */}
         <Route path="/" element={<PublicLayout />}>
           <Route index element={<HomePage />} />
-          <Route path="about" element={<AboutPage />} />
+          <Route path="about" element={<Navigate to="/" replace />} />
           <Route path="events" element={<EventsPage />} />
           <Route path="events/:id" element={<EventDetailsPage />} />
           <Route path="events/:id/register" element={<RegistrationPage />} />

@@ -433,7 +433,7 @@ const EventsPage: React.FC = () => {
                       <img 
                         src={event.image} 
                         alt={event.title} 
-                        className={`w-full h-full object-cover group-hover:scale-102 transition-transform duration-500 ${isCompleted ? "grayscale contrast-[0.85]" : ""}`}
+                        className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-500"
                       />
                     </div>
 

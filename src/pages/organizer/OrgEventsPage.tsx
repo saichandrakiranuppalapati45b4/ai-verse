@@ -361,7 +361,7 @@ const OrgEventsPage: React.FC = () => {
                   <img
                     src={event.posterPreview || getEventImage(event.imageName, event.category)}
                     alt={event.title}
-                    className={`w-full h-full object-cover ${isCompleted ? "grayscale contrast-[0.85]" : ""}`}
+                    className="w-full h-full object-cover"
                   />
                   {/* Category Badge (Top-Left) */}
                   <span className={`absolute top-4 left-4 text-[9px] font-black px-2.5 py-1 rounded-lg uppercase tracking-wider ${

@@ -257,9 +257,9 @@ const HomePage: React.FC = () => {
                     <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                   </Button>
                 </Link>
-                <Link to="/about">
+                <Link to="/gallery">
                   <Button variant="secondary" className="rounded-full px-6 py-3 font-bold hover:bg-slate-50 transition-all">
-                    Explore Projects
+                    Explore Gallery
                   </Button>
                 </Link>
               </motion.div>
@@ -366,6 +366,117 @@ const HomePage: React.FC = () => {
             </motion.div>
 
           </div>
+        </div>
+      </section>
+
+      {/* ================= ABOUT US SPOTLIGHT CARD ================= */}
+      <section id="about" className="py-12 sm:py-16 bg-white border-t border-slate-100 relative">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-60px" }}
+            variants={staggerContainer}
+            className="relative rounded-3xl bg-gradient-to-br from-white via-slate-50/50 to-blue-50/30 border border-slate-200/80 p-6 sm:p-10 lg:p-12 shadow-card hover:shadow-cardHover transition-all duration-300 overflow-hidden"
+          >
+            {/* Ambient background glows */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-blue-100/40 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16" />
+            <div className="absolute bottom-0 left-0 w-72 h-72 bg-sky-100/40 rounded-full blur-3xl pointer-events-none -ml-16 -mb-16" />
+
+            <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+              
+              {/* Left Column: Visual Media & Badges */}
+              <motion.div variants={fadeInUp} className="lg:col-span-5 space-y-4">
+                <div className="relative rounded-2xl overflow-hidden aspect-[4/3] bg-slate-900 shadow-md group border border-slate-100">
+                  <img
+                    src={sparkImg}
+                    alt="AI Verse Community at VIT Bhimavaram"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-slate-950/20 to-transparent" />
+                  
+                  {/* Floating Chips inside Image */}
+                  <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white text-xs">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/20 font-semibold text-[11px]">
+                      <Sparkles className="h-3 w-3 text-blue-400" />
+                      VIT Bhimavaram
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-blue-600/85 backdrop-blur-md font-bold text-[10px] uppercase tracking-wider">
+                      Estd. 2022
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Right Column: About Card Content */}
+              <motion.div variants={fadeInUp} className="lg:col-span-7 space-y-5 text-left">
+                {/* Section Badge */}
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-aether-blue-50 border border-aether-blue-100/60">
+                  <Sparkles className="h-3.5 w-3.5 text-aether-blue-600" />
+                  <span className="text-[10px] font-bold text-aether-blue-700 tracking-wider uppercase">
+                    About AI Verse
+                  </span>
+                </div>
+
+                {/* Heading */}
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-aether-dark tracking-tight leading-tight">
+                  The Premier Student AI Community at <br className="hidden sm:inline" />
+                  <span className="bg-gradient-to-r from-aether-blue-600 via-aether-blue-500 to-aether-blue-400 bg-clip-text text-transparent">
+                    Vishnu Institute of Technology
+                  </span>
+                </h2>
+
+                {/* Description */}
+                <p className="text-slate-600 text-sm sm:text-base leading-relaxed font-normal">
+                  AI Verse is a student-driven ecosystem dedicated to demystifying Artificial Intelligence, Machine Learning, and Data Science. We bridge the gap between academic theories and practical deployment through cutting-edge hackathons, peer-led research, expert speaker series, and collaborative engineering projects.
+                </p>
+
+                {/* Highlights Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 border border-slate-100 shadow-sm">
+                    <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                      <Rocket className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-700">Hands-on AI Hackathons</span>
+                  </div>
+                  <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 border border-slate-100 shadow-sm">
+                    <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
+                      <Search className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-700">Applied ML & Research</span>
+                  </div>
+                  <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 border border-slate-100 shadow-sm">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                      <BookOpen className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-700">Weekly Skill Bootcamps</span>
+                  </div>
+                  <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 border border-slate-100 shadow-sm">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                      <Lightbulb className="h-4 w-4" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-700">Faculty & Peer Mentorship</span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <Link to="/team">
+                    <Button variant="outline" className="rounded-xl px-5 py-2.5 font-bold hover:bg-slate-50 transition-all text-xs group">
+                      Meet Our Team
+                      <ArrowRight className="ml-1.5 h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+                    </Button>
+                  </Link>
+                  <Link to="/events">
+                    <Button variant="secondary" className="rounded-xl px-5 py-2.5 font-bold hover:bg-slate-100 transition-all text-xs">
+                      Explore Activities
+                    </Button>
+                  </Link>
+                </div>
+              </motion.div>
+
+            </div>
+          </motion.div>
         </div>
       </section>
 
@@ -477,8 +588,8 @@ const HomePage: React.FC = () => {
                   Cutting-edge academic research groups exploring AGI, ethics in AI, and advanced generative models in collaboration with leading universities.
                 </p>
               </div>
-              <Link to="/about" className="inline-flex items-center gap-1.5 text-xs font-bold text-aether-blue-600 hover:text-aether-blue-700 mt-4 group">
-                Explore Papers
+              <Link to="/team" className="inline-flex items-center gap-1.5 text-xs font-bold text-aether-blue-600 hover:text-aether-blue-700 mt-4 group">
+                Meet Researchers
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
               </Link>
             </motion.div>
@@ -498,8 +609,8 @@ const HomePage: React.FC = () => {
                   Incubator programs supporting student-led AI startups. Turn your aetheric concepts into market-ready products with our mentorship.
                 </p>
               </div>
-              <Link to="/about" className="inline-flex items-center gap-1.5 text-xs font-bold text-aether-blue-600 hover:text-aether-blue-700 mt-4 group">
-                View Projects
+              <Link to="/gallery" className="inline-flex items-center gap-1.5 text-xs font-bold text-aether-blue-600 hover:text-aether-blue-700 mt-4 group">
+                View Gallery
                 <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
               </Link>
             </motion.div>
