@@ -16,6 +16,7 @@ import type { Quiz, QuizQuestion, QuizSubmission, QuizSession } from "../../type
 import { resetParticipantQuizSession, resetAllQuizSubmissions, deleteQuizCascading, evaluateQuizAnswers } from "../../services/quizService";
 import { extractTextFromPdf, parseQuestionsFromText } from "../../utils/pdfExtractor";
 import { extractQuizQuestionsWithGemini } from "../../utils/geminiQuizExtractor";
+import { userService } from "../../services/userService";
 import SEO from "../../components/layout/SEO";
 import {
   HelpCircle,
@@ -47,7 +48,10 @@ import {
   BarChart3,
   TrendingUp,
   CheckCircle,
-  XCircle
+  XCircle,
+  Trophy,
+  Medal,
+  Search
 } from "lucide-react";
 
 interface EventOption {
@@ -69,6 +73,14 @@ export const QuizManagementPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedQuizId, setSelectedQuizId] = useState<string>("");
   const [selectedEventId, setSelectedEventId] = useState<string>(eventIdParam || "");
+
+  // Registrant & User Profile lookup maps for full registered names & roll numbers
+  const [registrantMap, setRegistrantMap] = useState<Map<string, { name: string; rollNo?: string; phone?: string; teamName?: string }>>(new Map());
+  const [userProfileMap, setUserProfileMap] = useState<Map<string, { name: string; rollNo?: string }>>(new Map());
+
+  // Search & Filter for Submissions Table
+  const [subSearchQuery, setSubSearchQuery] = useState<string>("");
+  const [subFilterState, setSubFilterState] = useState<"all" | "top3" | "passed" | "failed" | "violations">("all");
 
   // Sync selectedEventId if URL eventIdParam changes
   useEffect(() => {
@@ -142,10 +154,83 @@ export const QuizManagementPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"quizzes" | "live_monitor" | "submissions">("quizzes");
 
   // Inspect Participant Submission Modal
-  const [inspectingSubmission, setInspectingSubmission] = useState<QuizSubmission | null>(null);
+  const [inspectingSubmission, setInspectingSubmission] = useState<(QuizSubmission & { rank?: number; rankLabel?: string; resolvedName?: string; rollNo?: string }) | null>(null);
   const [inspectFilter, setInspectFilter] = useState<"all" | "correct" | "incorrect" | "unanswered">("all");
 
-  // Load Quizzes & Events
+  // Helper to resolve real registered name and student details
+  const resolveParticipantInfo = React.useCallback(
+    (sub: { userName?: string; userEmail?: string; userId?: string }) => {
+      const cleanEmail = (sub.userEmail || "").toLowerCase().trim();
+      const emailPrefix = cleanEmail.split("@")[0] || "";
+
+      // 1. Check registrations collection by email (lead email, personal email, college email)
+      if (cleanEmail && registrantMap.has(cleanEmail)) {
+        const reg = registrantMap.get(cleanEmail)!;
+        if (reg.name && reg.name.trim() && reg.name.toLowerCase() !== emailPrefix.toLowerCase()) {
+          return {
+            displayName: reg.name.trim(),
+            rollNo: reg.rollNo || "",
+            teamName: reg.teamName || "",
+            isRegisteredName: true
+          };
+        }
+      }
+
+      // 2. Check users collection / Supabase by userId or email
+      if (sub.userId && userProfileMap.has(sub.userId)) {
+        const u = userProfileMap.get(sub.userId)!;
+        if (u.name && u.name.trim() && u.name.toLowerCase() !== emailPrefix.toLowerCase() && u.name.toLowerCase() !== "participant") {
+          return {
+            displayName: u.name.trim(),
+            rollNo: u.rollNo || "",
+            teamName: "",
+            isRegisteredName: true
+          };
+        }
+      }
+      if (cleanEmail && userProfileMap.has(cleanEmail)) {
+        const u = userProfileMap.get(cleanEmail)!;
+        if (u.name && u.name.trim() && u.name.toLowerCase() !== emailPrefix.toLowerCase() && u.name.toLowerCase() !== "participant") {
+          return {
+            displayName: u.name.trim(),
+            rollNo: u.rollNo || "",
+            teamName: "",
+            isRegisteredName: true
+          };
+        }
+      }
+
+      // 3. Check existing sub.userName if it is already a genuine full name
+      const existingName = (sub.userName || "").trim();
+      if (
+        existingName &&
+        existingName.toLowerCase() !== emailPrefix.toLowerCase() &&
+        existingName.toLowerCase() !== "participant" &&
+        existingName.toLowerCase() !== "solo" &&
+        existingName.toLowerCase() !== "user" &&
+        existingName.toLowerCase() !== "unnamed user"
+      ) {
+        return {
+          displayName: existingName,
+          rollNo: "",
+          teamName: "",
+          isRegisteredName: true
+        };
+      }
+
+      // 4. Fallback formatting
+      const formattedPrefix = emailPrefix ? emailPrefix.replace(/[._-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Participant";
+      return {
+        displayName: formattedPrefix,
+        rollNo: "",
+        teamName: "",
+        isRegisteredName: false
+      };
+    },
+    [registrantMap, userProfileMap]
+  );
+
+  // Load Quizzes, Events, Registrations, and User Profiles
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -171,6 +256,95 @@ export const QuizManagementPage: React.FC = () => {
           });
         });
         setEvents(evList);
+
+        // 3. Fetch Registrations to map registered full names & roll numbers
+        try {
+          const regSnap = await getDocs(collection(db, "registrations"));
+          const regMap = new Map<string, { name: string; rollNo?: string; phone?: string; teamName?: string }>();
+          regSnap.forEach((d) => {
+            const data = d.data();
+            const primaryName = (data.fullName || data.teamLeadName || data.name || "").trim();
+            const roll = data.rollNo || data.studentId || data.teamLeadStudentId || "";
+            const phone = data.phone || data.phoneNumber || data.teamLeadPhone || "";
+            const collegeEm = (data.collegeEmail || data.teamLeadCollegeEmail || "").toLowerCase().trim();
+            const personalEm = (data.personalEmail || data.teamLeadPersonalEmail || "").toLowerCase().trim();
+            const teamEm = (data.teamEmail || data.teamLeadEmail || data.email || "").toLowerCase().trim();
+            const group = data.groupName || data.teamName || "";
+
+            const regInfo = {
+              name: primaryName,
+              rollNo: roll,
+              phone,
+              teamName: group
+            };
+
+            if (primaryName) {
+              if (teamEm) regMap.set(teamEm, regInfo);
+              if (personalEm) regMap.set(personalEm, regInfo);
+              if (collegeEm) regMap.set(collegeEm, regInfo);
+              if (data.email) regMap.set(data.email.toLowerCase().trim(), regInfo);
+            }
+
+            // Map team members if any
+            if (Array.isArray(data.members)) {
+              data.members.forEach((m: any) => {
+                const mName = (m.name || m.fullName || "").trim();
+                const mEmail = (m.email || m.personalEmail || m.collegeEmail || "").toLowerCase().trim();
+                const mRoll = m.rollNo || m.studentId || "";
+                if (mEmail && mName) {
+                  regMap.set(mEmail, {
+                    name: mName,
+                    rollNo: mRoll,
+                    phone: m.phone || "",
+                    teamName: group
+                  });
+                }
+              });
+            }
+          });
+          setRegistrantMap(regMap);
+        } catch (regErr) {
+          console.warn("Notice fetching registrations:", regErr);
+        }
+
+        // 4. Fetch Users (Firestore & Supabase)
+        try {
+          const uMap = new Map<string, { name: string; rollNo?: string }>();
+          const userSnap = await getDocs(collection(db, "users"));
+          userSnap.forEach((d) => {
+            const data = d.data();
+            const rawName = (data.displayName || data.name || data.teamLeadName || "").trim();
+            const cleanEmail = (data.email || "").toLowerCase().trim();
+            const pEmail = (data.personalEmail || data.personal_email || "").toLowerCase().trim();
+            const roll = data.rollNo || data.studentId || "";
+            if (rawName && rawName.toLowerCase() !== "unnamed user" && rawName.toLowerCase() !== "participant") {
+              if (d.id) uMap.set(d.id, { name: rawName, rollNo: roll });
+              if (cleanEmail) uMap.set(cleanEmail, { name: rawName, rollNo: roll });
+              if (pEmail) uMap.set(pEmail, { name: rawName, rollNo: roll });
+            }
+          });
+
+          // Supabase fallback
+          try {
+            const supaUsers = await userService.getUsers();
+            supaUsers.forEach((su) => {
+              const suName = (su.display_name || su.name || "").trim();
+              const suEmail = (su.email || "").toLowerCase().trim();
+              const suPEmail = (su.personal_email || "").toLowerCase().trim();
+              if (suName && suName.toLowerCase() !== "participant") {
+                if (su.id) uMap.set(su.id, { name: suName, rollNo: su.year || "" });
+                if (su.auth_id) uMap.set(su.auth_id, { name: suName, rollNo: su.year || "" });
+                if (suEmail) uMap.set(suEmail, { name: suName, rollNo: su.year || "" });
+                if (suPEmail) uMap.set(suPEmail, { name: suName, rollNo: su.year || "" });
+              }
+            });
+          } catch {}
+
+          setUserProfileMap(uMap);
+        } catch (uErr) {
+          console.warn("Notice fetching users:", uErr);
+        }
+
       } catch (err) {
         console.error("Error fetching quizzes or events:", err);
       } finally {
@@ -553,9 +727,85 @@ export const QuizManagementPage: React.FC = () => {
     }
   };
 
-  // Export Results to CSV
+  // Ranked Submissions with deterministic leadership place (1st, 2nd, 3rd, ...)
+  const rankedSubmissions = React.useMemo(() => {
+    const sorted = [...submissions].sort((a, b) => {
+      // 1. Primary: Highest score first
+      const scoreA = Number(a.score ?? -1);
+      const scoreB = Number(b.score ?? -1);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+
+      // 2. Secondary: Highest percentage / accuracy
+      const pctA = Number(a.percentage ?? 0);
+      const pctB = Number(b.percentage ?? 0);
+      if (pctB !== pctA) return pctB - pctA;
+
+      // 3. Tertiary: Most correct answers
+      const corA = Number(a.correctCount ?? 0);
+      const corB = Number(b.correctCount ?? 0);
+      if (corB !== corA) return corB - corA;
+
+      // 4. Quaternary: Lowest time spent (faster completion wins)
+      const timeA = Number(a.timeSpentSeconds ?? 999999);
+      const timeB = Number(b.timeSpentSeconds ?? 999999);
+      if (timeA !== timeB) return timeA - timeB;
+
+      // 5. Quinary: Earliest submission timestamp
+      const subA = Number(a.submittedAt ?? 0);
+      const subB = Number(b.submittedAt ?? 0);
+      if (subA !== subB) return subA - subB;
+
+      // 6. Senary: Cleanest proctoring record (fewer violations)
+      const violA = Number(a.violationsCount ?? 0);
+      const violB = Number(b.violationsCount ?? 0);
+      return violA - violB;
+    });
+
+    return sorted.map((sub, index) => {
+      const rank = index + 1;
+      let placeSuffix = "th";
+      if (rank % 10 === 1 && rank % 100 !== 11) placeSuffix = "st";
+      else if (rank % 10 === 2 && rank % 100 !== 12) placeSuffix = "nd";
+      else if (rank % 10 === 3 && rank % 100 !== 13) placeSuffix = "rd";
+
+      const info = resolveParticipantInfo(sub);
+
+      return {
+        ...sub,
+        rank,
+        rankLabel: `${rank}${placeSuffix}`,
+        resolvedName: info.displayName,
+        rollNo: info.rollNo,
+        resolvedTeamName: sub.teamName || info.teamName || "Solo"
+      };
+    });
+  }, [submissions, resolveParticipantInfo]);
+
+  // Filtered Submissions for Table view
+  const filteredSubmissions = React.useMemo(() => {
+    return rankedSubmissions.filter((sub) => {
+      if (subSearchQuery.trim()) {
+        const q = subSearchQuery.toLowerCase().trim();
+        const matchName = sub.resolvedName.toLowerCase().includes(q) || (sub.userName && sub.userName.toLowerCase().includes(q));
+        const matchEmail = (sub.userEmail || "").toLowerCase().includes(q);
+        const matchRoll = sub.rollNo ? sub.rollNo.toLowerCase().includes(q) : false;
+        const matchTeam = (sub.resolvedTeamName || "").toLowerCase().includes(q);
+        const matchRank = sub.rankLabel.toLowerCase() === q || `rank ${sub.rank}` === q || `#${sub.rank}` === q;
+        if (!matchName && !matchEmail && !matchRoll && !matchTeam && !matchRank) return false;
+      }
+
+      if (subFilterState === "top3") return sub.rank <= 3;
+      if (subFilterState === "passed") return sub.passed;
+      if (subFilterState === "failed") return !sub.passed && sub.score !== undefined;
+      if (subFilterState === "violations") return sub.violationsCount && sub.violationsCount > 0;
+
+      return true;
+    });
+  }, [rankedSubmissions, subSearchQuery, subFilterState]);
+
+  // Export Results to CSV with Rank & Registered Names
   const handleExportCSV = async () => {
-    if (submissions.length === 0) {
+    if (rankedSubmissions.length === 0) {
       await showAlert({
         title: "Export Notice",
         message: "No submissions are currently available to export.",
@@ -566,9 +816,10 @@ export const QuizManagementPage: React.FC = () => {
 
     const targetQuiz = quizzes.find((q) => q.id === selectedQuizId);
     const headers = [
-      "Submission ID",
-      "Participant Name",
+      "Rank / Place",
+      "Participant Name (Registered)",
       "Email",
+      "Roll No / Student ID",
       "Team Name",
       "Score",
       "Max Score",
@@ -579,21 +830,24 @@ export const QuizManagementPage: React.FC = () => {
       "Unanswered",
       "Total Questions",
       "Time Spent (s)",
+      "Time Spent (Formatted)",
       "Violations",
       "Submitted At"
     ];
 
-    const rows = submissions.map((s) => {
+    const rows = rankedSubmissions.map((s) => {
       const scoreVal = s.score ?? "N/A";
       const maxScoreVal = s.maxScore ?? (targetQuiz?.totalMarks || 50);
       const pctVal = s.percentage !== undefined ? `${s.percentage}%` : "N/A";
-      const statusVal = s.passed ? "Passed" : (s.score !== undefined ? "Failed" : "Submitted");
+      const statusVal = s.passed ? "Passed" : (s.score !== undefined ? "Below Cutoff" : "Submitted");
+      const formattedTime = `${Math.floor(s.timeSpentSeconds / 60)}m ${s.timeSpentSeconds % 60}s`;
 
       return [
-        s.id,
-        `"${s.userName || "N/A"}"`,
-        `"${s.userEmail || "N/A"}"`,
-        `"${s.teamName || "Solo"}"`,
+        `"${s.rankLabel}"`,
+        `"${(s.resolvedName || s.userName || "N/A").replace(/"/g, '""')}"`,
+        `"${(s.userEmail || "N/A").replace(/"/g, '""')}"`,
+        `"${(s.rollNo || "N/A").replace(/"/g, '""')}"`,
+        `"${(s.resolvedTeamName || s.teamName || "Solo").replace(/"/g, '""')}"`,
         scoreVal,
         maxScoreVal,
         `"${pctVal}"`,
@@ -603,17 +857,18 @@ export const QuizManagementPage: React.FC = () => {
         s.unansweredCount ?? 0,
         s.totalQuestions ?? 0,
         s.timeSpentSeconds,
+        `"${formattedTime}"`,
         s.violationsCount || 0,
         new Date(s.submittedAt).toISOString()
       ];
     });
 
-    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `quiz_${selectedQuizId}_submissions.csv`);
+    link.setAttribute("download", `quiz_${selectedQuizId}_ranked_scorecard.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -2026,36 +2281,46 @@ Answer: A`;
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                    {inProgressSessions.map((s) => (
-                      <tr key={s.id} className="hover:bg-slate-50/50">
-                        <td className="py-3.5 px-4 font-bold text-[#0F172A]">
-                          <div>{s.userName}</div>
-                          <div className="text-[10px] text-slate-400 font-normal">{s.userEmail}</div>
-                        </td>
-                        <td className="py-3.5 px-4">{s.teamName || "Solo"}</td>
-                        <td className="py-3.5 px-4">{new Date(s.startTime).toLocaleTimeString()}</td>
-                        <td className="py-3.5 px-4">
-                          <span className="text-emerald-600 font-bold">
-                            {Math.max(0, Math.floor((Date.now() - s.lastAutosavedAt) / 1000))}s ago
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          {s.violationsCount && s.violationsCount > 0 ? (
-                            <span className="bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full font-black text-[10px] flex items-center gap-1 w-max animate-pulse">
-                              <AlertTriangle className="w-3 h-3 text-red-600" />
-                              {s.violationsCount} Detected
+                    {inProgressSessions.map((s) => {
+                      const sInfo = resolveParticipantInfo(s);
+                      return (
+                        <tr key={s.id} className="hover:bg-slate-50/50">
+                          <td className="py-3.5 px-4 font-bold text-[#0F172A]">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-extrabold text-[#0F172A]">{sInfo.displayName}</span>
+                              {sInfo.rollNo && (
+                                <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase">
+                                  {sInfo.rollNo}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-normal">{s.userEmail}</div>
+                          </td>
+                          <td className="py-3.5 px-4">{s.teamName || sInfo.teamName || "Solo"}</td>
+                          <td className="py-3.5 px-4">{new Date(s.startTime).toLocaleTimeString()}</td>
+                          <td className="py-3.5 px-4">
+                            <span className="text-emerald-600 font-bold">
+                              {Math.max(0, Math.floor((Date.now() - s.lastAutosavedAt) / 1000))}s ago
                             </span>
-                          ) : (
-                            <span className="text-emerald-600 font-bold text-[11px]">0 (Clean)</span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 w-max">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Writing
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            {s.violationsCount && s.violationsCount > 0 ? (
+                              <span className="bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full font-black text-[10px] flex items-center gap-1 w-max animate-pulse">
+                                <AlertTriangle className="w-3 h-3 text-red-600" />
+                                {s.violationsCount} Detected
+                              </span>
+                            ) : (
+                              <span className="text-emerald-600 font-bold text-[11px]">0 (Clean)</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 w-max">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Writing
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2174,23 +2439,116 @@ Answer: A`;
               </div>
             )}
 
-            {/* Submissions Table */}
+            {/* Submissions Table & Search / Filter Controls */}
             <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-extrabold text-[#0F172A]">Finalized Submissions ({submissions.length})</h3>
-                <span className="text-xs text-slate-400 font-medium">Scores auto-evaluated & cryptographically locked</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0F172A] flex items-center gap-2">
+                    <span>Finalized Submissions & Leaderboard ({rankedSubmissions.length})</span>
+                    {rankedSubmissions.length > 0 && (
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
+                        Ranked by Performance
+                      </span>
+                    )}
+                  </h3>
+                  <span className="text-xs text-slate-400 font-medium">Rankings calculated deterministically by score, accuracy, completion speed & integrity</span>
+                </div>
               </div>
 
-              {submissions.length === 0 ? (
+              {/* Submissions Search & Filter Bar */}
+              {rankedSubmissions.length > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-100">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search by registered name, email, roll no..."
+                      value={subSearchQuery}
+                      onChange={(e) => setSubSearchQuery(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-8 py-2 text-xs font-bold text-[#0F172A] placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                    {subSearchQuery && (
+                      <button
+                        onClick={() => setSubSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                    <button
+                      onClick={() => setSubFilterState("all")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        subFilterState === "all"
+                          ? "bg-slate-900 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      All ({rankedSubmissions.length})
+                    </button>
+                    <button
+                      onClick={() => setSubFilterState("top3")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 cursor-pointer ${
+                        subFilterState === "top3"
+                          ? "bg-amber-500 text-white shadow-xs"
+                          : "bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200/60"
+                      }`}
+                    >
+                      <Trophy className="w-3 h-3" />
+                      <span>Podium (Top 3)</span>
+                    </button>
+                    <button
+                      onClick={() => setSubFilterState("passed")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        subFilterState === "passed"
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60"
+                      }`}
+                    >
+                      Passed ({rankedSubmissions.filter((s) => s.passed).length})
+                    </button>
+                    <button
+                      onClick={() => setSubFilterState("failed")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        subFilterState === "failed"
+                          ? "bg-red-600 text-white shadow-xs"
+                          : "bg-red-50 text-red-700 hover:bg-red-100 border border-red-200/60"
+                      }`}
+                    >
+                      Below Cutoff ({rankedSubmissions.filter((s) => !s.passed && s.score !== undefined).length})
+                    </button>
+                    <button
+                      onClick={() => setSubFilterState("violations")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        subFilterState === "violations"
+                          ? "bg-purple-600 text-white shadow-xs"
+                          : "bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200/60"
+                      }`}
+                    >
+                      Violations ({rankedSubmissions.filter((s) => s.violationsCount && s.violationsCount > 0).length})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {rankedSubmissions.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 space-y-2">
                   <Award className="w-10 h-10 mx-auto text-slate-300" />
                   <p className="text-xs font-semibold">No submissions recorded yet.</p>
+                </div>
+              ) : filteredSubmissions.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <Search className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="text-xs font-semibold">No participants match your search query or filter.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-3 px-4 text-center">Rank / Place</th>
                         <th className="py-3 px-4">Participant</th>
                         <th className="py-3 px-4">Team</th>
                         <th className="py-3 px-4">Score & Performance</th>
@@ -2202,7 +2560,7 @@ Answer: A`;
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                      {submissions.map((sub) => {
+                      {filteredSubmissions.map((sub) => {
                         const hasScore = sub.score !== undefined && sub.score !== null;
                         const scoreDisplay = hasScore ? sub.score : "-";
                         const maxDisplay = sub.maxScore || maxScoreAvailable;
@@ -2211,15 +2569,51 @@ Answer: A`;
 
                         return (
                           <tr key={sub.id} className="hover:bg-slate-50/50 transition-colors">
+                            {/* Leadership / Rank / Place Column */}
+                            <td className="py-3.5 px-4 text-center">
+                              {sub.rank === 1 ? (
+                                <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-amber-400/20 via-yellow-400/25 to-amber-500/20 text-amber-900 border border-amber-400/60 rounded-xl font-black text-xs shadow-xs" title="1st Place (Leaderboard Benchmark)">
+                                  <Trophy className="w-3.5 h-3.5 text-amber-600 fill-amber-500 shrink-0" />
+                                  <span className="bg-gradient-to-r from-amber-700 to-yellow-800 bg-clip-text text-transparent font-black tracking-wide">1st</span>
+                                </div>
+                              ) : sub.rank === 2 ? (
+                                <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-slate-200/60 via-slate-100 to-slate-200/60 text-slate-800 border border-slate-300 rounded-xl font-black text-xs shadow-2xs" title="2nd Place">
+                                  <Medal className="w-3.5 h-3.5 text-slate-600 fill-slate-400 shrink-0" />
+                                  <span className="text-slate-800 font-black tracking-wide">2nd</span>
+                                </div>
+                              ) : sub.rank === 3 ? (
+                                <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-amber-700/15 via-orange-600/15 to-amber-800/15 text-amber-900 border border-amber-600/40 rounded-xl font-black text-xs shadow-2xs" title="3rd Place">
+                                  <Medal className="w-3.5 h-3.5 text-amber-700 fill-amber-600 shrink-0" />
+                                  <span className="text-amber-800 font-black tracking-wide">3rd</span>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center justify-center min-w-[34px] px-2 py-0.5 bg-slate-50 text-slate-600 border border-slate-200/90 rounded-lg font-extrabold text-xs">
+                                  <span>#{sub.rank}</span>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Participant Column with Full Registered Name */}
                             <td className="py-3.5 px-4 font-bold text-[#0F172A]">
-                              <div>{sub.userName}</div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-extrabold text-[#0F172A]">{sub.resolvedName}</span>
+                                {sub.rollNo && (
+                                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/60 uppercase">
+                                    {sub.rollNo}
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-[10px] text-slate-400 font-normal">{sub.userEmail}</div>
                             </td>
+
+                            {/* Team / Category */}
                             <td className="py-3.5 px-4">
                               <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-semibold text-[11px]">
-                                {sub.teamName || "Solo"}
+                                {sub.resolvedTeamName}
                               </span>
                             </td>
+
+                            {/* Score & Performance */}
                             <td className="py-3.5 px-4">
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-1.5">
@@ -2249,6 +2643,8 @@ Answer: A`;
                                 </div>
                               </div>
                             </td>
+
+                            {/* Accuracy */}
                             <td className="py-3.5 px-4">
                               <div className="space-y-0.5">
                                 <div className="font-bold text-[#0F172A]">
@@ -2267,9 +2663,13 @@ Answer: A`;
                                 </div>
                               </div>
                             </td>
+
+                            {/* Time Spent */}
                             <td className="py-3.5 px-4 font-mono font-medium text-slate-600">
                               {Math.floor(sub.timeSpentSeconds / 60)}m {sub.timeSpentSeconds % 60}s
                             </td>
+
+                            {/* Proctoring Record */}
                             <td className="py-3.5 px-4">
                               {sub.violationsCount && sub.violationsCount > 0 ? (
                                 <span className="bg-red-50 text-red-700 border border-red-200 px-2.5 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 w-max">
@@ -2282,10 +2682,14 @@ Answer: A`;
                                 </span>
                               )}
                             </td>
+
+                            {/* Submitted At */}
                             <td className="py-3.5 px-4 text-slate-500">
                               <div>{new Date(sub.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                               <div className="text-[10px] text-slate-400">{new Date(sub.submittedAt).toLocaleDateString()}</div>
                             </td>
+
+                            {/* Actions */}
                             <td className="py-3.5 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
@@ -2338,16 +2742,35 @@ Answer: A`;
                     {/* Modal Header */}
                     <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
                             PARTICIPANT SCORECARD & AUDIT
                           </span>
+                          {inspectingSubmission.rankLabel && (
+                            <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
+                              inspectingSubmission.rank === 1
+                                ? "bg-amber-50 text-amber-800 border-amber-300"
+                                : inspectingSubmission.rank === 2
+                                  ? "bg-slate-100 text-slate-800 border-slate-300"
+                                  : inspectingSubmission.rank === 3
+                                    ? "bg-amber-100/60 text-amber-900 border-amber-300"
+                                    : "bg-slate-50 text-slate-700 border-slate-200"
+                            }`}>
+                              {inspectingSubmission.rank === 1 ? "🥇" : inspectingSubmission.rank === 2 ? "🥈" : inspectingSubmission.rank === 3 ? "🥉" : "#"} {inspectingSubmission.rankLabel} Place (Rank #{inspectingSubmission.rank})
+                            </span>
+                          )}
                           <span className="font-mono text-xs text-slate-400">
                             {inspectingSubmission.id.substring(0, 12)}
                           </span>
                         </div>
-                        <h2 className="text-lg font-black text-[#0F172A]">
-                          {inspectingSubmission.userName} ({inspectingSubmission.userEmail})
+                        <h2 className="text-lg font-black text-[#0F172A] flex items-center gap-2 flex-wrap">
+                          <span>{inspectingSubmission.resolvedName || inspectingSubmission.userName}</span>
+                          {inspectingSubmission.rollNo && (
+                            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60 uppercase">
+                              {inspectingSubmission.rollNo}
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-400 font-normal">({inspectingSubmission.userEmail})</span>
                         </h2>
                         <p className="text-xs text-slate-500 font-medium">
                           Quiz: <strong>{inspectingSubmission.quizTitle || quizForInspection?.title}</strong> • Team: <strong>{inspectingSubmission.teamName || "Solo"}</strong>

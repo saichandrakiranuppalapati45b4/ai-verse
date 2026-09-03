@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { doc, setDoc, getDoc, getDocs, collection, query, where, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, getDoc, getDocs, updateDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { supabase } from "../config/supabase";
 import { userService } from "../services/userService";
@@ -147,10 +147,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (docSnap.exists()) {
             const profileData = docSnap.data();
             const userRole = normalizeRole(profileData.role, forcedRole);
+            const resolvedName = profileData.displayName || profileData.name || profileData.teamLeadName || defaultName;
+            
             setUser({
               uid: userId,
               email: userEmail,
-              name: profileData.displayName || profileData.name || profileData.teamLeadName || defaultName,
+              name: resolvedName,
               role: userRole,
               displayRole: profileData.displayRole || profileData.role || forcedDisplayRole,
               image: profileData.image || "",
@@ -160,18 +162,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               eventTitle: profileData.eventTitle,
               registrationId: profileData.registrationId
             });
+
+            // If name in profile is merely the email prefix and user is a participant, attempt to resolve registered full name
+            if ((!profileData.displayName && (!profileData.name || profileData.name.toLowerCase() === defaultName.toLowerCase())) && !userEmail.endsWith("@aiverse.in")) {
+              getDocs(query(collection(db, "registrations"), where("email", "==", userEmail))).then((regSnap) => {
+                if (!regSnap.empty) {
+                  const reg = regSnap.docs[0].data();
+                  const realName = reg.fullName || reg.teamLeadName || reg.name;
+                  if (realName && realName.toLowerCase() !== defaultName.toLowerCase()) {
+                    setUser((prev) => (prev ? { ...prev, name: realName } : null));
+                    updateDoc(userDocRef, { name: realName, displayName: realName }).catch(() => {});
+                  }
+                }
+              }).catch(() => {});
+            }
           } else {
             setUser(fallbackProfile);
-            // Write a default profile document for them in Firestore asynchronously
-            const defaultProfile = {
-              name: defaultName,
-              email: userEmail,
-              role: forcedRole,
-              displayRole: forcedDisplayRole,
-              status: "Active"
-            };
-            setDoc(userDocRef, defaultProfile).catch((err) => {
-              console.error("[AuthContext] Error creating default profile document:", err);
+            // Check registrations first before writing default profile document
+            getDocs(query(collection(db, "registrations"), where("email", "==", userEmail))).then((regSnap) => {
+              let realName = defaultName;
+              let regId = "";
+              let group = "";
+              if (!regSnap.empty) {
+                const reg = regSnap.docs[0].data();
+                realName = reg.fullName || reg.teamLeadName || reg.name || defaultName;
+                regId = regSnap.docs[0].id;
+                group = reg.groupName || reg.teamName || "";
+              }
+              const defaultProfile = {
+                name: realName,
+                displayName: realName,
+                email: userEmail,
+                role: forcedRole,
+                displayRole: forcedDisplayRole,
+                status: "Active",
+                ...(regId ? { registrationId: regId } : {}),
+                ...(group ? { teamName: group } : {})
+              };
+              if (realName !== defaultName) {
+                setUser((prev) => (prev ? { ...prev, name: realName, teamName: group, registrationId: regId } : null));
+              }
+              setDoc(userDocRef, defaultProfile).catch((err) => {
+                console.error("[AuthContext] Error creating default profile document:", err);
+              });
+            }).catch(() => {
+              const defaultProfile = {
+                name: defaultName,
+                email: userEmail,
+                role: forcedRole,
+                displayRole: forcedDisplayRole,
+                status: "Active"
+              };
+              setDoc(userDocRef, defaultProfile).catch(() => {});
             });
           }
           setLoading(false);
