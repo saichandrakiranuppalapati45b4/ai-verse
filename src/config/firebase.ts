@@ -1,7 +1,13 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getAnalytics, isSupported, type Analytics } from "firebase/analytics";
 import { getAuth, type Auth } from "firebase/auth";
-import { initializeFirestore, getFirestore, type Firestore } from "firebase/firestore";
+import { 
+  initializeFirestore, 
+  getFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager,
+  type Firestore 
+} from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { env, validateEnvironment } from "./env";
 
@@ -40,10 +46,12 @@ try {
   appInstance = getApps().length > 0 ? getApp() : initializeApp(safeConfig);
   authInstance = getAuth(appInstance);
   
-  // Use initializeFirestore with experimentalForceLongPolling to prevent WebChannel streaming drops behind proxies/adblockers/firewalls
+  // Use persistent multi-tab IndexedDB cache for instantaneous 0ms offline-first data retrieval
   try {
     dbInstance = initializeFirestore(appInstance, {
-      experimentalForceLongPolling: true,
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      }),
     });
   } catch {
     dbInstance = getFirestore(appInstance);
@@ -68,7 +76,9 @@ try {
     authInstance = getAuth(appInstance);
     try {
       dbInstance = initializeFirestore(appInstance, {
-        experimentalForceLongPolling: true,
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        }),
       });
     } catch {
       dbInstance = getFirestore(appInstance);

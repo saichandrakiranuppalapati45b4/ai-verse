@@ -8,7 +8,7 @@ const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes cache lifetime
 
 export interface IDataCache {
   get<T>(key: string, maxAgeMs?: number): T | null;
-  set<T>(key: string, data: T): void;
+  set<T>(key: string, data: T, maxAgeMs?: number): void;
   invalidate(keyPrefix: string): void;
   loadWithRevalidate<T>(
     key: string,
@@ -51,7 +51,7 @@ export const dataCache: IDataCache = {
   /**
    * Store data in memory and sessionStorage
    */
-  set<T>(key: string, data: T): void {
+  set<T>(key: string, data: T, _maxAgeMs?: number): void {
     const timestamp = Date.now();
     memoryCache.set(key, { data, timestamp });
 

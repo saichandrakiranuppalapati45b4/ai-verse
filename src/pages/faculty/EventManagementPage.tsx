@@ -62,6 +62,7 @@ import TimePicker from "../../components/ui/TimePicker";
 import MemberSelectCombobox from "../../components/ui/MemberSelectCombobox";
 import { sendResendEmail } from "../../utils/resendEmailService";
 import { buildTeamCredentialsEmail, buildRoundPromotionEmail } from "../../utils/emailTemplates";
+import { dataCache } from "../../utils/dataCache";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -85,7 +86,9 @@ const EventManagementPage: React.FC = () => {
   const navigate = useNavigate();
   const { showConfirm, showAlert } = useModal();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [events, setEvents] = useState<EventItem[]>([]);
+  const cachedEvents = dataCache.get<EventItem[]>("faculty_events");
+  const [events, setEvents] = useState<EventItem[]>(cachedEvents || []);
+  const [loadingEvents, setLoadingEvents] = useState<boolean>(!cachedEvents);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const speakerFileInputRef = React.useRef<HTMLInputElement>(null);
   const juryFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -307,8 +310,11 @@ const EventManagementPage: React.FC = () => {
           });
         });
         setEvents(list);
+        dataCache.set("faculty_events", list, 60_000);
       } catch (err) {
         console.error("Error reading events from Firestore:", err);
+      } finally {
+        setLoadingEvents(false);
       }
     };
 
@@ -2828,7 +2834,14 @@ const EventManagementPage: React.FC = () => {
                 </div>
                 <div className="mt-3">
                   <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Total Events</span>
-                  <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">{events.length}</h3>
+                  {loadingEvents && events.length === 0 ? (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <Loader2 className="h-4 w-4 text-[#2563EB] animate-spin" />
+                      <span className="text-xs font-bold text-slate-400">Loading...</span>
+                    </div>
+                  ) : (
+                    <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">{events.length}</h3>
+                  )}
                 </div>
               </div>
               {/* Sparkline chart bar visual */}
@@ -2854,9 +2867,16 @@ const EventManagementPage: React.FC = () => {
                 </div>
                 <div className="mt-3">
                   <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Registrations</span>
-                  <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
-                    {events.reduce((sum, e) => sum + (e.currentReg || 0), 0).toLocaleString()}
-                  </h3>
+                  {loadingEvents && events.length === 0 ? (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <Loader2 className="h-4 w-4 text-[#2563EB] animate-spin" />
+                      <span className="text-xs font-bold text-slate-400">Loading...</span>
+                    </div>
+                  ) : (
+                    <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
+                      {events.reduce((sum, e) => sum + (e.currentReg || 0), 0).toLocaleString()}
+                    </h3>
+                  )}
                 </div>
               </div>
               {/* Sparkline chart bar visual */}
@@ -2906,9 +2926,16 @@ const EventManagementPage: React.FC = () => {
                 </div>
                 <div className="mt-3">
                   <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Weekly Sessions</span>
-                  <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
-                    {String(events.filter(e => e.status === "Opened" || e.status === "Active").length).padStart(2, '0')}
-                  </h3>
+                  {loadingEvents && events.length === 0 ? (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <Loader2 className="h-4 w-4 text-amber-600 animate-spin" />
+                      <span className="text-xs font-bold text-slate-400">Loading...</span>
+                    </div>
+                  ) : (
+                    <h3 className="text-2xl font-extrabold text-slate-800 tracking-tight mt-1">
+                      {String(events.filter(e => e.status === "Opened" || e.status === "Active").length).padStart(2, '0')}
+                    </h3>
+                  )}
                 </div>
               </div>
               <div className="mt-4 text-[9px] text-slate-500 font-bold flex items-center gap-1">
@@ -2961,7 +2988,17 @@ const EventManagementPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedEvents.length > 0 ? (
+                      {loadingEvents && events.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-14 text-center">
+                            <div className="flex flex-col items-center justify-center gap-2.5 py-4">
+                              <Loader2 className="w-8 h-8 text-[#2563EB] animate-spin" />
+                              <span className="text-sm font-bold text-slate-700">Loading event details...</span>
+                              <span className="text-xs text-slate-400">Fetching events directory from database</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : paginatedEvents.length > 0 ? (
                         paginatedEvents.map((event) => {
                           return (
                             <tr

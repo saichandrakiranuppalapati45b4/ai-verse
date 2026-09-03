@@ -2,47 +2,72 @@ import React, { useState, useEffect } from "react";
 import { Users, Calendar, UserPlus, Image, ArrowUp } from "lucide-react";
 import { db } from "../../config/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { dataCache } from "../../utils/dataCache";
 
 export const StatsGrid: React.FC = () => {
-  const [totalMembers, setTotalMembers] = useState(0);
-  const [activeEvents, setActiveEvents] = useState(0);
-  const [registrationQueue, setRegistrationQueue] = useState(0);
-  const [galleryAssets, setGalleryAssets] = useState(0);
-  const [photosToday, setPhotosToday] = useState(0);
+  const cachedStats = dataCache.get<any>("dashboard_stats_grid");
+  const [totalMembers, setTotalMembers] = useState(cachedStats?.totalMembers || 0);
+  const [activeEvents, setActiveEvents] = useState(cachedStats?.activeEvents || 0);
+  const [registrationQueue, setRegistrationQueue] = useState(cachedStats?.registrationQueue || 0);
+  const [galleryAssets, setGalleryAssets] = useState(cachedStats?.galleryAssets || 0);
+  const [photosToday, setPhotosToday] = useState(cachedStats?.photosToday || 0);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // 1. Total Members & Registration Queue
-        const usersSnap = await getDocs(collection(db, "users"));
-        setTotalMembers(usersSnap.size || usersSnap.docs.length);
+        // Execute all 3 queries concurrently in parallel
+        const [usersRes, eventsRes, albumsRes] = await Promise.allSettled([
+          getDocs(collection(db, "users")),
+          getDocs(collection(db, "events")),
+          getDocs(collection(db, "albums"))
+        ]);
 
-        const pending = usersSnap.docs.filter(d => {
-          const status = d.data().status;
-          return status === "Pending" || status === "pending";
-        });
-        setRegistrationQueue(pending.length);
+        let membersCount = totalMembers;
+        let queueCount = registrationQueue;
+        let eventsCount = activeEvents;
+        let photosTotal = galleryAssets;
+        let todayCount = photosToday;
 
-        // 2. Active Events
-        const eventsSnap = await getDocs(collection(db, "events"));
-        setActiveEvents(eventsSnap.size || eventsSnap.docs.length);
+        if (usersRes.status === "fulfilled") {
+          membersCount = usersRes.value.size || usersRes.value.docs.length;
+          const pending = usersRes.value.docs.filter(d => {
+            const status = d.data().status;
+            return status === "Pending" || status === "pending";
+          });
+          queueCount = pending.length;
+          setTotalMembers(membersCount);
+          setRegistrationQueue(queueCount);
+        }
 
-        // 3. Gallery Assets (sum of photosCount from all albums)
-        const albumsSnap = await getDocs(collection(db, "albums"));
-        let photosTotal = 0;
-        let todayCount = 0;
-        albumsSnap.forEach(d => {
-          const data = d.data();
-          photosTotal += (data.photosCount || 0);
-          const createdAt = data.createdAt || 0;
-          if (createdAt && (Date.now() - createdAt < 86400000)) {
-            todayCount += (data.photosCount || 0);
-          }
-        });
-        setGalleryAssets(photosTotal || 142);
-        setPhotosToday(todayCount || 0);
+        if (eventsRes.status === "fulfilled") {
+          eventsCount = eventsRes.value.size || eventsRes.value.docs.length;
+          setActiveEvents(eventsCount);
+        }
+
+        if (albumsRes.status === "fulfilled") {
+          photosTotal = 0;
+          todayCount = 0;
+          albumsRes.value.forEach(d => {
+            const data = d.data();
+            photosTotal += (data.photosCount || 0);
+            const createdAt = data.createdAt || 0;
+            if (createdAt && (Date.now() - createdAt < 86400000)) {
+              todayCount += (data.photosCount || 0);
+            }
+          });
+          setGalleryAssets(photosTotal || 142);
+          setPhotosToday(todayCount || 0);
+        }
+
+        dataCache.set("dashboard_stats_grid", {
+          totalMembers: membersCount,
+          registrationQueue: queueCount,
+          activeEvents: eventsCount,
+          galleryAssets: photosTotal || 142,
+          photosToday: todayCount || 0
+        }, 60_000);
       } catch (err: any) {
-        console.warn("[StatsGrid] Remote stats unavailable, using default metrics:", err?.message || err);
+        console.warn("[StatsGrid] Remote stats notice:", err?.message || err);
       }
     };
     fetchStats();

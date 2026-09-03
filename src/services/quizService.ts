@@ -20,6 +20,7 @@ import type {
 import { quizMonitor } from "../utils/quizMonitor";
 import { retryWithBackoff } from "../utils/networkStatus";
 import { quizLoadBalancer } from "../utils/quizLoadBalancer";
+import { dataCache } from "../utils/dataCache";
 
 // ─── In-Memory Cache ─────────────────────────────────────────────────────────
 
@@ -135,9 +136,42 @@ async function fetchQuizFromFirestore(cleanId: string): Promise<Quiz | null> {
 }
 
 /**
- * Fetch all available quizzes for participants or faculty
+ * Fetch all available quizzes for participants or faculty (0ms Stale-While-Revalidate)
  */
 export async function getAllQuizzes(): Promise<Quiz[]> {
+  const cached = dataCache.get<Quiz[]>("all_quizzes");
+  if (cached && cached.length > 0) {
+    // Background refresh without blocking UI
+    getDocs(collection(db, "quizzes")).then((snap) => {
+      const freshQuizzes: Quiz[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        freshQuizzes.push({
+          id: d.id,
+          title: data.title || "Untitled Quiz",
+          description: data.description || "",
+          eventId: data.eventId || "",
+          eventTitle: data.eventTitle || "",
+          track: data.track || "General",
+          durationMinutes: Number(data.durationMinutes) || 30,
+          totalMarks: Number(data.totalMarks) || 50,
+          passingMarks: Number(data.passingMarks) || 20,
+          instructions: data.instructions || [],
+          status: data.status || "draft",
+          scheduledStartTime: data.scheduledStartTime || 0,
+          scheduledEndTime: data.scheduledEndTime || 0,
+          questionsCount: Number(data.questionsCount) || (data.questions?.length || 0),
+          questions: data.questions || [],
+          createdAt: data.createdAt || Date.now(),
+          updatedAt: data.updatedAt || Date.now()
+        });
+      });
+      dataCache.set("all_quizzes", freshQuizzes, 60_000);
+    }).catch(() => {});
+
+    return cached;
+  }
+
   try {
     const snap = await getDocs(collection(db, "quizzes"));
     const quizzes: Quiz[] = [];
@@ -163,6 +197,7 @@ export async function getAllQuizzes(): Promise<Quiz[]> {
         updatedAt: data.updatedAt || Date.now()
       });
     });
+    dataCache.set("all_quizzes", quizzes, 60_000);
     return quizzes;
   } catch (err) {
     quizMonitor.trackError("load_failure", "Error fetching quizzes list", { error: String(err) });

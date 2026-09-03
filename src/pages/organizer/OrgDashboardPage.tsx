@@ -38,48 +38,60 @@ interface RegistrationItem {
   teamSize?: number;
 }
 
+import { dataCache } from "../../utils/dataCache";
+
 const OrgDashboardPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [registrations, setRegistrations] = useState<RegistrationItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedEvents = dataCache.get<EventItem[]>("org_dashboard_events");
+  const cachedRegs = dataCache.get<RegistrationItem[]>("org_dashboard_regs");
+  const [events, setEvents] = useState<EventItem[]>(cachedEvents || []);
+  const [registrations, setRegistrations] = useState<RegistrationItem[]>(cachedRegs || []);
+  const [loading, setLoading] = useState(!cachedEvents);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch all events
-        const eventSnapshot = await getDocs(collection(db, "events"));
-        const eventList: EventItem[] = [];
-        eventSnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          eventList.push({
-            id: docSnap.id,
-            title: data.title || "Untitled Event",
-            description: data.description || "No description provided.",
-            currentReg: Math.max(0, Number(data.currentReg) || 0),
-            maxReg: Number(data.maxReg) || 100,
-            status: data.status || "Draft",
-            date: data.date || "TBD",
-            location: data.location || "TBD",
-            time: data.time || "TBD",
-            category: data.category || "General"
-          });
-        });
-        setEvents(eventList);
+        // Parallelize events and registrations queries
+        const [eventSnapshotRes, regSnapshotRes] = await Promise.allSettled([
+          getDocs(collection(db, "events")),
+          getDocs(collection(db, "registrations"))
+        ]);
 
-        // Fetch registrations to compute pending approvals count
-        const regSnapshot = await getDocs(collection(db, "registrations"));
-        const regList: RegistrationItem[] = [];
-        regSnapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          regList.push({
-            id: docSnap.id,
-            status: data.status || "Confirmed",
-            teamSize: data.teamSize || 1
+        if (eventSnapshotRes.status === "fulfilled") {
+          const eventList: EventItem[] = [];
+          eventSnapshotRes.value.forEach((docSnap) => {
+            const data = docSnap.data();
+            eventList.push({
+              id: docSnap.id,
+              title: data.title || "Untitled Event",
+              description: data.description || "No description provided.",
+              currentReg: Math.max(0, Number(data.currentReg) || 0),
+              maxReg: Number(data.maxReg) || 100,
+              status: data.status || "Draft",
+              date: data.date || "TBD",
+              location: data.location || "TBD",
+              time: data.time || "TBD",
+              category: data.category || "General"
+            });
           });
-        });
-        setRegistrations(regList);
+          setEvents(eventList);
+          dataCache.set("org_dashboard_events", eventList, 60_000);
+        }
+
+        if (regSnapshotRes.status === "fulfilled") {
+          const regList: RegistrationItem[] = [];
+          regSnapshotRes.value.forEach((docSnap) => {
+            const data = docSnap.data();
+            regList.push({
+              id: docSnap.id,
+              status: data.status || "Confirmed",
+              teamSize: data.teamSize || 1
+            });
+          });
+          setRegistrations(regList);
+          dataCache.set("org_dashboard_regs", regList, 60_000);
+        }
       } catch (err) {
         console.error("Error loading coordinator dashboard data:", err);
       } finally {

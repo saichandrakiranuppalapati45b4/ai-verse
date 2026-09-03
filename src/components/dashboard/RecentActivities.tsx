@@ -44,81 +44,100 @@ const formatRelativeTime = (ts: any): string => {
   return `${days} days ago`;
 };
 
+import { dataCache } from "../../utils/dataCache";
+
 export const RecentActivities: React.FC = () => {
-  const [activities, setActivities] = useState<Activity[]>([]);
+  const cachedActivities = dataCache.get<Activity[]>("dashboard_recent_activities");
+  const [activities, setActivities] = useState<Activity[]>(cachedActivities || []);
 
   useEffect(() => {
     const fetchRecentActivities = async () => {
       try {
         const mergedList: Activity[] = [];
 
-        // 1. Fetch Events
-        const eventsSnap = await getDocs(collection(db, "events"));
-        eventsSnap.forEach(d => {
-          const data = d.data();
-          const timestamp = getMillis(data.createdAt);
-          mergedList.push({
-            id: `event-${d.id}`,
-            user: { initials: "AD", name: "Admin", bgColor: "bg-blue-50", textColor: "text-blue-600" },
-            action: { label: "CREATE EVENT", type: "create" },
-            entity: data.title || data.name || "Event Item",
-            time: formatRelativeTime(timestamp),
-            status: "success",
-            timestamp
-          });
-        });
+        // Parallelize all 4 collections concurrently
+        const [eventsRes, teamRes, albumsRes, usersRes] = await Promise.allSettled([
+          getDocs(collection(db, "events")),
+          getDocs(collection(db, "organizers")),
+          getDocs(collection(db, "albums")),
+          getDocs(collection(db, "users"))
+        ]);
 
-        // 2. Fetch Team/Organizers
-        const teamSnap = await getDocs(collection(db, "organizers"));
-        teamSnap.forEach(d => {
-          const data = d.data();
-          const timestamp = getMillis(data.createdAt);
-          mergedList.push({
-            id: `team-${d.id}`,
-            user: { initials: "AD", name: "Admin", bgColor: "bg-purple-50", textColor: "text-purple-600" },
-            action: { label: "ADD ORGANIZER", type: "create" },
-            entity: data.name || "Team Member",
-            time: formatRelativeTime(timestamp),
-            status: "success",
-            timestamp
+        // 1. Process Events
+        if (eventsRes.status === "fulfilled") {
+          eventsRes.value.forEach(d => {
+            const data = d.data();
+            const timestamp = getMillis(data.createdAt);
+            mergedList.push({
+              id: `event-${d.id}`,
+              user: { initials: "AD", name: "Admin", bgColor: "bg-blue-50", textColor: "text-blue-600" },
+              action: { label: "CREATE EVENT", type: "create" },
+              entity: data.title || data.name || "Event Item",
+              time: formatRelativeTime(timestamp),
+              status: "success",
+              timestamp
+            });
           });
-        });
+        }
 
-        // 3. Fetch Albums
-        const albumsSnap = await getDocs(collection(db, "albums"));
-        albumsSnap.forEach(d => {
-          const data = d.data();
-          const timestamp = getMillis(data.createdAt);
-          mergedList.push({
-            id: `album-${d.id}`,
-            user: { initials: "AD", name: "Admin", bgColor: "bg-emerald-50", textColor: "text-emerald-600" },
-            action: { label: "CREATE ALBUM", type: "create" },
-            entity: data.title || "Gallery Album",
-            time: formatRelativeTime(timestamp),
-            status: "success",
-            timestamp
+        // 2. Process Team/Organizers
+        if (teamRes.status === "fulfilled") {
+          teamRes.value.forEach(d => {
+            const data = d.data();
+            const timestamp = getMillis(data.createdAt);
+            mergedList.push({
+              id: `team-${d.id}`,
+              user: { initials: "AD", name: "Admin", bgColor: "bg-purple-50", textColor: "text-purple-600" },
+              action: { label: "ADD ORGANIZER", type: "create" },
+              entity: data.name || "Team Member",
+              time: formatRelativeTime(timestamp),
+              status: "success",
+              timestamp
+            });
           });
-        });
+        }
 
-        // 4. Fetch Users
-        const usersSnap = await getDocs(collection(db, "users"));
-        usersSnap.forEach(d => {
-          const data = d.data();
-          const timestamp = getMillis(data.createdAt);
-          const initials = (data.name || "U").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
-          mergedList.push({
-            id: `user-${d.id}`,
-            user: { initials, name: data.name || "User", bgColor: "bg-slate-100", textColor: "text-slate-600" },
-            action: { label: "NEW USER JOINED", type: "create" },
-            entity: data.email || "Registered Account",
-            time: formatRelativeTime(timestamp),
-            status: data.status === "Pending" ? "info" : "success",
-            timestamp
+        // 3. Process Albums
+        if (albumsRes.status === "fulfilled") {
+          albumsRes.value.forEach(d => {
+            const data = d.data();
+            const timestamp = getMillis(data.createdAt);
+            mergedList.push({
+              id: `album-${d.id}`,
+              user: { initials: "AD", name: "Admin", bgColor: "bg-emerald-50", textColor: "text-emerald-600" },
+              action: { label: "CREATE ALBUM", type: "create" },
+              entity: data.title || "Gallery Album",
+              time: formatRelativeTime(timestamp),
+              status: "success",
+              timestamp
+            });
           });
-        });
+        }
+
+        // 4. Process Users
+        if (usersRes.status === "fulfilled") {
+          usersRes.value.forEach(d => {
+            const data = d.data();
+            const timestamp = getMillis(data.createdAt);
+            const initials = (data.name || "U").split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+            mergedList.push({
+              id: `user-${d.id}`,
+              user: { initials, name: data.name || "User", bgColor: "bg-slate-100", textColor: "text-slate-600" },
+              action: { label: "NEW USER JOINED", type: "create" },
+              entity: data.email || "Registered Account",
+              time: formatRelativeTime(timestamp),
+              status: data.status === "Pending" ? "info" : "success",
+              timestamp
+            });
+          });
+        }
 
         // Sort by timestamp desc and take top 5
         const sorted = mergedList.sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
+        if (sorted.length > 0) {
+          setActivities(sorted);
+          dataCache.set("dashboard_recent_activities", sorted, 60_000);
+        }
         
         if (sorted.length === 0) {
           setActivities([
