@@ -5,6 +5,7 @@ import { getOrCreateQuizSession, getDeterministicSessionId } from "../../service
 import type { Quiz } from "../../types/quiz";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
+import { quizLoadBalancer } from "../../utils/quizLoadBalancer";
 import SEO from "../../components/layout/SEO";
 import { 
   Clock, 
@@ -124,11 +125,13 @@ export const QuizLobbyPage: React.FC = () => {
       }
     };
 
-    // Initial fetch
-    fetchQuizStatus();
+    // Initial fetch with user slot jitter to smooth lobby crowd
+    const initialJitter = quizLoadBalancer.getUserJitter(user?.uid || "lobby_guest", 1500);
+    const initTimer = setTimeout(fetchQuizStatus, initialJitter);
 
-    // Poll every 30 seconds (Ultra-Low Quota mode)
-    const pollId = setInterval(fetchQuizStatus, 30_000);
+    // Poll every 30 seconds with ±3s randomized jitter
+    const jitteredPollMs = 30_000 + (quizLoadBalancer.getUserJitter(user?.uid || "lobby_guest", 6000) - 3000);
+    const pollId = setInterval(fetchQuizStatus, Math.max(15_000, jitteredPollMs));
 
     // Also re-check immediately when tab becomes visible
     const handleVisibility = () => {
@@ -140,6 +143,7 @@ export const QuizLobbyPage: React.FC = () => {
 
     return () => {
       isMounted = false;
+      clearTimeout(initTimer);
       clearInterval(pollId);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
@@ -185,14 +189,23 @@ export const QuizLobbyPage: React.FC = () => {
       setStarting(true);
       setError(null);
 
-      // Initialize or restore session
-      await getOrCreateQuizSession(quiz, {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.name || user.email
-      }, {
-        name: user.teamName
-      });
+      // Stagger entry across 1,000 users with micro-jitter (0-800ms)
+      const entryJitter = quizLoadBalancer.getUserJitter(user.uid, 800);
+      if (entryJitter > 50) {
+        await new Promise(r => setTimeout(r, entryJitter));
+      }
+
+      // Initialize or restore session via load balancer gate
+      await quizLoadBalancer.executeGatedRequest(() => 
+        getOrCreateQuizSession(quiz, {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.name || user.email
+        }, {
+          name: user.teamName
+        }),
+        "high"
+      );
 
       // Navigate to examination environment
       navigate(`/participant/quiz/${quiz.id}/take`);
@@ -423,10 +436,12 @@ export const QuizLobbyPage: React.FC = () => {
             </div>
           </div>
 
-          <label className={`flex items-start gap-3 p-4 rounded-2xl transition-colors ${
+          <label htmlFor="quiz-acknowledgment" className={`flex items-start gap-3 p-4 rounded-2xl transition-colors ${
             isLive ? "bg-blue-50/50 border border-blue-100 cursor-pointer hover:bg-blue-50" : "bg-slate-50 border border-slate-200 opacity-60 cursor-not-allowed"
           }`}>
             <input
+              id="quiz-acknowledgment"
+              name="quizAcknowledgment"
               type="checkbox"
               disabled={!isLive}
               checked={acknowledged}

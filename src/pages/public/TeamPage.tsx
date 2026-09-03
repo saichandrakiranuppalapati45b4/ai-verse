@@ -12,6 +12,7 @@ import { db } from "../../config/firebase";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { userService } from "../../services/userService";
 import { formatRoleLabel } from "../faculty/UserManagementPage";
+import { dataCache } from "../../utils/dataCache";
 
 // Import local assets
 import heroImg from "../../assets/images/aether_hero.png";
@@ -70,63 +71,58 @@ const EXCLUDED_SYSTEM_EMAILS = [
 const BLANK_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394A3B8'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
 const TeamPage: React.FC = () => {
-  const [dbMembers, setDbMembers] = useState<MemberData[]>([]);
+  const [dbMembers, setDbMembers] = useState<MemberData[]>(() => dataCache.get<MemberData[]>("public_team") || []);
   const [configuredRoles, setConfiguredRoles] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !dataCache.get<MemberData[]>("public_team"));
 
   useEffect(() => {
     const fetchTeam = async () => {
       try {
-        setLoading(true);
+        // Run all queries in parallel
+        const [configRes, supaRes, usersRes, orgsRes] = await Promise.allSettled([
+          getDoc(doc(db, "settings", "portal_config")),
+          userService.getUsers(),
+          getDocs(collection(db, "users")),
+          getDocs(collection(db, "organizers"))
+        ]);
 
-        // 0. Fetch dynamic role hierarchy from Firestore Portal Settings
-        try {
-          const configDoc = await getDoc(doc(db, "settings", "portal_config"));
-          if (configDoc.exists()) {
-            const configData = configDoc.data();
-            if (configData.availableRoles && Array.isArray(configData.availableRoles) && configData.availableRoles.length > 0) {
-              setConfiguredRoles(configData.availableRoles);
-            }
+        // Process config roles
+        if (configRes.status === "fulfilled" && configRes.value.exists()) {
+          const configData = configRes.value.data();
+          if (configData.availableRoles && Array.isArray(configData.availableRoles) && configData.availableRoles.length > 0) {
+            setConfiguredRoles(configData.availableRoles);
           }
-        } catch (confErr) {
-          console.warn("[TeamPage] Notice fetching portal_config roles:", confErr);
         }
 
         const combinedList: any[] = [];
         const seenEmails = new Set<string>();
 
-        // 1. Fetch from Supabase
-        try {
-          const supabaseUsers = await userService.getUsers();
-          if (supabaseUsers && supabaseUsers.length > 0) {
-            supabaseUsers.forEach((u) => {
-              const email = (u.email || "").toLowerCase().trim();
-              if (email) seenEmails.add(email);
-              combinedList.push({
-                id: u.id,
-                name: u.name || u.display_name || "Unnamed Member",
-                email: u.email || "",
-                personal_email: u.personal_email || "",
-                role: u.role || "Student Member",
-                position: u.position || u.role || "",
-                roleType: u.role || "Organizer",
-                status: u.status || "Active",
-                image: u.image || "",
-                bio: u.bio || "",
-                linkedin: u.linkedin || "",
-                github: u.github || "",
-                phone: u.phone || ""
-              });
+        // 1. Process Supabase users
+        if (supaRes.status === "fulfilled" && Array.isArray(supaRes.value)) {
+          supaRes.value.forEach((u) => {
+            const email = (u.email || "").toLowerCase().trim();
+            if (email) seenEmails.add(email);
+            combinedList.push({
+              id: u.id,
+              name: u.name || u.display_name || "Unnamed Member",
+              email: u.email || "",
+              personal_email: u.personal_email || "",
+              role: u.role || "Student Member",
+              position: u.position || u.role || "",
+              roleType: u.role || "Organizer",
+              status: u.status || "Active",
+              image: u.image || "",
+              bio: u.bio || "",
+              linkedin: u.linkedin || "",
+              github: u.github || "",
+              phone: u.phone || ""
             });
-          }
-        } catch (supaErr) {
-          console.warn("[TeamPage] Notice fetching team from Supabase:", supaErr);
+          });
         }
 
-        // 2. Fetch from Firestore users
-        try {
-          const usersSnap = await getDocs(collection(db, "users"));
-          usersSnap.forEach((docSnap) => {
+        // 2. Process Firestore users
+        if (usersRes.status === "fulfilled") {
+          usersRes.value.forEach((docSnap) => {
             const data = docSnap.data();
             const email = (data.email || "").toLowerCase().trim();
             if (email && seenEmails.has(email)) {
@@ -160,14 +156,11 @@ const TeamPage: React.FC = () => {
               });
             }
           });
-        } catch (fsErr) {
-          console.warn("[TeamPage] Notice fetching users from Firestore:", fsErr);
         }
 
-        // 3. Fetch from Firestore organizers
-        try {
-          const organizersSnap = await getDocs(collection(db, "organizers"));
-          organizersSnap.forEach((docSnap) => {
+        // 3. Process Firestore organizers
+        if (orgsRes.status === "fulfilled") {
+          orgsRes.value.forEach((docSnap) => {
             const data = docSnap.data();
             const email = (data.email || "").toLowerCase().trim();
             if (email && seenEmails.has(email)) {
@@ -201,8 +194,6 @@ const TeamPage: React.FC = () => {
               });
             }
           });
-        } catch (orgErr) {
-          console.warn("[TeamPage] Notice fetching organizers from Firestore:", orgErr);
         }
 
         // 4. Filter out excluded system accounts and participant accounts
@@ -237,6 +228,7 @@ const TeamPage: React.FC = () => {
         });
 
         setDbMembers(validMembers);
+        dataCache.set("public_team", validMembers);
       } catch (err) {
         console.error("Error fetching team members:", err);
       } finally {

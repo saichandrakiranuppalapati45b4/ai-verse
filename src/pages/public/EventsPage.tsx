@@ -12,6 +12,7 @@ import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { dataCache } from "../../utils/dataCache";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -42,8 +43,8 @@ interface Event {
 const EventsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"All" | "Workshop" | "Hackathon" | "Seminar" | "Completed">("All");
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [events, setEvents] = useState<Event[]>(() => dataCache.get<Event[]>("public_events") || []);
+  const [loading, setLoading] = useState<boolean>(() => !dataCache.get<Event[]>("public_events"));
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -169,8 +170,6 @@ const EventsPage: React.FC = () => {
         };
 
         // Partition and sort by actual event date:
-        // Upcoming / active events appear first in chronological order (soonest first),
-        // followed by concluded/completed events in reverse chronological order (most recent first).
         const startOfToday = new Date().setHours(0, 0, 0, 0);
         const upcomingEvents: Event[] = [];
         const pastEvents: Event[] = [];
@@ -188,7 +187,9 @@ const EventsPage: React.FC = () => {
         upcomingEvents.sort((a, b) => getEventTimestamp(a) - getEventTimestamp(b));
         pastEvents.sort((a, b) => getEventTimestamp(b) - getEventTimestamp(a));
 
-        setEvents([...upcomingEvents, ...pastEvents]);
+        const finalSorted = [...upcomingEvents, ...pastEvents];
+        setEvents(finalSorted);
+        dataCache.set("public_events", finalSorted);
       } catch (err) {
         console.error("Error reading events from Firestore:", err);
       } finally {
@@ -356,7 +357,10 @@ const EventsPage: React.FC = () => {
             <div className="relative flex items-center bg-white border border-slate-200/80 shadow-md shadow-slate-100/60 rounded-xl p-1.5 focus-within:ring-2 focus-within:ring-[#2563EB] transition-all">
               <Search className="absolute left-4 h-5 w-5 text-slate-400 pointer-events-none" />
               <input
+                id="events-search"
+                name="eventsSearch"
                 type="text"
+                aria-label="Find specific events"
                 placeholder="Find specific events..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}

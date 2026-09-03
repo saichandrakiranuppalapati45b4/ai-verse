@@ -5,9 +5,11 @@ const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 // Supported Google AI Studio / Gemini models in priority order
 const GEMINI_MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash"
+  "gemini-1.5-flash-latest",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+  "gemini-2.0-flash-exp",
+  "gemini-pro"
 ];
 
 interface GeminiQuestionOutput {
@@ -35,7 +37,6 @@ export async function extractQuizQuestionsWithGemini(
 
   // If no Gemini API key configured, use local parser
   if (!apiKey || apiKey === "your_google_ai_studio_gemini_api_key") {
-    console.log("No Gemini API key found, using local parser");
     const localResult = parseQuestionsFromText(rawText, targetCategory);
     return { questions: localResult, usedAI: false };
   }
@@ -102,9 +103,7 @@ ${rawText}
       });
 
       if (!response.ok) {
-        const errText = await response.text();
-        console.warn(`Gemini API returned ${response.status} for model ${model}:`, errText);
-        continue; // Try next model or fallback
+        continue; // Try next model or fallback quietly
       }
 
       const data = await response.json();

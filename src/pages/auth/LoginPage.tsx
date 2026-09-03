@@ -110,7 +110,7 @@ const LoginPage: React.FC = () => {
         <form onSubmit={handleFormSubmit} className="space-y-4 text-left">
           {/* Email / Phone field */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <label htmlFor="login-identifier" className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
               Email Address or Phone Number
             </label>
             <div className="relative flex items-center">
@@ -120,7 +120,10 @@ const LoginPage: React.FC = () => {
                 <Mail className="absolute left-4 h-4 w-4 text-slate-400 pointer-events-none" />
               )}
               <input
+                id="login-identifier"
+                name="identifier"
                 type="text"
+                autoComplete="username email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email Address or Registered Phone Number"
@@ -142,7 +145,7 @@ const LoginPage: React.FC = () => {
           {!isPhoneInput && (
             <div className="space-y-1.5 animate-in fade-in">
               <div className="flex justify-between items-center">
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                <label htmlFor="login-password" className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Password
                 </label>
                 <button
@@ -156,7 +159,10 @@ const LoginPage: React.FC = () => {
               <div className="relative flex items-center">
                 <Lock className="absolute left-4 h-4 w-4 text-slate-400 pointer-events-none" />
                 <input
+                  id="login-password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"

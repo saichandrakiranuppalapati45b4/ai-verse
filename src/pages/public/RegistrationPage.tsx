@@ -786,11 +786,14 @@ const RegistrationPage: React.FC = () => {
                   /* Quiz Single Participant Form */
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                      <label htmlFor="reg-lead-name" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                         Full Name <span className="text-red-500">*</span>
                       </label>
                       <input
+                        id="reg-lead-name"
+                        name="fullName"
                         type="text"
+                        autoComplete="name"
                         placeholder="Enter full name"
                         value={leadName}
                         onChange={(e) => setLeadName(e.target.value)}
@@ -799,10 +802,12 @@ const RegistrationPage: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                      <label htmlFor="reg-lead-student-id" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                         Regd No / Roll No <span className="text-red-500">*</span>
                       </label>
                       <input
+                        id="reg-lead-student-id"
+                        name="studentId"
                         type="text"
                         placeholder="e.g. 21B01A1201 / Roll No"
                         value={leadStudentId}
@@ -818,11 +823,14 @@ const RegistrationPage: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        <label htmlFor="reg-lead-college-email" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                           College Mail <span className="text-red-500">*</span>
                         </label>
                         <input
+                          id="reg-lead-college-email"
+                          name="collegeEmail"
                           type="email"
+                          autoComplete="email"
                           placeholder="e.g. student@college.edu.in or rollno@university.ac.in"
                           value={leadCollegeEmail}
                           onChange={(e) => setLeadCollegeEmail(e.target.value)}
@@ -845,11 +853,14 @@ const RegistrationPage: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        <label htmlFor="reg-lead-personal-email" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                           Personal Mail <span className="text-red-500">*</span>
                         </label>
                         <input
+                          id="reg-lead-personal-email"
+                          name="personalEmail"
                           type="email"
+                          autoComplete="email"
                           placeholder="personal@gmail.com"
                           value={leadPersonalEmail}
                           onChange={(e) => setLeadPersonalEmail(e.target.value)}
@@ -866,11 +877,14 @@ const RegistrationPage: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                      <label htmlFor="reg-lead-phone" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                         Phone Number <span className="text-red-500">*</span>
                       </label>
                       <input
+                        id="reg-lead-phone"
+                        name="phoneNumber"
                         type="tel"
+                        autoComplete="tel"
                         placeholder="e.g. 9876543210"
                         value={leadPhone}
                         onChange={(e) => setLeadPhone(e.target.value)}
@@ -882,8 +896,10 @@ const RegistrationPage: React.FC = () => {
                   <>
                     {event.maxTeamSize > 1 && (
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Group Name</label>
+                        <label htmlFor="reg-group-name" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Group Name</label>
                         <input
+                          id="reg-group-name"
+                          name="groupName"
                           type="text"
                           placeholder="e.g. Neural Nexus Alpha"
                           value={groupName}
@@ -895,9 +911,12 @@ const RegistrationPage: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Name</label>
+                        <label htmlFor="reg-team-lead-name" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Name</label>
                         <input
+                          id="reg-team-lead-name"
+                          name="teamLeadName"
                           type="text"
+                          autoComplete="name"
                           placeholder="Full legal name"
                           value={leadName}
                           onChange={(e) => setLeadName(e.target.value)}
@@ -906,8 +925,10 @@ const RegistrationPage: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Student ID</label>
+                        <label htmlFor="reg-team-lead-student-id" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Team Lead Student ID</label>
                         <input
+                          id="reg-team-lead-student-id"
+                          name="teamLeadStudentId"
                           type="text"
                           placeholder="e.g. Roll No / Student ID"
                           value={leadStudentId}
@@ -924,11 +945,14 @@ const RegistrationPage: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        <label htmlFor="reg-team-lead-college-email" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                           Team Lead College Email <span className="text-red-500">*</span>
                         </label>
                         <input
+                          id="reg-team-lead-college-email"
+                          name="teamLeadCollegeEmail"
                           type="email"
+                          autoComplete="email"
                           placeholder="e.g. student@college.edu.in or rollno@university.ac.in"
                           value={leadCollegeEmail}
                           onChange={(e) => setLeadCollegeEmail(e.target.value)}
@@ -951,11 +975,14 @@ const RegistrationPage: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        <label htmlFor="reg-team-lead-personal-email" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                           Team Lead Personal Email <span className="text-red-500">*</span>
                         </label>
                         <input
+                          id="reg-team-lead-personal-email"
+                          name="teamLeadPersonalEmail"
                           type="email"
+                          autoComplete="email"
                           placeholder="personal@gmail.com"
                           value={leadPersonalEmail}
                           onChange={(e) => setLeadPersonalEmail(e.target.value)}
@@ -973,11 +1000,14 @@ const RegistrationPage: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        <label htmlFor="reg-team-lead-phone" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                           Lead Phone Number <span className="text-red-500">*</span>
                         </label>
                         <input
+                          id="reg-team-lead-phone"
+                          name="teamLeadPhone"
                           type="tel"
+                          autoComplete="tel"
                           placeholder="1234567890"
                           value={leadPhone}
                           onChange={(e) => setLeadPhone(e.target.value)}
@@ -1178,9 +1208,12 @@ const RegistrationPage: React.FC = () => {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
+                            <label htmlFor={`reg-member-name-${idx}`} className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
                             <input
+                              id={`reg-member-name-${idx}`}
+                              name={`memberName_${idx}`}
                               type="text"
+                              autoComplete="name"
                               placeholder="e.g. Sarah Jenkins"
                               value={member.name}
                               onChange={(e) => handleMemberChange(idx, "name", e.target.value)}
@@ -1188,9 +1221,12 @@ const RegistrationPage: React.FC = () => {
                             />
                           </div>
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">University / Member Email</label>
+                            <label htmlFor={`reg-member-email-${idx}`} className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">University / Member Email</label>
                             <input
+                              id={`reg-member-email-${idx}`}
+                              name={`memberEmail_${idx}`}
                               type="email"
+                              autoComplete="email"
                               placeholder="e.g. member@college.edu.in or member@gmail.com"
                               value={member.email}
                               onChange={(e) => handleMemberChange(idx, "email", e.target.value)}
@@ -1206,8 +1242,10 @@ const RegistrationPage: React.FC = () => {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Student ID</label>
+                            <label htmlFor={`reg-member-student-id-${idx}`} className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Student ID</label>
                             <input
+                              id={`reg-member-student-id-${idx}`}
+                              name={`memberStudentId_${idx}`}
                               type="text"
                               placeholder="e.g. Roll No / Student ID"
                               value={member.studentId}
@@ -1221,9 +1259,12 @@ const RegistrationPage: React.FC = () => {
                             )}
                           </div>
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</label>
+                            <label htmlFor={`reg-member-phone-${idx}`} className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Phone Number</label>
                             <input
+                              id={`reg-member-phone-${idx}`}
+                              name={`memberPhone_${idx}`}
                               type="tel"
+                              autoComplete="tel"
                               placeholder="1234567890"
                               value={member.phone || ""}
                               onChange={(e) => handleMemberChange(idx, "phone", e.target.value)}
@@ -1410,10 +1451,12 @@ const RegistrationPage: React.FC = () => {
                     <div className="md:col-span-7 space-y-4">
                       {/* Transaction ID / UTR Input */}
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        <label htmlFor="reg-payment-transaction-id" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                           UPI Transaction ID / UTR Number <span className="text-red-500">*</span>
                         </label>
                         <input
+                          id="reg-payment-transaction-id"
+                          name="transactionId"
                           type="text"
                           placeholder="e.g. T2608141120004017775562 or 12-digit UTR"
                           value={transactionId}
@@ -1427,12 +1470,14 @@ const RegistrationPage: React.FC = () => {
 
                       {/* Screenshot Upload Dropzone */}
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        <label htmlFor="reg-payment-proof-file" className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
                           Upload Payment Screenshot <span className="text-red-500">*</span>
                         </label>
 
                         <input
                           ref={paymentProofFileInputRef}
+                          id="reg-payment-proof-file"
+                          name="paymentProofFile"
                           type="file"
                           accept="image/png,image/jpeg,image/jpg,image/webp"
                           className="hidden"
@@ -1668,8 +1713,10 @@ const RegistrationPage: React.FC = () => {
               {/* Confirm Card */}
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] space-y-5 text-left">
                 <div className="space-y-3.5">
-                  <label className="flex gap-3 cursor-pointer">
+                  <label htmlFor="reg-agreed-terms" className="flex gap-3 cursor-pointer">
                     <input
+                      id="reg-agreed-terms"
+                      name="agreedTerms"
                       type="checkbox"
                       checked={agreedTerms}
                       onChange={(e) => setAgreedTerms(e.target.checked)}
@@ -1680,8 +1727,10 @@ const RegistrationPage: React.FC = () => {
                     </span>
                   </label>
 
-                  <label className="flex gap-3 cursor-pointer">
+                  <label htmlFor="reg-confirmed-info" className="flex gap-3 cursor-pointer">
                     <input
+                      id="reg-confirmed-info"
+                      name="confirmedInfo"
                       type="checkbox"
                       checked={confirmedInfo}
                       onChange={(e) => setConfirmedInfo(e.target.checked)}

@@ -23,8 +23,9 @@ import SEO from "../../components/layout/SEO";
 import TeamReviewPage from "./TeamReviewPage";
 import ProjectSubmissionPage from "./ProjectSubmissionPage";
 import { db } from "../../config/firebase";
-import { collection, getDocs, doc, getDoc, query, where, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, query, where, limit, onSnapshot } from "firebase/firestore";
 import { getAllQuizzes } from "../../services/quizService";
+import { dataCache } from "../../utils/dataCache";
 import type { Quiz, QuizSubmission } from "../../types/quiz";
 
 export const ParticipantDashboardPage: React.FC = () => {
@@ -73,65 +74,176 @@ export const ParticipantDashboardPage: React.FC = () => {
     navigate("/login");
   };
 
-  // Fetch real team, submission data, and quizzes
+  // Helper to apply registration data to state
+  const applyRegistrationData = (targetReg: any) => {
+    if (!targetReg) return;
+    const isQuiz = Boolean(
+      targetReg.isQuiz === true ||
+      targetReg.category === "Quiz" ||
+      targetReg.category === "QUIZ" ||
+      targetReg.eventCategory === "Quiz" ||
+      targetReg.eventCategory === "QUIZ" ||
+      targetReg.eventTitle?.toLowerCase().includes("quiz") ||
+      targetReg.groupName === "Individual Registration" ||
+      user?.teamName === "Individual Registration" ||
+      user?.eventTitle?.toLowerCase().includes("quiz")
+    );
+
+    if (isQuiz) {
+      setIsQuizParticipant(true);
+      setActiveTab("quizzes");
+    }
+
+    const currentEventTitle = targetReg.eventTitle || "Hackathon";
+    setTargetRegId(targetReg.id || "");
+    setTeamName(targetReg.groupName || user?.teamName || (isQuiz ? "Individual Registration" : "My Team"));
+    setEventTitle(currentEventTitle);
+    setTeamId(targetReg.id ? `AI-${targetReg.id.substring(0, 4).toUpperCase()}-${targetReg.id.substring(4, 7).toUpperCase()}` : "AI-REG-001");
+    setLeaderName(targetReg.teamLeadName || targetReg.fullName || targetReg.name || user?.name || "Participant");
+
+    // Members
+    const regMembers = Array.isArray(targetReg.members) ? targetReg.members : [];
+    setMembers(regMembers);
+
+    // Submission data
+    setProjectTitle(targetReg.projectTitle || targetReg.title || "");
+    setGithubUrl(targetReg.githubUrl || targetReg.githubLink || "");
+    setDemoVideoUrl(targetReg.demoVideoUrl || targetReg.videoLink || "");
+    setSubmissionStatus(targetReg.submissionStatus || targetReg.status || "Registered");
+    if (targetReg.submittedAt) setSubmittedAt(targetReg.submittedAt);
+
+    // Round & Promotion Data
+    const cRound = targetReg.currentRound || targetReg.promotedToRound || 1;
+    setCurrentRound(cRound);
+    setRoundStatus(targetReg.roundStatus || (cRound > 1 ? "Qualified" : "Active"));
+    if (targetReg.promotionScore !== undefined) setPromotionScore(targetReg.promotionScore);
+    if (targetReg.promotionMethod) setPromotionMethod(targetReg.promotionMethod);
+    if (targetReg.eliminatedInRound !== undefined) setEliminatedInRound(targetReg.eliminatedInRound);
+
+    // Quiz Performance Data from Registration
+    if (targetReg.quizScore !== undefined && targetReg.quizScore !== null) {
+      setQuizScore(targetReg.quizScore);
+    }
+    if (targetReg.quizPercentage !== undefined && targetReg.quizPercentage !== null) {
+      setQuizPercentage(targetReg.quizPercentage);
+    }
+    if (targetReg.quizMaxScore) {
+      setQuizMaxScore(targetReg.quizMaxScore);
+    }
+  };
+
+  // Fetch real team, submission data, and quizzes with instant cache
   useEffect(() => {
     const fetchRealData = async () => {
       const cleanEmail = user?.email?.toLowerCase().trim() || "";
+      const cacheKey = `participant_reg_${cleanEmail || user?.uid || "guest"}`;
+
+      // 1. Instant Cache Hydration (0ms paint)
+      const cached = dataCache.get<any>(cacheKey);
+      if (cached) {
+        applyRegistrationData(cached);
+        setIsAccessGranted(Boolean(cached.accessGranted !== false && cached.loginAccessGranted !== false));
+        setAccessChecked(true);
+      }
 
       try {
-        const regSnap = await getDocs(collection(db, "registrations"));
-        const allRegs: any[] = [];
-        regSnap.forEach((docItem) => {
-          allRegs.push({ id: docItem.id, ...docItem.data() });
-        });
-
         let targetReg: any = null;
 
-        if (allRegs.length > 0) {
-          // Rank 0: Match by registrationId stored in user profile (exact link)
-          if (!targetReg && user?.registrationId) {
-            targetReg = allRegs.find((r) => r.id === user.registrationId);
-          }
-
-          // Rank 1: Match by exact email in teamLeadEmail, teamEmail, or members array
-          if (!targetReg && cleanEmail) {
-            targetReg = allRegs.find((r) => {
-              const leadEmail = (r.teamLeadEmail || "").toLowerCase().trim();
-              const tEmail = (r.teamEmail || "").toLowerCase().trim();
-              if (leadEmail === cleanEmail) return true;
-              if (tEmail === cleanEmail) return true;
-              if (Array.isArray(r.members) && r.members.some((m: any) => m.email?.toLowerCase().trim() === cleanEmail)) return true;
-              return false;
-            });
-          }
-
-          // Rank 2: Match by user teamName (excluding default placeholder names)
-          if (!targetReg && user?.teamName) {
-            const tn = user.teamName.toLowerCase().trim();
-            if (tn !== "team alpha-9" && tn !== "my team") {
-              targetReg = allRegs.find((r) => (r.groupName || "").toLowerCase().trim() === tn);
+        // 2. High-speed Targeted Queries in Parallel
+        const fetchTargetedReg = async (): Promise<any> => {
+          // A. If registrationId exists on profile, fetch directly (fastest, ~30ms)
+          if (user?.registrationId) {
+            try {
+              const directDoc = await getDoc(doc(db, "registrations", user.registrationId));
+              if (directDoc.exists()) {
+                return { id: directDoc.id, ...directDoc.data() };
+              }
+            } catch (e) {
+              console.warn("Direct reg fetch failed, falling back:", e);
             }
           }
-        }
 
-        // Fetch participant's existing quiz submissions
-        if (user?.uid) {
-          try {
-            const subSnap = await getDocs(query(collection(db, "quizSubmissions"), where("userId", "==", user.uid)));
-            const subMap: Record<string, QuizSubmission> = {};
-            subSnap.forEach((d) => {
-              const s = { id: d.id, ...d.data() } as QuizSubmission;
-              if (s.quizId) subMap[s.quizId] = s;
-            });
-            setUserSubmissions(subMap);
-          } catch (e) {
-            console.warn("Error fetching user quiz submissions:", e);
+          // B. Targeted email queries (fast indexed queries)
+          if (cleanEmail) {
+            try {
+              const [leadSnap, teamEmailSnap] = await Promise.all([
+                getDocs(query(collection(db, "registrations"), where("teamLeadEmail", "==", cleanEmail), limit(1))),
+                getDocs(query(collection(db, "registrations"), where("teamEmail", "==", cleanEmail), limit(1)))
+              ]);
+
+              if (!leadSnap.empty) {
+                const d = leadSnap.docs[0];
+                return { id: d.id, ...d.data() };
+              }
+              if (!teamEmailSnap.empty) {
+                const d = teamEmailSnap.docs[0];
+                return { id: d.id, ...d.data() };
+              }
+            } catch (e) {
+              console.warn("Targeted query error, falling back to full search:", e);
+            }
           }
+
+          // C. Fallback: query all registrations if not found by primary indexes
+          try {
+            const regSnap = await getDocs(collection(db, "registrations"));
+            const allRegs: any[] = [];
+            regSnap.forEach((docItem) => {
+              allRegs.push({ id: docItem.id, ...docItem.data() });
+            });
+
+            if (allRegs.length > 0) {
+              if (cleanEmail) {
+                const foundByMember = allRegs.find((r) => {
+                  const leadEmail = (r.teamLeadEmail || "").toLowerCase().trim();
+                  const tEmail = (r.teamEmail || "").toLowerCase().trim();
+                  if (leadEmail === cleanEmail || tEmail === cleanEmail) return true;
+                  if (Array.isArray(r.members) && r.members.some((m: any) => m.email?.toLowerCase().trim() === cleanEmail)) return true;
+                  return false;
+                });
+                if (foundByMember) return foundByMember;
+              }
+
+              if (user?.teamName) {
+                const tn = user.teamName.toLowerCase().trim();
+                if (tn !== "team alpha-9" && tn !== "my team") {
+                  const foundByName = allRegs.find((r) => (r.groupName || "").toLowerCase().trim() === tn);
+                  if (foundByName) return foundByName;
+                }
+              }
+            }
+          } catch (err) {
+            console.error("Fallback registration search error:", err);
+          }
+
+          return null;
+        };
+
+        // Run data fetches in parallel
+        const [foundReg, quizzesList] = await Promise.all([
+          fetchTargetedReg(),
+          getAllQuizzes().catch(() => [])
+        ]);
+
+        targetReg = foundReg;
+
+        // Fetch participant's existing quiz submissions in parallel
+        if (user?.uid) {
+          getDocs(query(collection(db, "quizSubmissions"), where("userId", "==", user.uid)))
+            .then((subSnap) => {
+              const subMap: Record<string, QuizSubmission> = {};
+              subSnap.forEach((d) => {
+                const s = { id: d.id, ...d.data() } as QuizSubmission;
+                if (s.quizId) subMap[s.quizId] = s;
+              });
+              setUserSubmissions(subMap);
+            })
+            .catch((e) => console.warn("Error fetching user quiz submissions:", e));
         }
 
-        // Fetch active quizzes scoped to participant's event
-        getAllQuizzes().then((qzList) => {
-          const activeQz = qzList.filter(q => {
+        // Active quizzes filter
+        if (Array.isArray(quizzesList)) {
+          const activeQz = quizzesList.filter(q => {
             if (q.status !== "active") return false;
             if (targetReg?.eventId && q.eventId) {
               return q.eventId === targetReg.eventId;
@@ -139,15 +251,16 @@ export const ParticipantDashboardPage: React.FC = () => {
             if (targetReg?.eventTitle && q.eventTitle) {
               return q.eventTitle.toLowerCase().trim() === targetReg.eventTitle.toLowerCase().trim();
             }
-            return !q.eventId; // include generic quizzes if no event bound
+            return !q.eventId;
           });
           setAvailableQuizzes(activeQz);
-        }).catch(() => {});
+        }
 
         if (targetReg) {
           // If access was revoked, immediately logout and redirect to /login
           if (targetReg.accessGranted === false || targetReg.loginAccessGranted === false) {
             console.warn("[ParticipantDashboard] Access was revoked. Redirecting to login...");
+            dataCache.invalidate(`participant_reg_${cleanEmail || user?.uid}`);
             await logout();
             window.location.href = "/login";
             return;
@@ -160,85 +273,34 @@ export const ParticipantDashboardPage: React.FC = () => {
           setIsAccessGranted(hasAccess);
           setAccessChecked(true);
 
-          const isQuiz = Boolean(
-            targetReg.isQuiz === true ||
-            targetReg.category === "Quiz" ||
-            targetReg.category === "QUIZ" ||
-            targetReg.eventCategory === "Quiz" ||
-            targetReg.eventCategory === "QUIZ" ||
-            targetReg.eventTitle?.toLowerCase().includes("quiz") ||
-            targetReg.groupName === "Individual Registration" ||
-            user?.teamName === "Individual Registration" ||
-            user?.eventTitle?.toLowerCase().includes("quiz")
-          );
+          applyRegistrationData(targetReg);
+          dataCache.set(cacheKey, targetReg);
 
-          if (isQuiz) {
-            setIsQuizParticipant(true);
-            setActiveTab("quizzes");
-          }
-
-          const currentEventTitle = targetReg.eventTitle || "Hackathon";
-          setTargetRegId(targetReg.id || "");
-          setTeamName(targetReg.groupName || user?.teamName || (isQuiz ? "Individual Registration" : "My Team"));
-          setEventTitle(currentEventTitle);
-          setTeamId(targetReg.id ? `AI-${targetReg.id.substring(0, 4).toUpperCase()}-${targetReg.id.substring(4, 7).toUpperCase()}` : "AI-REG-001");
-          setLeaderName(targetReg.teamLeadName || targetReg.fullName || targetReg.name || user?.name || "Participant");
-
-          // Members
-          const regMembers = Array.isArray(targetReg.members) ? targetReg.members : [];
-          setMembers(regMembers);
-
-          // Submission data
-          setProjectTitle(targetReg.projectTitle || targetReg.title || "");
-          setGithubUrl(targetReg.githubUrl || targetReg.githubLink || "");
-          setDemoVideoUrl(targetReg.demoVideoUrl || targetReg.videoLink || "");
-          setSubmissionStatus(targetReg.submissionStatus || targetReg.status || "Registered");
-          if (targetReg.submittedAt) setSubmittedAt(targetReg.submittedAt);
-
-          // Round & Promotion Data
-          const cRound = targetReg.currentRound || targetReg.promotedToRound || 1;
-          setCurrentRound(cRound);
-          setRoundStatus(targetReg.roundStatus || (cRound > 1 ? "Qualified" : "Active"));
-          if (targetReg.promotionScore !== undefined) setPromotionScore(targetReg.promotionScore);
-          if (targetReg.promotionMethod) setPromotionMethod(targetReg.promotionMethod);
-          if (targetReg.eliminatedInRound !== undefined) setEliminatedInRound(targetReg.eliminatedInRound);
-
-          // Quiz Performance Data from Registration
-          if (targetReg.quizScore !== undefined && targetReg.quizScore !== null) {
-            setQuizScore(targetReg.quizScore);
-          }
-          if (targetReg.quizPercentage !== undefined && targetReg.quizPercentage !== null) {
-            setQuizPercentage(targetReg.quizPercentage);
-          }
-          if (targetReg.quizMaxScore) {
-            setQuizMaxScore(targetReg.quizMaxScore);
-          }
-
-          // Fetch stage definitions from Firestore events collection
+          // Fetch stage definitions if needed
           if (targetReg.eventId) {
-            try {
-              const evDoc = await getDoc(doc(db, "events", targetReg.eventId));
-              if (evDoc.exists()) {
-                const evData = evDoc.data();
-                if (
-                  evData.category === "Quiz" ||
-                  evData.category === "QUIZ" ||
-                  evData.title?.toLowerCase().includes("quiz")
-                ) {
-                  setIsQuizParticipant(true);
-                  setActiveTab("quizzes");
+            getDoc(doc(db, "events", targetReg.eventId))
+              .then((evDoc) => {
+                if (evDoc.exists()) {
+                  const evData = evDoc.data();
+                  if (
+                    evData.category === "Quiz" ||
+                    evData.category === "QUIZ" ||
+                    evData.title?.toLowerCase().includes("quiz")
+                  ) {
+                    setIsQuizParticipant(true);
+                    setActiveTab("quizzes");
+                  }
+                  const cRound = targetReg.currentRound || targetReg.promotedToRound || 1;
+                  if (Array.isArray(evData.rounds) && evData.rounds.length > 0) {
+                    setTotalRounds(evData.rounds.length);
+                    const currentRDef = evData.rounds.find((r: any) => r.roundNumber === cRound);
+                    if (currentRDef?.name) setActiveRoundName(currentRDef.name);
+                  } else if (evData.totalRounds) {
+                    setTotalRounds(evData.totalRounds);
+                  }
                 }
-                if (Array.isArray(evData.rounds) && evData.rounds.length > 0) {
-                  setTotalRounds(evData.rounds.length);
-                  const currentRDef = evData.rounds.find((r: any) => r.roundNumber === cRound);
-                  if (currentRDef?.name) setActiveRoundName(currentRDef.name);
-                } else if (evData.totalRounds) {
-                  setTotalRounds(evData.totalRounds);
-                }
-              }
-            } catch (err) {
-              console.warn("Error fetching event doc by eventId:", err);
-            }
+              })
+              .catch((err) => console.warn("Error fetching event doc by eventId:", err));
           }
         } else {
           let hasAccess = true;
@@ -269,6 +331,7 @@ export const ParticipantDashboardPage: React.FC = () => {
         }
       } catch (err) {
         console.error("Error fetching participant dashboard data:", err);
+        setAccessChecked(true);
       }
     };
 

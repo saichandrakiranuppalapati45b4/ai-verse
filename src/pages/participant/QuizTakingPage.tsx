@@ -11,6 +11,7 @@ import {
 import type { Quiz, QuizSession, QuizQuestion, QuizViolationLog } from "../../types/quiz";
 import { useQuizTimer } from "../../hooks/useQuizTimer";
 import { useQuizSession } from "../../hooks/useQuizSession";
+import { quizLoadBalancer } from "../../utils/quizLoadBalancer";
 import SEO from "../../components/layout/SEO";
 import { 
   Clock, 
@@ -128,13 +129,14 @@ export const QuizTakingPage: React.FC = () => {
     return () => { isMounted = false; };
   }, [quizId, user, navigate]);
 
-  // Poll for remote admin stop during examination (replaces onSnapshot hotspot)
-  // With 1,500 users, a real-time listener on a single quiz document creates a
-  // Firestore hotspot. Polling every 10s uses ~6 reads/min/user instead.
+  // Poll for remote admin stop during examination with Adaptive Load Balancing & Jitter
+  // Dynamic intervals (45s -> 15s) with randomized jitter prevents 1,000-user database spikes
   useEffect(() => {
     if (!quizId || !session || session.status !== "in_progress") return;
 
     let isMounted = true;
+    let pollTimeout: NodeJS.Timeout | null = null;
+
     const checkQuizStatus = async () => {
       try {
         const snap = await getDoc(doc(db, "quizzes", quizId));
@@ -144,13 +146,25 @@ export const QuizTakingPage: React.FC = () => {
         if (isStopped && !isSubmitting && isMounted) {
           setShowTimeoutModal(true);
           handleFinalSubmit(true);
+          return;
         }
       } catch {
-        // Silently ignore polling errors — quiz continues with timer
+        // Silently ignore polling errors — quiz continues uninterrupted with timer
+      }
+
+      if (isMounted) {
+        const remaining = session?.endTime ? Math.max(0, Math.floor((session.endTime - Date.now()) / 1000)) : 1800;
+        const nextDelay = quizLoadBalancer.getAdaptivePollInterval(remaining);
+        pollTimeout = setTimeout(checkQuizStatus, nextDelay);
       }
     };
 
-    // Also check on tab becoming visible (user may have been away when admin stopped)
+    // Initial adaptive schedule
+    const remaining = session?.endTime ? Math.max(0, Math.floor((session.endTime - Date.now()) / 1000)) : 1800;
+    const initialDelay = quizLoadBalancer.getAdaptivePollInterval(remaining);
+    pollTimeout = setTimeout(checkQuizStatus, initialDelay);
+
+    // Also check on tab becoming visible
     const handleVisCheck = () => {
       if (document.visibilityState === "visible") {
         checkQuizStatus();
@@ -158,10 +172,9 @@ export const QuizTakingPage: React.FC = () => {
     };
     document.addEventListener("visibilitychange", handleVisCheck);
 
-    const pollId = setInterval(checkQuizStatus, 60_000); // 60s for Ultra-Low Free Tier Quota
     return () => {
       isMounted = false;
-      clearInterval(pollId);
+      if (pollTimeout) clearTimeout(pollTimeout);
       document.removeEventListener("visibilitychange", handleVisCheck);
     };
   }, [quizId, session, isSubmitting]);
@@ -447,9 +460,54 @@ export const QuizTakingPage: React.FC = () => {
         state: { submission: result } 
       });
     } catch (err: any) {
-      console.error("Final submission failed:", err);
+      console.error("Final submission encountered network issue:", err);
+
+      // Check if staged in local-first outbox
+      const localReceipt = quizLoadBalancer.getLocalReceipt(session.id);
+      if (localReceipt) {
+        if (document.fullscreenElement) {
+          try { await document.exitFullscreen(); } catch {}
+        }
+        navigate(`/participant/quiz/${quiz.id}/completed`, { 
+          replace: true,
+          state: { 
+            submission: {
+              id: session.id,
+              sessionId: session.id,
+              quizId: quiz.id,
+              quizTitle: quiz.title,
+              userId: session.userId,
+              userEmail: session.userEmail,
+              userName: session.userName,
+              teamId: session.teamId,
+              teamName: session.teamName,
+              answers,
+              answeredCount: Object.keys(answers).length,
+              unansweredCount: Math.max(0, (quiz.questions?.length || 0) - Object.keys(answers).length),
+              totalQuestions: quiz.questions?.length || 0,
+              timeSpentSeconds: Math.max(1, Math.floor((Date.now() - session.startTime) / 1000)),
+              startTime: session.startTime,
+              submittedAt: Date.now(),
+              isAutoSubmitted: isAuto,
+              isFinal: true,
+              violationsCount,
+              violationLogs,
+              score: localReceipt.score || 0,
+              percentage: localReceipt.percentage || 0,
+              maxScore: quiz.totalMarks || 50,
+              correctCount: 0,
+              incorrectCount: 0,
+              passed: (localReceipt.percentage || 0) >= 40,
+              evaluatedAt: Date.now()
+            },
+            isStagedOffline: true
+          } 
+        });
+        return;
+      }
+
       setIsSubmitting(false);
-      setSubmitError(err.message || "Network error. Your answers are saved locally. Please retry.");
+      setSubmitError(err.message || "Network error. Your answers are saved locally and will auto-submit when connectivity resumes.");
       setShowSubmitModal(false);
     }
   }, [quiz, session, isSubmitting, answers, violationsCount, violationLogs, forceSave, navigate]);

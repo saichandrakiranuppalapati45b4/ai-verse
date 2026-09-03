@@ -14,6 +14,7 @@ import galleryCollab from "../../assets/images/gallery_collab.png";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { dataCache } from "../../utils/dataCache";
 import { Calendar, X, FolderOpen, Sparkles, ChevronRight, ExternalLink } from "lucide-react";
 
 interface AlbumItem {
@@ -31,8 +32,8 @@ interface AlbumItem {
 
 const GalleryPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"All" | "Workshops" | "Hackathons" | "Symposiums" | "Socials">("All");
-  const [albums, setAlbums] = useState<AlbumItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [albums, setAlbums] = useState<AlbumItem[]>(() => dataCache.get<AlbumItem[]>("public_gallery") || []);
+  const [loading, setLoading] = useState<boolean>(() => !dataCache.get<AlbumItem[]>("public_gallery"));
   const [selectedAlbum, setSelectedAlbum] = useState<AlbumItem | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
@@ -79,6 +80,7 @@ const GalleryPage: React.FC = () => {
         });
 
         setAlbums(list);
+        dataCache.set("public_gallery", list);
       } catch (err) {
         console.error("Error loading gallery items from database:", err);
       } finally {

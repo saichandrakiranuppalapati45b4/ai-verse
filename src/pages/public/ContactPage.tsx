@@ -186,9 +186,12 @@ const ContactPage: React.FC = () => {
                   <>
                     {/* Name */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Your Name</label>
+                      <label htmlFor="contact-name" className="text-xs font-bold text-slate-500 uppercase tracking-wider">Your Name</label>
                       <input 
+                        id="contact-name"
+                        name="name"
                         type="text"
+                        autoComplete="name"
                         required
                         value={name}
                         onChange={(e) => setName(e.target.value)}
@@ -199,9 +202,12 @@ const ContactPage: React.FC = () => {
 
                     {/* Email */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email Address</label>
+                      <label htmlFor="contact-email" className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email Address</label>
                       <input 
+                        id="contact-email"
+                        name="email"
                         type="email"
+                        autoComplete="email"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -212,8 +218,10 @@ const ContactPage: React.FC = () => {
 
                     {/* Subject */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Subject</label>
+                      <label htmlFor="contact-subject" className="text-xs font-bold text-slate-500 uppercase tracking-wider">Subject</label>
                       <input 
+                        id="contact-subject"
+                        name="subject"
                         type="text"
                         required
                         value={subject}
@@ -225,8 +233,10 @@ const ContactPage: React.FC = () => {
 
                     {/* Message */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Message</label>
+                      <label htmlFor="contact-message" className="text-xs font-bold text-slate-500 uppercase tracking-wider">Message</label>
                       <textarea 
+                        id="contact-message"
+                        name="message"
                         rows={4}
                         required
                         value={message}

@@ -3,6 +3,7 @@ import type { Quiz, QuizSession, QuizDraftAnswers, AutosaveStatus } from "../typ
 import { saveDraftAnswers } from "../services/quizService";
 import { isOnline, onNetworkChange } from "../utils/networkStatus";
 import { quizMonitor } from "../utils/quizMonitor";
+import { quizLoadBalancer } from "../utils/quizLoadBalancer";
 
 interface UseQuizSessionProps {
   quiz: Quiz;
@@ -11,10 +12,6 @@ interface UseQuizSessionProps {
   initialFlags?: string[];
   initialQuestionIndex?: number;
 }
-
-// Autosave interval: 120s smooths traffic better than 35s at 1,500 users
-// (~22% fewer writes per minute)
-const AUTOSAVE_INTERVAL_MS = 120_000;
 
 // Minimum delay after last answer change before an autosave is considered urgent
 const ANSWER_CHANGE_DEBOUNCE_MS = 2_000;
@@ -92,25 +89,19 @@ export function useQuizSession({
 
   // Persist to local storage immediately on change (zero network cost, crash-proof)
   const syncLocalStorage = useCallback(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const draft: QuizDraftAnswers = {
-          sessionId: session.id,
-          quizId: quiz.id,
-          userId: session.userId,
-          answers: answersRef.current,
-          flaggedQuestions: flagsRef.current,
-          currentQuestionIndex: indexRef.current,
-          violationsCount: violationsCountRef.current,
-          violationLogs: violationLogsRef.current,
-          lastAutosavedAt: Date.now(),
-          clientTimestamp: Date.now()
-        };
-        localStorage.setItem(`quiz_draft_${session.id}`, JSON.stringify(draft));
-      } catch {
-        // quota exceeded or disabled
-      }
-    }
+    const draft: QuizDraftAnswers = {
+      sessionId: session.id,
+      quizId: quiz.id,
+      userId: session.userId,
+      answers: answersRef.current,
+      flaggedQuestions: flagsRef.current,
+      currentQuestionIndex: indexRef.current,
+      violationsCount: violationsCountRef.current,
+      violationLogs: violationLogsRef.current,
+      lastAutosavedAt: Date.now(),
+      clientTimestamp: Date.now()
+    };
+    quizLoadBalancer.recordLocalSnapshot(session.id, draft);
   }, [session.id, quiz.id, session.userId]);
 
   // Build save payload
@@ -129,7 +120,7 @@ export function useQuizSession({
     };
   }, [session.id, quiz.id, session.userId]);
 
-  // Execute Firestore Autosave (with overlapping request prevention)
+  // Execute Firestore Autosave (with overlapping request prevention and load balancer gating)
   const performSave = useCallback(async (isCritical = false): Promise<boolean> => {
     if (!isOnline()) {
       setSaveStatus("offline");
@@ -151,7 +142,10 @@ export function useQuizSession({
 
     try {
       const payload = buildPayload();
-      const success = await saveDraftAnswers(payload, 2);
+      const success = await quizLoadBalancer.executeGatedRequest(
+        () => saveDraftAnswers(payload, 2),
+        isCritical ? "high" : "normal"
+      );
       
       // Only update state if this is still the latest save version
       if (currentVersion === saveVersionRef.current) {
@@ -255,21 +249,27 @@ export function useQuizSession({
     }
   }, [quiz.questions?.length, syncLocalStorage]);
 
-  // ─── Periodic Autosave (45-second interval) ──────────────────────────────
+  // ─── Periodic Sharded Autosave (Staggered to prevent database hotspots) ─────────
   useEffect(() => {
+    // Individualized, sharded interval per participant (e.g., 60s - 90s distributed)
+    const shardedInterval = quizLoadBalancer.getShardedAutosaveDelay(
+      session.userId || session.id,
+      60_000,
+      30_000
+    );
+
     const intervalId = setInterval(() => {
       if (isDirtyRef.current) {
         // Debounce: skip if user changed answer within the last 2 seconds
-        // (they're still actively selecting, let them finish)
         const timeSinceLastChange = Date.now() - lastChangeTimeRef.current;
         if (timeSinceLastChange >= ANSWER_CHANGE_DEBOUNCE_MS) {
           performSave();
         }
       }
-    }, AUTOSAVE_INTERVAL_MS);
+    }, shardedInterval);
 
     return () => clearInterval(intervalId);
-  }, [performSave]);
+  }, [performSave, session.userId, session.id]);
 
   // ─── Online / Offline + Visibility + Unload Listeners ────────────────────
   useEffect(() => {

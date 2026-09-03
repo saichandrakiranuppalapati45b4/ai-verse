@@ -18,6 +18,7 @@ import Button from "../../components/ui/Button";
 import SEO from "../../components/layout/SEO";
 import { db } from "../../config/firebase";
 import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { dataCache } from "../../utils/dataCache";
 
 // Fallback assets
 import sparkImg from "../../assets/images/spark.png";
@@ -56,7 +57,7 @@ const defaultHighlights: HighlightEvent[] = [
 ];
 
 const HomePage: React.FC = () => {
-  const [highlights, setHighlights] = useState<HighlightEvent[]>([]);
+  const [highlights, setHighlights] = useState<HighlightEvent[]>(() => dataCache.get<HighlightEvent[]>("home_highlights") || defaultHighlights);
 
   useEffect(() => {
     const fetchHighlights = async () => {
@@ -154,7 +155,9 @@ const HomePage: React.FC = () => {
           past.sort((a, b) => parseEventDate(b.date) - parseEventDate(a.date));
 
           const combined = [...upcoming, ...past];
-          setHighlights(combined.slice(0, 2));
+          const topHighlights = combined.slice(0, 2);
+          setHighlights(topHighlights);
+          dataCache.set("home_highlights", topHighlights);
         } else {
           setHighlights(defaultHighlights);
         }

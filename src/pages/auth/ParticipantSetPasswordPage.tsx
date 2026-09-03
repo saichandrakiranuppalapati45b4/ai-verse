@@ -91,12 +91,15 @@ export const ParticipantSetPasswordPage: React.FC = () => {
           
           {/* New Password Input */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 tracking-wide">
+            <label htmlFor="set-new-password" className="block text-xs font-bold text-slate-700 tracking-wide">
               New Password
             </label>
             <div className="relative flex items-center">
               <input
+                id="set-new-password"
+                name="newPassword"
                 type={showNewPassword ? "text" : "password"}
+                autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Enter your new password"
@@ -116,12 +119,15 @@ export const ParticipantSetPasswordPage: React.FC = () => {
 
           {/* Confirm Password Input */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-slate-700 tracking-wide">
+            <label htmlFor="set-confirm-password" className="block text-xs font-bold text-slate-700 tracking-wide">
               Confirm Password
             </label>
             <div className="relative flex items-center">
               <input
+                id="set-confirm-password"
+                name="confirmPassword"
                 type={showConfirmPassword ? "text" : "password"}
+                autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Re-enter your new password"

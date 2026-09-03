@@ -1286,8 +1286,8 @@ const UserManagementPage: React.FC = () => {
         const functions = getFunctions(app);
         const deleteUserAccount = httpsCallable(functions, "deleteUserAccount");
         await deleteUserAccount({ uid: id });
-      } catch (authErr) {
-        console.warn("Auth account deletion notice (user may not have auth record):", authErr);
+      } catch {
+        // User may not have an auth record (database-only user) — expected fallback
       }
       
       setUsers(prev => prev.filter(u => u.id !== id));

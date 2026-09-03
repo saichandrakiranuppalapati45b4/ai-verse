@@ -59,34 +59,53 @@ export const userService = {
    * Fetch a single user by ID or Email
    */
   async getUserById(id: string): Promise<SupabaseUser | null> {
-    const { data, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+    if (!id) return null;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-    if (error) {
-      console.error(`[userService] Error fetching user ${id}:`, error);
-      throw error;
+    if (!isUUID) {
+      // Non-UUID ID (e.g. Firestore document ID or sanitized email)
+      if (id.includes("@")) {
+        return await this.getUserByEmail(id);
+      }
+      return null;
     }
 
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (error) {
+        return null;
+      }
+
+      return data;
+    } catch {
+      return null;
+    }
   },
 
   async getUserByEmail(email: string): Promise<SupabaseUser | null> {
     const cleanEmail = email.toLowerCase().trim();
-    const { data, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", cleanEmail)
-      .maybeSingle();
+    if (!cleanEmail) return null;
 
-    if (error) {
-      console.error(`[userService] Error fetching user by email ${cleanEmail}:`, error);
-      throw error;
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", cleanEmail)
+        .maybeSingle();
+
+      if (error) {
+        return null;
+      }
+
+      return data;
+    } catch {
+      return null;
     }
-
-    return data;
   },
 
   /**
@@ -130,55 +149,96 @@ export const userService = {
   },
 
   /**
-   * Update an existing user in Supabase
+   * Update an existing user in Supabase (UUID-safe with email fallback)
    */
-  async updateUser(id: string, updates: Partial<CreateUserData>): Promise<SupabaseUser> {
+  async updateUser(id: string, updates: Partial<CreateUserData>): Promise<SupabaseUser | null> {
+    const cleanEmail = updates.email ? updates.email.toLowerCase().trim() : "";
     const payload: Record<string, any> = {
       ...updates,
       updated_at: new Date().toISOString(),
     };
 
-    if (updates.email) {
-      payload.email = updates.email.toLowerCase().trim();
+    if (cleanEmail) {
+      payload.email = cleanEmail;
     }
 
-    const { data, error } = await supabase
-      .from("users")
-      .update(payload)
-      .eq("id", id)
-      .select()
-      .single();
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-    if (error) {
-      console.error(`[userService] Error updating user ${id}:`, error);
-      throw error;
+    if (isUUID) {
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .update(payload)
+          .eq("id", id)
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          return data;
+        }
+      } catch {
+        // Fallback to email lookup
+      }
     }
 
-    return data;
+    // Fallback: update by email if UUID didn't match or id was not a UUID
+    if (cleanEmail) {
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .update(payload)
+          .eq("email", cleanEmail)
+          .select()
+          .maybeSingle();
+
+        if (!error && data) {
+          return data;
+        }
+
+        // If user doesn't exist in Supabase yet, insert it to keep databases in sync
+        if (updates.name && updates.email) {
+          return await this.addUser(updates as CreateUserData);
+        }
+      } catch (e) {
+        console.warn("[userService] Notice syncing user update to Supabase:", e);
+      }
+    }
+
+    return null;
   },
 
   /**
-   * Delete a user permanently from Supabase (both auth.users and public.users)
+   * Delete a user permanently from Supabase (UUID-safe)
    */
   async deleteUser(id: string): Promise<void> {
-    try {
-      const user = await this.getUserById(id);
-      if (user && user.email) {
-        await this.deleteUserByEmail(user.email);
-        return;
+    if (!id) return;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    if (isUUID) {
+      try {
+        const user = await this.getUserById(id);
+        if (user && user.email) {
+          await this.deleteUserByEmail(user.email);
+          return;
+        }
+      } catch {
+        // ignore
       }
-    } catch (e) {
-      console.warn("[userService] Notice fetching user before delete:", e);
-    }
 
-    const { error } = await supabase
-      .from("users")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      console.error(`[userService] Error deleting user ${id}:`, error);
-      throw error;
+      try {
+        await supabase
+          .from("users")
+          .delete()
+          .eq("id", id);
+      } catch {
+        // ignore
+      }
+    } else {
+      // Non-UUID: check if email can be matched or cleaned
+      const targetUser = await this.getUserByEmail(id);
+      if (targetUser && targetUser.email) {
+        await this.deleteUserByEmail(targetUser.email);
+      }
     }
   },
 

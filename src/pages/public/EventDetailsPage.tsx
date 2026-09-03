@@ -22,6 +22,7 @@ import Button from "../../components/ui/Button";
 import { db } from "../../config/firebase";
 import { doc, getDoc, collection, getDocs, query, limit } from "firebase/firestore";
 import { userService } from "../../services/userService";
+import { dataCache } from "../../utils/dataCache";
 
 // Import local assets
 import sparkImg from "../../assets/images/spark.png";
@@ -129,10 +130,17 @@ const EventDetailsPage: React.FC = () => {
 
   useEffect(() => {
     if (!id) return;
+
+    // 1. Instant Cache Hydration
+    const cachedEvent = dataCache.get<DetailedEvent>(`event_detail_${id}`);
+    if (cachedEvent) {
+      setEvent(cachedEvent);
+      setLoading(false);
+    }
     
     const fetchEventDetails = async () => {
       try {
-        setLoading(true);
+        if (!cachedEvent) setLoading(true);
         const docRef = doc(db, "events", id);
         const docSnap = await getDoc(docRef);
         
@@ -167,37 +175,27 @@ const EventDetailsPage: React.FC = () => {
           const facName = data.facultyCoordinator || "";
           const stuName = data.studentCoordinator || "";
 
-          // Query user database to enrich coordinator profiles
+          // Query user database in parallel to enrich coordinator profiles
           let matchedFac: any = null;
           let matchedStu: any = null;
 
           try {
             const allPeople: any[] = [];
             
-            // 1. Supabase users
-            try {
-              const supaUsers = await userService.getUsers();
-              if (supaUsers && supaUsers.length > 0) {
-                supaUsers.forEach(u => allPeople.push(u));
-              }
-            } catch (e) {
-              // ignore
-            }
+            const [supaRes, usersRes, orgsRes] = await Promise.allSettled([
+              userService.getUsers(),
+              getDocs(collection(db, "users")),
+              getDocs(collection(db, "organizers"))
+            ]);
 
-            // 2. Firestore users
-            try {
-              const uSnap = await getDocs(collection(db, "users"));
-              uSnap.forEach(d => allPeople.push({ id: d.id, ...d.data() }));
-            } catch (e) {
-              // ignore
+            if (supaRes.status === "fulfilled" && Array.isArray(supaRes.value)) {
+              supaRes.value.forEach(u => allPeople.push(u));
             }
-
-            // 3. Firestore organizers
-            try {
-              const oSnap = await getDocs(collection(db, "organizers"));
-              oSnap.forEach(d => allPeople.push({ id: d.id, ...d.data() }));
-            } catch (e) {
-              // ignore
+            if (usersRes.status === "fulfilled") {
+              usersRes.value.forEach(d => allPeople.push({ id: d.id, ...d.data() }));
+            }
+            if (orgsRes.status === "fulfilled") {
+              orgsRes.value.forEach(d => allPeople.push({ id: d.id, ...d.data() }));
             }
 
             const facEmail = (data.facultyCoordinatorEmail || "").toLowerCase().trim();
@@ -285,7 +283,7 @@ const EventDetailsPage: React.FC = () => {
           setFacultyProfile(matchedFac);
           setStudentProfile(matchedStu);
 
-          setEvent({
+          const eventDetailObj: DetailedEvent = {
             id: docSnap.id,
             title: data.title || "",
             type: eventType,
@@ -337,7 +335,10 @@ const EventDetailsPage: React.FC = () => {
             agendaItems: data.agendaItems || [],
             allowRegistrations: data.allowRegistrations !== undefined ? data.allowRegistrations : true,
             rounds: data.rounds || []
-          });
+          };
+
+          setEvent(eventDetailObj);
+          dataCache.set(`event_detail_${id}`, eventDetailObj);
         }
 
         // Fetch first 3 other events as related events
