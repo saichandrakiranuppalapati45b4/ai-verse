@@ -73,7 +73,6 @@ const TeamPage: React.FC = () => {
   const [dbMembers, setDbMembers] = useState<MemberData[]>([]);
   const [configuredRoles, setConfiguredRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<string>("all");
 
   useEffect(() => {
     const fetchTeam = async () => {
@@ -489,26 +488,6 @@ const TeamPage: React.FC = () => {
     return activeSections;
   }, [dbMembers, configuredRoles]);
 
-  // Tab list generated in the exact same hierarchy
-  const filterTabs = useMemo(() => {
-    const tabs = [{ id: "all", label: "All Members", count: dbMembers.length }];
-    groupedSections.forEach(sec => {
-      tabs.push({
-        id: sec.definition.id,
-        label: sec.definition.title,
-        count: sec.members.length
-      });
-    });
-    return tabs;
-  }, [groupedSections, dbMembers]);
-
-  const displayedSections = useMemo(() => {
-    if (activeTab === "all") {
-      return groupedSections;
-    }
-    return groupedSections.filter(sec => sec.definition.id === activeTab);
-  }, [groupedSections, activeTab]);
-
   return (
     <div className="bg-[#F8FAFC] min-h-screen text-slate-800">
       <SEO 
@@ -543,37 +522,6 @@ const TeamPage: React.FC = () => {
         </div>
       </section>
 
-      {/* ================= ROLE FILTER TABS ================= */}
-      {!loading && dbMembers.length > 0 && filterTabs.length > 2 && (
-        <div className="py-4 border-b border-slate-200/80 bg-white/90 backdrop-blur-md sticky top-20 z-20 shadow-2xs">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-              {filterTabs.map(tab => {
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                      isActive
-                        ? "bg-slate-900 text-white shadow-sm scale-102"
-                        : "bg-slate-100/90 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-extrabold ${
-                      isActive ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
-                    }`}>
-                      {tab.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Loading state indicator */}
       {loading && (
         <div className="py-24 text-center">
@@ -583,9 +531,9 @@ const TeamPage: React.FC = () => {
       )}
 
       {/* ================= ROLE-WISE SECTIONS ================= */}
-      {!loading && displayedSections.length > 0 && (
+      {!loading && groupedSections.length > 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-16">
-          {displayedSections.map((section) => {
+          {groupedSections.map((section) => {
             const { definition, members } = section;
 
             return (
