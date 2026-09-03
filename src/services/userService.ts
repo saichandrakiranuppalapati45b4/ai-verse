@@ -656,8 +656,27 @@ export const userService = {
     let supabaseResult: any = null;
 
     // 1. SUPABASE CASCADE DELETION
+    if (supabaseAdmin) {
+      try {
+        // Find public.users ids matching these emails
+        const { data: usersData } = await supabaseAdmin.from("users").select("id").in("email", emailList);
+        if (usersData && usersData.length > 0) {
+          for (const u of usersData) {
+            try {
+              // Delete directly from auth.users (which cascades to public.users in standard setups)
+              await supabaseAdmin.auth.admin.deleteUser(u.id);
+            } catch (e) {
+              console.warn(`[userService] Could not delete auth user ${u.id}:`, e);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[userService] Error finding auth users to delete:", e);
+      }
+    }
+
     try {
-      // Call PostgreSQL RPC function to delete from auth.users & public.users
+      // Call PostgreSQL RPC function to delete from auth.users & public.users (if it exists as a fallback)
       const { data, error } = await supabase.rpc("delete_participant_cascade", {
         p_reg_id: reg.id,
         p_emails: emailList,
