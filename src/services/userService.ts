@@ -149,6 +149,48 @@ export const userService = {
   },
 
   /**
+   * High-speed bulk upsert of user profiles in Supabase
+   */
+  async bulkUpsertUsers(users: CreateUserData[]): Promise<void> {
+    if (!users || users.length === 0) return;
+    const payloads = users.map(user => ({
+      name: user.name,
+      display_name: user.display_name || user.name,
+      email: (user.email || "").toLowerCase().trim(),
+      personal_email: user.personal_email || null,
+      phone: user.phone || null,
+      role: user.role || "participant",
+      status: user.status || "Active",
+      position: user.position || null,
+      bio: user.bio || null,
+      linkedin: user.linkedin || null,
+      github: user.github || null,
+      image: user.image || "",
+      show_in_about: Boolean(user.show_in_about),
+      year: user.year || null,
+      team_name: user.team_name || null,
+      event_title: user.event_title || null,
+      registration_id: user.registration_id || null,
+      updated_at: new Date().toISOString(),
+    }));
+
+    // Chunk in batches of 100
+    for (let i = 0; i < payloads.length; i += 100) {
+      const chunk = payloads.slice(i, i + 100);
+      try {
+        const { error } = await supabase
+          .from("users")
+          .upsert(chunk, { onConflict: "email", ignoreDuplicates: false });
+        if (error) {
+          console.warn("[userService] Bulk upsert notice:", error.message);
+        }
+      } catch (err) {
+        console.warn("[userService] Bulk upsert error:", err);
+      }
+    }
+  },
+
+  /**
    * Update an existing user in Supabase (UUID-safe with email fallback)
    */
   async updateUser(id: string, updates: Partial<CreateUserData>): Promise<SupabaseUser | null> {

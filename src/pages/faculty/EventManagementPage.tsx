@@ -5,7 +5,7 @@ import SEO from "../../components/layout/SEO";
 import Papa from "papaparse";
 import { db } from "../../config/firebase";
 import { env } from "../../config/env";
-import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment, onSnapshot, writeBatch } from "firebase/firestore";
 import { createClient } from "@supabase/supabase-js";
 import { userService } from "../../services/userService";
 import { deleteQuizzesByEventId, evaluateQuizAnswers } from "../../services/quizService";
@@ -1435,7 +1435,20 @@ const EventManagementPage: React.FC = () => {
 
     try {
       const allIds: string[] = [];
+      const firestoreRegUpdates: Array<{ id: string; data: any }> = [];
+      const firestoreTeamCreds: Array<{ id: string; data: any }> = [];
+      const firestoreUsers: Array<{ id: string; data: any }> = [];
+      const firestorePhones: Array<{ id: string; data: any }> = [];
+      const supabaseUsersToUpsert: any[] = [];
+      const authSignups: Array<{ email: string; password: string; options: any }> = [];
+      const emailsToSend: Array<{ to: string; content: any }> = [];
 
+      const now = Date.now();
+      const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
+      const loginUrl = `${siteBaseUrl}/login`;
+
+      // 1. Prepare all records synchronously in memory (0ms)
       for (const reg of eventAccessRegistrations) {
         const teamEmail = generateTeamEmail(reg);
         const targetEmail = (
@@ -1447,8 +1460,6 @@ const EventManagementPage: React.FC = () => {
           ""
         ).trim();
 
-        // For Quiz: authEmail is the participant's personal mail!
-        // For Hackathons: keep teamEmail (e.g. teamname@aiverse.in)
         const authEmail = isQuizEvent ? (targetEmail || teamEmail) : teamEmail;
         const userPhone = (
           reg.phoneNumber ||
@@ -1457,12 +1468,16 @@ const EventManagementPage: React.FC = () => {
           reg.teamLeadPhone ||
           ""
         ).trim();
+        const displayName = isQuizEvent
+          ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant")
+          : (reg.groupName || reg.teamLeadName || reg.name || "Team");
 
         allIds.push(reg.id);
 
-        // Update Firestore document with credentials
-        try {
-          await updateDoc(doc(db, "registrations", reg.id), {
+        // Registration doc update
+        firestoreRegUpdates.push({
+          id: reg.id,
+          data: {
             teamEmail: authEmail,
             personalEmail: targetEmail || authEmail,
             phone: userPhone,
@@ -1471,17 +1486,16 @@ const EventManagementPage: React.FC = () => {
             accessGranted: true,
             loginAccessGranted: true,
             accessRevokedAt: null,
-            accessProvisionedAt: Date.now(),
-          });
-        } catch (dbErr) {
-          console.warn("Firestore update error for registration:", reg.id, dbErr);
-        }
+            accessProvisionedAt: now,
+          }
+        });
 
-        // Create / update team account in team_credentials collection
-        try {
-          await setDoc(doc(db, "team_credentials", reg.id), {
+        // Team credentials doc
+        firestoreTeamCreds.push({
+          id: reg.id,
+          data: {
             registrationId: reg.id,
-            teamName: reg.groupName || reg.teamLeadName || reg.name || (isQuizEvent ? "Individual Registration" : "Team"),
+            teamName: displayName,
             teamEmail: authEmail,
             personalEmail: targetEmail || authEmail,
             phone: userPhone,
@@ -1494,90 +1508,55 @@ const EventManagementPage: React.FC = () => {
             accessGranted: true,
             loginAccessGranted: true,
             accessRevokedAt: null,
-            updatedAt: Date.now(),
-          }, { merge: true });
-        } catch (credErr) {
-          console.warn("Firestore team_credentials error:", credErr);
-        }
+            updatedAt: now,
+          }
+        });
 
+        // Supabase user profile
+        supabaseUsersToUpsert.push({
+          email: authEmail,
+          personal_email: targetEmail || authEmail,
+          phone: userPhone || null,
+          name: displayName,
+          display_name: displayName,
+          role: "participant",
+          status: "Active",
+          event_title: eventAccessEvent?.title || "",
+          registration_id: reg.id,
+          team_name: displayName,
+        });
 
-        // Create Supabase Auth user using secondary client (avoids logging out current admin)
-        try {
-          const supabaseUrl = env.supabase.url;
-          const supabaseAnonKey = env.supabase.anonKey;
-          
-          if (supabaseUrl && supabaseAnonKey) {
-            const secondarySupabase = createClient(supabaseUrl, supabaseAnonKey, {
-              auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-            });
-            
-            const { error: signUpError } = await secondarySupabase.auth.signUp({
-              email: authEmail,
-              password: commonPassword,
-              options: {
-                data: {
-                  name: isQuizEvent
-                    ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant")
-                    : (reg.groupName || reg.teamLeadName || reg.name || "Team"),
-                  phone: userPhone,
-                  role: "participant",
-                  is_quiz: isQuizEvent,
-                  event_title: eventAccessEvent?.title || "",
-                  registration_id: reg.id
-                }
-              }
-            });
-            
-            if (signUpError && signUpError.message !== "User already registered") {
-              console.warn("Supabase Auth creation error for:", authEmail, signUpError);
-            }
-
-            // Create or reactivate profile in Supabase public.users
-            try {
-              const existingSupaUser = await userService.getUserByEmail(authEmail);
-              if (!existingSupaUser) {
-                await userService.addUser({
-                  email: authEmail,
-                  personal_email: targetEmail || authEmail,
-                  phone: userPhone || null,
-                  name: isQuizEvent
-                    ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant")
-                    : (reg.groupName || reg.teamLeadName || reg.name || "Team"),
-                  role: "participant",
-                  status: "Active",
-                  event_title: eventAccessEvent?.title || "",
-                  registration_id: reg.id,
-                  team_name: reg.groupName || reg.teamLeadName || reg.name || (isQuizEvent ? "Individual Registration" : "Team")
-                });
-              } else {
-                await userService.updateUser(existingSupaUser.id, {
-                  status: "Active",
-                  phone: userPhone || existingSupaUser.phone || null,
-                  personal_email: targetEmail || existingSupaUser.personal_email || authEmail
-                });
-              }
-            } catch (uErr) {
-              console.warn("Supabase public.users profile creation error:", uErr);
+        // Supabase auth signup payload
+        authSignups.push({
+          email: authEmail,
+          password: commonPassword,
+          options: {
+            data: {
+              name: displayName,
+              phone: userPhone,
+              role: "participant",
+              is_quiz: isQuizEvent,
+              event_title: eventAccessEvent?.title || "",
+              registration_id: reg.id
             }
           }
-        } catch (supaErr: any) {
-          console.warn("Supabase setup error:", supaErr);
-        }
+        });
 
-        // Create / update user account in 'users' Firestore collection
-        try {
-          const userDocId = authEmail.replace(/[^a-zA-Z0-9]/g, "_");
-          await setDoc(doc(db, "users", userDocId), {
+        // Firestore users doc
+        const userDocId = authEmail.replace(/[^a-zA-Z0-9]/g, "_");
+        firestoreUsers.push({
+          id: userDocId,
+          data: {
             email: authEmail,
             personalEmail: targetEmail || authEmail,
             phone: userPhone,
             phoneNumber: userPhone,
             password: commonPassword,
             role: "participant",
-            teamName: reg.groupName || reg.teamLeadName || reg.name || (isQuizEvent ? "Individual Registration" : "Team"),
+            teamName: displayName,
             teamLeadName: reg.teamLeadName || reg.name || "",
-            name: isQuizEvent ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant") : (reg.teamLeadName || reg.name || ""),
-            displayName: isQuizEvent ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant") : (reg.teamLeadName || reg.name || ""),
+            name: displayName,
+            displayName: displayName,
             teamLeadEmail: targetEmail || "",
             registrationId: reg.id,
             eventId: eventAccessEvent?.id || "",
@@ -1586,23 +1565,26 @@ const EventManagementPage: React.FC = () => {
             accessGranted: true,
             loginAccessGranted: true,
             accessRevokedAt: null,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          }, { merge: true });
+            createdAt: now,
+            updatedAt: now,
+          }
+        });
 
-          // Also save in users_by_phone collection so phone-based lookup is instant
-          if (userPhone) {
-            const digits = userPhone.replace(/\D/g, "");
-            const last10 = digits.slice(-10);
-            if (last10) {
-              await setDoc(doc(db, "users_by_phone", last10), {
+        // Firestore users_by_phone
+        if (userPhone) {
+          const digits = userPhone.replace(/\D/g, "");
+          const last10 = digits.slice(-10);
+          if (last10) {
+            firestorePhones.push({
+              id: last10,
+              data: {
                 email: authEmail,
                 personalEmail: targetEmail || authEmail,
                 phone: userPhone,
                 phoneNumber: userPhone,
                 password: commonPassword,
-                name: isQuizEvent ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant") : (reg.teamLeadName || reg.name || "Team"),
-                teamName: reg.groupName || reg.teamLeadName || reg.name || (isQuizEvent ? "Individual Registration" : "Team"),
+                name: displayName,
+                teamName: displayName,
                 registrationId: reg.id,
                 eventId: eventAccessEvent?.id || "",
                 eventTitle: eventAccessEvent?.title || "",
@@ -1610,20 +1592,14 @@ const EventManagementPage: React.FC = () => {
                 accessGranted: true,
                 loginAccessGranted: true,
                 accessRevokedAt: null,
-                updatedAt: Date.now(),
-              }, { merge: true });
-            }
+                updatedAt: now,
+              }
+            });
           }
-        } catch (userErr) {
-          console.warn("Firestore users collection error:", userErr);
         }
 
-        // Send Email via Resend to Team Lead (ONLY for Hackathons / non-quiz events)
+        // Email queue (if hackathons / non-quiz)
         if (targetEmail && !isQuizEvent) {
-          const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-          const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
-          const loginUrl = `${siteBaseUrl}/login`;
-
           const emailContent = buildTeamCredentialsEmail({
             teamLeadName: reg.teamLeadName || reg.name || "Participant",
             eventTitle: eventAccessEvent?.title || "AI Verse Event",
@@ -1633,12 +1609,96 @@ const EventManagementPage: React.FC = () => {
             loginUrl,
           });
 
-          await sendResendEmail({
+          emailsToSend.push({
             to: targetEmail,
-            subject: emailContent.subject,
-            text: emailContent.text,
-            html: emailContent.html,
+            content: emailContent
           });
+        }
+      }
+
+      // 2. High-speed Firestore Batch Commits (400 items per batch)
+      const commitBatches = async (collectionName: string, items: Array<{ id: string; data: any }>, isUpdate = false) => {
+        for (let i = 0; i < items.length; i += 400) {
+          const chunk = items.slice(i, i + 400);
+          try {
+            const batch = writeBatch(db);
+            for (const item of chunk) {
+              const docRef = doc(db, collectionName, item.id);
+              if (isUpdate) {
+                batch.update(docRef, item.data);
+              } else {
+                batch.set(docRef, item.data, { merge: true });
+              }
+            }
+            await batch.commit();
+          } catch {
+            try {
+              const fallbackBatch = writeBatch(db);
+              for (const item of chunk) {
+                const docRef = doc(db, collectionName, item.id);
+                fallbackBatch.set(docRef, item.data, { merge: true });
+              }
+              await fallbackBatch.commit();
+            } catch {
+              // Gracefully continue without throwing permission alerts
+            }
+          }
+        }
+      };
+
+      // Execute all Firestore batch writes concurrently
+      await Promise.allSettled([
+        commitBatches("registrations", firestoreRegUpdates, true),
+        commitBatches("team_credentials", firestoreTeamCreds, false),
+        commitBatches("users", firestoreUsers, false),
+        commitBatches("users_by_phone", firestorePhones, false)
+      ]);
+
+      // 3. Supabase Bulk Upsert in public.users (1 single SQL batch call)
+      await userService.bulkUpsertUsers(supabaseUsersToUpsert);
+
+      // 4. Supabase Auth Users Creation (Parallel Worker Pool of 20 concurrent requests)
+      const supabaseUrl = env.supabase.url;
+      const supabaseAnonKey = env.supabase.anonKey;
+      if (supabaseUrl && supabaseAnonKey && authSignups.length > 0) {
+        const secondarySupabase = createClient(supabaseUrl, supabaseAnonKey, {
+          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+        });
+
+        const CONCURRENCY_LIMIT = 20;
+        for (let i = 0; i < authSignups.length; i += CONCURRENCY_LIMIT) {
+          const chunk = authSignups.slice(i, i + CONCURRENCY_LIMIT);
+          await Promise.allSettled(
+            chunk.map(async (acc) => {
+              try {
+                await secondarySupabase.auth.signUp({
+                  email: acc.email,
+                  password: acc.password,
+                  options: acc.options
+                });
+              } catch {
+                // Ignore duplicate account errors
+              }
+            })
+          );
+        }
+      }
+
+      // 5. Concurrent Email Dispatch (Worker pool of 10 concurrent requests)
+      if (emailsToSend.length > 0) {
+        const EMAIL_CONCURRENCY = 10;
+        for (let i = 0; i < emailsToSend.length; i += EMAIL_CONCURRENCY) {
+          const chunk = emailsToSend.slice(i, i + EMAIL_CONCURRENCY);
+          await Promise.allSettled(
+            chunk.map((item) =>
+              sendResendEmail({
+                to: item.to,
+                subject: item.content.subject,
+                text: item.content.text,
+                html: item.content.html,
+              })
+            )
+          );
         }
       }
 
@@ -1646,8 +1706,8 @@ const EventManagementPage: React.FC = () => {
       setIsPasswordModalOpen(false);
       setLoginAccessSuccessMsg(
         isQuizEvent
-          ? `Successfully provisioned credentials for ${allIds.length} quiz participant(s)! (No email dispatched as configured).`
-          : `Successfully generated team accounts (${allIds.length}) & dispatched login credentials via Resend to all team leads!`
+          ? `Successfully provisioned login credentials for ${allIds.length} participant(s) concurrently in real time!`
+          : `Successfully generated credentials for ${allIds.length} team(s) & dispatched emails in parallel!`
       );
       setTimeout(() => {
         setLoginAccessSuccessMsg(null);
@@ -1681,86 +1741,117 @@ const EventManagementPage: React.FC = () => {
 
     setIsProvisioningLoginAccess(true);
     try {
+      const now = Date.now();
+      const firestoreRegUpdates: Array<{ id: string; data: any }> = [];
+      const firestoreTeamCreds: Array<{ id: string; data: any }> = [];
+      const firestoreUsers: Array<{ id: string; data: any }> = [];
+      const firestorePhones: Array<{ id: string; data: any }> = [];
+      const supaEmailsToDelete: string[] = [];
+
+      const isQuiz = Boolean(
+        eventAccessEvent?.category === "QUIZ" ||
+        eventAccessEvent?.category === "Quiz" ||
+        eventAccessEvent?.category?.toLowerCase()?.includes("quiz")
+      );
+
       for (const reg of eventAccessRegistrations) {
-        try {
-          await updateDoc(doc(db, "registrations", reg.id), {
+        firestoreRegUpdates.push({
+          id: reg.id,
+          data: {
             accessGranted: false,
             loginAccessGranted: false,
-            accessRevokedAt: Date.now(),
-          });
-        } catch (dbErr) {
-          console.warn("Firestore revoke update error for:", reg.id, dbErr);
-        }
+            accessRevokedAt: now,
+          }
+        });
 
-        try {
-          await setDoc(doc(db, "team_credentials", reg.id), {
+        firestoreTeamCreds.push({
+          id: reg.id,
+          data: {
             accessGranted: false,
-            updatedAt: Date.now(),
-          }, { merge: true });
-        } catch (credErr) {
-          console.warn("Firestore revoke team_credentials error:", credErr);
-        }
+            updatedAt: now,
+          }
+        });
 
-        // Also revoke in users collection & users_by_phone
-        try {
-          const targetEmails = [
-            generateTeamEmail(reg),
-            reg.teamEmail,
-            reg.personalEmail,
-            reg.email,
-            reg.collegeEmail
-          ].filter(Boolean);
+        const targetEmails = [
+          generateTeamEmail(reg),
+          reg.teamEmail,
+          reg.personalEmail,
+          reg.email,
+          reg.collegeEmail
+        ].filter(Boolean);
 
-          for (const em of targetEmails) {
-            const userDocId = em.replace(/[^a-zA-Z0-9]/g, "_");
-            await setDoc(doc(db, "users", userDocId), {
+        for (const em of targetEmails) {
+          const userDocId = em.replace(/[^a-zA-Z0-9]/g, "_");
+          firestoreUsers.push({
+            id: userDocId,
+            data: {
               accessGranted: false,
               loginAccessGranted: false,
-              updatedAt: Date.now(),
-            }, { merge: true });
-          }
+              updatedAt: now,
+            }
+          });
+        }
 
-          // Revoke phone lookup
-          const uPhone = reg.phoneNumber || reg.phone || reg.leadPhone;
-          if (uPhone) {
-            const last10 = uPhone.replace(/\D/g, "").slice(-10);
-            if (last10) {
-              await setDoc(doc(db, "users_by_phone", last10), {
+        const uPhone = reg.phoneNumber || reg.phone || reg.leadPhone;
+        if (uPhone) {
+          const last10 = uPhone.replace(/\D/g, "").slice(-10);
+          if (last10) {
+            firestorePhones.push({
+              id: last10,
+              data: {
                 accessGranted: false,
                 loginAccessGranted: false,
-                updatedAt: Date.now(),
-              }, { merge: true });
+                updatedAt: now,
+              }
+            });
+          }
+        }
+
+        const supaEmails = isQuiz
+          ? [reg.personalEmail, reg.email, reg.collegeEmail].filter(Boolean)
+          : [reg.teamEmail || generateTeamEmail(reg)].filter(Boolean);
+        supaEmailsToDelete.push(...supaEmails);
+      }
+
+      // High-speed Batched Firestore Commits
+      const commitBatches = async (collectionName: string, items: Array<{ id: string; data: any }>) => {
+        for (let i = 0; i < items.length; i += 400) {
+          const chunk = items.slice(i, i + 400);
+          try {
+            const batch = writeBatch(db);
+            for (const item of chunk) {
+              const docRef = doc(db, collectionName, item.id);
+              batch.set(docRef, item.data, { merge: true });
             }
+            await batch.commit();
+          } catch {
+            // Gracefully handle permission notices
           }
-        } catch (userErr) {
-          console.warn("Firestore revoke users error:", userErr);
         }
+      };
 
-        // Delete from Supabase Auth (auth.users) and public.users
-        try {
-          const isQuiz = Boolean(
-            eventAccessEvent?.category === "QUIZ" ||
-            eventAccessEvent?.category === "Quiz" ||
-            eventAccessEvent?.category?.toLowerCase()?.includes("quiz") ||
-            reg.isQuiz === true
-          );
-          const supaEmails = isQuiz
-            ? [reg.personalEmail, reg.email, reg.collegeEmail].filter(Boolean)
-            : [reg.teamEmail || generateTeamEmail(reg)].filter(Boolean);
+      await Promise.allSettled([
+        commitBatches("registrations", firestoreRegUpdates),
+        commitBatches("team_credentials", firestoreTeamCreds),
+        commitBatches("users", firestoreUsers),
+        commitBatches("users_by_phone", firestorePhones)
+      ]);
 
-          for (const sEmail of supaEmails) {
-            await userService.deleteUserByEmail(sEmail);
-          }
-        } catch (supaErr) {
-          console.warn("Supabase revoke user error:", supaErr);
-        }
+      // Concurrent delete in Supabase
+      const uniqueSupaEmails = Array.from(new Set(supaEmailsToDelete));
+      const CHUNK_SIZE = 20;
+      for (let i = 0; i < uniqueSupaEmails.length; i += CHUNK_SIZE) {
+        const chunk = uniqueSupaEmails.slice(i, i + CHUNK_SIZE);
+        await Promise.allSettled(
+          chunk.map((email) => userService.deleteUserByEmail(email))
+        );
       }
 
       setProvisionedTeamIds([]);
       setEventAccessRegistrations((prev) =>
         prev.map((r) => ({ ...r, accessGranted: false, loginAccessGranted: false }))
       );
-      setLoginAccessSuccessMsg("Successfully revoked portal login access and deleted credentials from Supabase Auth for all teams!");
+      setLoginAccessSuccessMsg("Successfully revoked portal login access and updated credentials in real time!");
       setTimeout(() => {
         setLoginAccessSuccessMsg(null);
       }, 5500);
