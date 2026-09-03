@@ -418,9 +418,7 @@ const RegistrationPage: React.FC = () => {
 
       // Auto-provision login credentials for Quiz registrations with common password Aiverse@vitb
       if (isQuiz) {
-        const primaryAuthEmail = (leadPersonalEmail.trim() || leadCollegeEmail.trim()).toLowerCase();
         const personalEmail = leadPersonalEmail.trim().toLowerCase();
-        const collegeEmail = leadCollegeEmail.trim().toLowerCase();
         const displayName = leadName.trim() || "Participant";
         const userPhone = leadPhone.trim();
         try {
