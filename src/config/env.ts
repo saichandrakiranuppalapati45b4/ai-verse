@@ -18,6 +18,7 @@ export interface AppEnvConfig {
   supabase: {
     url: string;
     anonKey: string;
+    serviceRoleKey?: string;
   };
   isProduction: boolean;
   isDevelopment: boolean;
@@ -34,6 +35,7 @@ const FIREBASE_MEASUREMENT_ID = (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ||
 
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "https://glwwaoqbnguvorophdle.supabase.co").trim();
 const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsd3dhb3Fibmd1dm9yb3BoZGxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwNTY2OTYsImV4cCI6MjEwMjYzMjY5Nn0.P8oG1R9kUrDORU0k2AFK6TbLnOtqGngiZcwlu4XflgU").trim();
+const SUPABASE_SERVICE_ROLE_KEY = (import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || import.meta.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsd3dhb3Fibmd1dm9yb3BoZGxlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NzA1NjY5NiwiZXhwIjoyMTAyNjMyNjk2fQ._VhjPvPtlU5S0lPoME0pKzBQuJN_g_4k1QLLpISKw1A").trim();
 
 export const env: AppEnvConfig = {
   firebase: {
@@ -48,6 +50,7 @@ export const env: AppEnvConfig = {
   supabase: {
     url: SUPABASE_URL,
     anonKey: SUPABASE_ANON_KEY,
+    serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
   },
   isProduction: import.meta.env.PROD ?? false,
   isDevelopment: import.meta.env.DEV ?? true,

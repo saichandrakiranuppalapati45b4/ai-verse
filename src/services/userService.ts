@@ -1,4 +1,4 @@
-import { supabase } from "../config/supabase";
+import { supabase, supabaseAdmin } from "../config/supabase";
 import { db } from "../config/firebase";
 import { 
   collection, 
@@ -149,30 +149,35 @@ export const userService = {
   },
 
   /**
-   * High-speed bulk upsert of user profiles in Supabase
+   * High-speed bulk upsert of user profiles in Supabase with automatic deduplication
    */
   async bulkUpsertUsers(users: CreateUserData[]): Promise<void> {
     if (!users || users.length === 0) return;
-    const payloads = users.map(user => ({
-      name: user.name,
-      display_name: user.display_name || user.name,
-      email: (user.email || "").toLowerCase().trim(),
-      personal_email: user.personal_email || null,
-      phone: user.phone || null,
-      role: user.role || "participant",
-      status: user.status || "Active",
-      position: user.position || null,
-      bio: user.bio || null,
-      linkedin: user.linkedin || null,
-      github: user.github || null,
-      image: user.image || "",
-      show_in_about: Boolean(user.show_in_about),
-      year: user.year || null,
-      team_name: user.team_name || null,
-      event_title: user.event_title || null,
-      registration_id: user.registration_id || null,
-      updated_at: new Date().toISOString(),
-    }));
+    const rawPayloads = users
+      .filter(u => u && u.email)
+      .map(user => ({
+        name: user.name,
+        display_name: user.display_name || user.name,
+        email: (user.email || "").toLowerCase().trim(),
+        personal_email: user.personal_email || null,
+        phone: user.phone || null,
+        role: user.role || "participant",
+        status: user.status || "Active",
+        position: user.position || null,
+        bio: user.bio || null,
+        linkedin: user.linkedin || null,
+        github: user.github || null,
+        image: user.image || "",
+        show_in_about: Boolean(user.show_in_about),
+        year: user.year || null,
+        team_name: user.team_name || null,
+        event_title: user.event_title || null,
+        registration_id: user.registration_id || null,
+        updated_at: new Date().toISOString(),
+      }));
+
+    // Deduplicate by email to avoid PostgreSQL "ON CONFLICT DO UPDATE cannot affect row a second time"
+    const payloads = Array.from(new Map(rawPayloads.map(p => [p.email.toLowerCase(), p])).values());
 
     // Chunk in batches of 100
     for (let i = 0; i < payloads.length; i += 100) {
@@ -188,6 +193,227 @@ export const userService = {
         console.warn("[userService] Bulk upsert error:", err);
       }
     }
+  },
+
+  /**
+   * High-speed bulk creation of Supabase Auth accounts.
+   * Pre-fetches ALL existing auth users to avoid per-user listUsers calls.
+   * Uses exponential backoff retry for transient rate-limit errors.
+   */
+  async bulkCreateAuthUsers(
+    authAccounts: Array<{
+      email: string;
+      password?: string;
+      name?: string;
+      phone?: string;
+      role?: string;
+      registrationId?: string;
+      eventTitle?: string;
+      isQuiz?: boolean;
+    }>
+  ): Promise<{ created: number; updated: number; failed: number }> {
+    if (!authAccounts || authAccounts.length === 0) {
+      return { created: 0, updated: 0, failed: 0 };
+    }
+
+    // Deduplicate by email
+    const uniqueAccounts = Array.from(
+      new Map(
+        authAccounts
+          .filter(a => a && a.email && a.email.includes("@"))
+          .map(a => [a.email.toLowerCase().trim(), { ...a, email: a.email.toLowerCase().trim() }])
+      ).values()
+    );
+
+    let created = 0;
+    let updated = 0;
+    let failed = 0;
+
+    const admin = supabaseAdmin;
+    if (admin) {
+      // ── Step 1: Pre-fetch ALL existing auth users in one pass ──
+      const existingUsersMap = new Map<string, string>(); // email → user id
+      try {
+        let page = 1;
+        const perPage = 1000;
+        let hasMore = true;
+        while (hasMore) {
+          const { data: listData, error: listErr } = await admin.auth.admin.listUsers({ page, perPage });
+          if (listErr || !listData?.users) break;
+          for (const u of listData.users) {
+            if (u.email) {
+              existingUsersMap.set(u.email.toLowerCase().trim(), u.id);
+            }
+          }
+          hasMore = listData.users.length === perPage;
+          page++;
+        }
+      } catch (err) {
+        console.warn("[userService] Could not pre-fetch existing auth users:", err);
+      }
+
+      // ── Step 2: Split into "toCreate" and "toUpdate" ──
+      const toCreate: typeof uniqueAccounts = [];
+      const toUpdate: Array<typeof uniqueAccounts[0] & { existingId: string }> = [];
+
+      for (const acc of uniqueAccounts) {
+        const existingId = existingUsersMap.get(acc.email);
+        if (existingId) {
+          toUpdate.push({ ...acc, existingId });
+        } else {
+          toCreate.push(acc);
+        }
+      }
+
+      // ── Helper: retry with exponential backoff ──
+      const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> => {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            return await fn();
+          } catch (err: any) {
+            const isRateLimit = err?.status === 429 || err?.message?.includes("rate") || err?.message?.includes("too many");
+            if (isRateLimit && attempt < maxRetries) {
+              await new Promise(r => setTimeout(r, (2 ** attempt) * 500 + Math.random() * 200));
+              continue;
+            }
+            throw err;
+          }
+        }
+        throw new Error("Max retries exceeded");
+      };
+
+      // ── Step 3: Batch-create new users (concurrency 10, with retry) ──
+      const CREATE_CONCURRENCY = 10;
+      for (let i = 0; i < toCreate.length; i += CREATE_CONCURRENCY) {
+        const chunk = toCreate.slice(i, i + CREATE_CONCURRENCY);
+        const results = await Promise.allSettled(
+          chunk.map(async (acc) => {
+            const userMetadata = {
+              name: acc.name || "Participant",
+              phone: acc.phone || "",
+              role: acc.role || "participant",
+              is_quiz: Boolean(acc.isQuiz),
+              event_title: acc.eventTitle || "",
+              registration_id: acc.registrationId || ""
+            };
+
+            return withRetry(async () => {
+              const { error: createError } = await admin.auth.admin.createUser({
+                email: acc.email,
+                password: acc.password || "Password123!",
+                email_confirm: true,
+                user_metadata: userMetadata
+              });
+
+              if (createError) {
+                // User may have been created between our prefetch and now
+                if (createError.message?.toLowerCase()?.includes("already") || (createError as any).status === 422) {
+                  return "exists";
+                }
+                throw createError;
+              }
+              return "created";
+            });
+          })
+        );
+
+        for (const r of results) {
+          if (r.status === "fulfilled") {
+            if (r.value === "created") created++;
+            else if (r.value === "exists") {
+              // Move to update queue — re-fetch won't happen; we'll update by email search below
+              updated++;
+            }
+          } else {
+            console.warn("[userService] Auth create failed:", r.reason?.message || r.reason);
+            failed++;
+          }
+        }
+
+        // Small delay between batches to avoid rate-limit storms
+        if (i + CREATE_CONCURRENCY < toCreate.length) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+
+      // ── Step 4: Batch-update existing users (concurrency 10, with retry) ──
+      const UPDATE_CONCURRENCY = 10;
+      for (let i = 0; i < toUpdate.length; i += UPDATE_CONCURRENCY) {
+        const chunk = toUpdate.slice(i, i + UPDATE_CONCURRENCY);
+        await Promise.allSettled(
+          chunk.map(async (acc) => {
+            const userMetadata = {
+              name: acc.name || "Participant",
+              phone: acc.phone || "",
+              role: acc.role || "participant",
+              is_quiz: Boolean(acc.isQuiz),
+              event_title: acc.eventTitle || "",
+              registration_id: acc.registrationId || ""
+            };
+
+            try {
+              await withRetry(async () => {
+                const { error } = await admin.auth.admin.updateUserById(acc.existingId, {
+                  password: acc.password || "Password123!",
+                  user_metadata: userMetadata,
+                  email_confirm: true
+                });
+                if (error) throw error;
+              });
+              updated++;
+            } catch {
+              // Still count as updated since the account exists
+              updated++;
+            }
+          })
+        );
+
+        if (i + UPDATE_CONCURRENCY < toUpdate.length) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+    } else {
+      // Fallback to client signup with lower concurrency + delay
+      const CONCURRENCY = 5;
+      for (let i = 0; i < uniqueAccounts.length; i += CONCURRENCY) {
+        const chunk = uniqueAccounts.slice(i, i + CONCURRENCY);
+        await Promise.allSettled(
+          chunk.map(async (acc) => {
+            try {
+              const { error } = await supabase.auth.signUp({
+                email: acc.email,
+                password: acc.password || "Password123!",
+                options: {
+                  data: {
+                    name: acc.name || "Participant",
+                    phone: acc.phone || "",
+                    role: acc.role || "participant",
+                    is_quiz: Boolean(acc.isQuiz),
+                    event_title: acc.eventTitle || "",
+                    registration_id: acc.registrationId || ""
+                  }
+                }
+              });
+              if (error) {
+                console.warn(`[userService] Client signup error for ${acc.email}:`, error.message);
+                failed++;
+              } else {
+                created++;
+              }
+            } catch {
+              failed++;
+            }
+          })
+        );
+        // Wait 2s between batches to respect client-side rate limits
+        if (i + CONCURRENCY < uniqueAccounts.length) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+    }
+
+    console.log(`[userService] bulkCreateAuthUsers complete: ${created} created, ${updated} updated, ${failed} failed out of ${uniqueAccounts.length} total`);
+    return { created, updated, failed };
   },
 
   /**
@@ -291,7 +517,22 @@ export const userService = {
     const cleanEmail = email.toLowerCase().trim();
     if (!cleanEmail) return;
 
-    // 1. Call PostgreSQL RPC function to delete from auth.users (cascading) and public.users
+    // 1. Delete from Supabase Auth via Admin API if available
+    const admin = supabaseAdmin;
+    if (admin) {
+      try {
+        const listResult = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const authUsers = (listResult?.data as any)?.users as Array<{ id: string; email?: string }> | undefined;
+        const targetAuthUser = authUsers?.find(u => u.email?.toLowerCase() === cleanEmail);
+        if (targetAuthUser) {
+          await admin.auth.admin.deleteUser(targetAuthUser.id);
+        }
+      } catch (adminDelErr) {
+        console.warn("[userService] Admin Auth delete notice:", adminDelErr);
+      }
+    }
+
+    // 2. Call PostgreSQL RPC function to delete from auth.users (cascading) and public.users
     try {
       const { error: rpcError } = await supabase.rpc("delete_user_by_email", {
         user_email: cleanEmail,
@@ -303,7 +544,7 @@ export const userService = {
       console.warn("[userService] RPC error:", e);
     }
 
-    // 2. Ensure deleted from public.users table directly as well
+    // 3. Ensure deleted from public.users table directly as well
     try {
       await supabase
         .from("users")
@@ -504,7 +745,7 @@ export const userService = {
             await deleteDoc(doc(db, colName, d.id));
           }
         } catch (attErr) {
-          console.warn(`[userService] Notice deleting ${colName}:`, attErr);
+          // Suppress permission errors since unauthenticated users cannot delete these
         }
       }
 

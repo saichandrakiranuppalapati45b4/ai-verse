@@ -25,7 +25,8 @@ import {
 import SEO from "../../components/layout/SEO";
 import Button from "../../components/ui/Button";
 import { db } from "../../config/firebase";
-import { doc, getDoc, collection, addDoc, updateDoc, increment } from "firebase/firestore";
+import { doc, getDoc, getDocs, collection, addDoc, updateDoc, increment } from "firebase/firestore";
+import { userService } from "../../services/userService";
 
 interface Teammate {
   name: string;
@@ -116,8 +117,19 @@ const RegistrationPage: React.FC = () => {
     const fetchEvent = async () => {
       if (!id) return;
       try {
-        const docRef = doc(db, "events", id);
-        const docSnap = await getDoc(docRef);
+        let docSnap = await getDoc(doc(db, "events", id));
+        if (!docSnap.exists()) {
+          const cleanId = id.replace(/[Il]/g, "i").toLowerCase();
+          const allEventsSnap = await getDocs(collection(db, "events"));
+          const matchedDoc = allEventsSnap.docs.find(d =>
+            d.id.toLowerCase() === id.toLowerCase() ||
+            d.id.replace(/[Il]/g, "i").toLowerCase() === cleanId
+          );
+          if (matchedDoc) {
+            docSnap = matchedDoc;
+          }
+        }
+
         if (docSnap.exists()) {
           const data = docSnap.data();
           const minT = data.minTeamSize || 1;
@@ -347,8 +359,11 @@ const RegistrationPage: React.FC = () => {
         }
       }
 
+      const commonQuizPassword = "Aiverse@vitb";
+      const isEventLoginAllowed = Boolean((event as any)?.allowLoginAccess);
+
       const payload = {
-        eventId: id,
+        eventId: event.id,
         eventTitle: event.title,
         category: event.category || (isQuiz ? "QUIZ" : "Tech Event"),
         isQuiz: Boolean(isQuiz),
@@ -367,6 +382,9 @@ const RegistrationPage: React.FC = () => {
         teamLeadPhone: leadPhone.trim(),
         phoneNumber: leadPhone.trim(),
         phone: leadPhone.trim(),
+        teamPassword: isQuiz ? commonQuizPassword : undefined,
+        accessGranted: isQuiz ? isEventLoginAllowed : false,
+        loginAccessGranted: isQuiz ? isEventLoginAllowed : false,
         members: isQuiz ? [] : members,
         teamSize: isQuiz ? 1 : members.length + 1,
         // Food preferences
@@ -398,8 +416,49 @@ const RegistrationPage: React.FC = () => {
       });
       setCreatedRegId(regDocRef.id);
 
+      // Auto-provision login credentials for Quiz registrations with common password Aiverse@vitb
+      if (isQuiz) {
+        const primaryAuthEmail = (leadPersonalEmail.trim() || leadCollegeEmail.trim()).toLowerCase();
+        const personalEmail = leadPersonalEmail.trim().toLowerCase();
+        const collegeEmail = leadCollegeEmail.trim().toLowerCase();
+        const displayName = leadName.trim() || "Participant";
+        const userPhone = leadPhone.trim();
+        try {
+          const allEmails = Array.from(new Set([personalEmail].filter(e => e && e.includes("@"))));
+          // 4. Supabase public.users Profile Upsert
+          const supaUsers = allEmails.map(em => ({
+            email: em,
+            personal_email: personalEmail || em,
+            phone: userPhone || null,
+            name: displayName,
+            display_name: displayName,
+            role: "participant",
+            status: "Active",
+            event_title: event.title || "",
+            registration_id: regDocRef.id,
+            team_name: displayName,
+          }));
+          await userService.bulkUpsertUsers(supaUsers);
+
+          // 5. Supabase Auth Account Creation (Password: Aiverse@vitb)
+          const authAccounts = allEmails.map(em => ({
+            email: em,
+            password: commonQuizPassword,
+            name: displayName,
+            phone: userPhone,
+            role: "participant",
+            isQuiz: true,
+            eventTitle: event.title || "",
+            registrationId: regDocRef.id,
+          }));
+          await userService.bulkCreateAuthUsers(authAccounts);
+        } catch (credErr) {
+          console.warn("[Registration] Non-critical error auto-provisioning quiz credentials:", credErr);
+        }
+      }
+
       // Increment registrations counter on event
-      const docRef = doc(db, "events", id);
+      const docRef = doc(db, "events", event.id);
       await updateDoc(docRef, {
         currentReg: increment(isQuiz ? 1 : members.length + 1)
       });
@@ -572,6 +631,27 @@ const RegistrationPage: React.FC = () => {
                         <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
                           You can view your confirmed registration pass and event details anytime.
                         </p>
+                      </div>
+                    </div>
+
+                    {/* Quiz Credentials Card */}
+                    <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-100 text-xs text-left space-y-2 mt-2">
+                      <div className="flex items-center gap-1.5 font-bold text-blue-900 text-xs uppercase tracking-wider">
+                        <span>🔑</span>
+                        <span>Your Portal Login Credentials</span>
+                      </div>
+                      <div className="text-[11px] text-slate-700 space-y-1">
+                        <p>• <strong>Personal Email:</strong> <code className="font-mono bg-blue-100/90 px-1.5 py-0.5 rounded text-blue-900 font-bold">{leadPersonalEmail}</code></p>
+                        <p>• <strong>Common Password:</strong> <code className="font-mono bg-blue-100/90 px-1.5 py-0.5 rounded text-blue-900 font-bold">Aiverse@vitb</code></p>
+                        <p>• <strong>Phone Login:</strong> <span className="text-emerald-700 font-bold">{leadPhone}</span> (Direct access without password)</p>
+                        <p className="text-[10px] text-slate-500 pt-0.5 font-medium">
+                          Note: You can log in as soon as the event coordinator clicks <strong>"Allow to Login"</strong> for this event.
+                        </p>
+                      </div>
+                      <div className="pt-1">
+                        <Link to="/login" className="inline-flex items-center gap-1 text-xs font-black text-[#2563EB] hover:underline">
+                          Go to Participant Portal Login →
+                        </Link>
                       </div>
                     </div>
                   </>

@@ -370,7 +370,12 @@ const OrganizerManagementPage: React.FC = () => {
         
         if (supabaseUrl && supabaseAnonKey) {
           const secondarySupabase = createClient(supabaseUrl, supabaseAnonKey, {
-            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+            auth: { 
+              persistSession: false, 
+              autoRefreshToken: false, 
+              detectSessionInUrl: false,
+              storageKey: 'supabase.secondary.auth.token'
+            }
           });
           
           const { data: signUpData, error: signUpError } = await secondarySupabase.auth.signUp({

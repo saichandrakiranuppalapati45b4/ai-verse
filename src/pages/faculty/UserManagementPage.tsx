@@ -150,11 +150,15 @@ const UserManagementPage: React.FC = () => {
           const supabaseUsers = await userService.getUsers();
           if (supabaseUsers && supabaseUsers.length > 0) {
             supabaseUsers.forEach((u) => {
+              const name = (u.name || u.display_name || "").trim();
               const email = (u.email || "").toLowerCase().trim();
+              if (!name && !email) return;
+              if (name.toLowerCase() === "unnamed user" && !email) return;
+
               if (email) seenEmails.add(email);
               combinedList.push({
                 id: u.id,
-                name: u.name || u.display_name || "Unnamed User",
+                name: name || "User",
                 email: u.email || "",
                 personal_email: u.personal_email || "",
                 personalEmail: u.personal_email || "",
@@ -180,6 +184,12 @@ const UserManagementPage: React.FC = () => {
           querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
             const email = (data.email || "").toLowerCase().trim();
+            const rawName = (data.name || data.displayName || data.teamLeadName || "").trim();
+            
+            // Ignore ghost or revoked entries that have neither name nor email
+            if (!rawName && !email) return;
+            if (rawName.toLowerCase() === "unnamed user" && !email) return;
+
             if (email && seenEmails.has(email)) {
               // Update existing entry with any extra fields from Firestore
               const idx = combinedList.findIndex(item => (item.email || "").toLowerCase().trim() === email);
@@ -202,7 +212,7 @@ const UserManagementPage: React.FC = () => {
               if (email) seenEmails.add(email);
               combinedList.push({
                 id: docSnap.id,
-                name: data.name || data.displayName || data.teamLeadName || "Unnamed User",
+                name: rawName || "User",
                 email: data.email || "",
                 personal_email: data.personal_email || data.personalEmail || "",
                 personalEmail: data.personalEmail || data.personal_email || "",
@@ -228,6 +238,11 @@ const UserManagementPage: React.FC = () => {
           organizersSnap.forEach((docSnap) => {
             const data = docSnap.data();
             const email = (data.email || "").toLowerCase().trim();
+            const rawName = (data.name || data.displayName || "").trim();
+
+            if (!rawName && !email) return;
+            if (rawName.toLowerCase() === "unnamed user" && !email) return;
+
             if (email && seenEmails.has(email)) {
               const idx = combinedList.findIndex(item => (item.email || "").toLowerCase().trim() === email);
               if (idx >= 0) {
@@ -246,7 +261,7 @@ const UserManagementPage: React.FC = () => {
               if (email) seenEmails.add(email);
               combinedList.push({
                 id: docSnap.id,
-                name: data.name || data.displayName || "Unnamed User",
+                name: rawName || "Organizer",
                 email: data.email || "",
                 personal_email: data.personal_email || data.personalEmail || "",
                 personalEmail: data.personalEmail || data.personal_email || "",

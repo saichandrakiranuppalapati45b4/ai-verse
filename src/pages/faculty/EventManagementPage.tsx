@@ -4,9 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import SEO from "../../components/layout/SEO";
 import Papa from "papaparse";
 import { db } from "../../config/firebase";
-import { env } from "../../config/env";
 import { collection, doc, getDocs, addDoc, deleteDoc, getDoc, setDoc, updateDoc, increment, onSnapshot, writeBatch } from "firebase/firestore";
-import { createClient } from "@supabase/supabase-js";
 import { userService } from "../../services/userService";
 import { deleteQuizzesByEventId, evaluateQuizAnswers } from "../../services/quizService";
 import { useModal } from "../../context/ModalContext";
@@ -46,9 +44,6 @@ import {
   Key,
   Lock,
   UserCheck,
-  EyeOff,
-  AlertTriangle,
-  Mail,
   IndianRupee,
   CreditCard,
   Layers,
@@ -61,7 +56,7 @@ import DatePicker from "../../components/ui/DatePicker";
 import TimePicker from "../../components/ui/TimePicker";
 import MemberSelectCombobox from "../../components/ui/MemberSelectCombobox";
 import { sendResendEmail } from "../../utils/resendEmailService";
-import { buildTeamCredentialsEmail, buildRoundPromotionEmail } from "../../utils/emailTemplates";
+import { buildRoundPromotionEmail } from "../../utils/emailTemplates";
 import { dataCache } from "../../utils/dataCache";
 
 // Import local assets
@@ -451,13 +446,26 @@ const EventManagementPage: React.FC = () => {
       (querySnapshot) => {
         const list: any[] = [];
         const grantedIds: string[] = [];
+        const curEid = (eventAccessEvent?.id ? String(eventAccessEvent.id) : "").trim();
+        const curTitle = (eventAccessEvent?.title || "").toLowerCase().trim();
+        const cleanCurEid = curEid.replace(/[Il]/g, "i").toLowerCase();
+
         querySnapshot.forEach((docSnap) => {
           const data = docSnap.data();
           const regId = docSnap.id;
-          if (
-            (data.eventId && eventAccessEvent?.id && data.eventId === eventAccessEvent.id) ||
-            (data.eventTitle && eventAccessEvent?.title && data.eventTitle.toLowerCase().trim() === eventAccessEvent.title.toLowerCase().trim())
-          ) {
+          const regEid = (data.eventId ? String(data.eventId) : "").trim();
+          const regTitle = (data.eventTitle || "").toLowerCase().trim();
+
+          const isIdMatch = Boolean(
+            regEid && curEid && (
+              regEid === curEid ||
+              regEid.toLowerCase() === curEid.toLowerCase() ||
+              regEid.replace(/[Il]/g, "i").toLowerCase() === cleanCurEid
+            )
+          );
+          const isTitleMatch = Boolean(regTitle && curTitle && (regTitle === curTitle || regTitle.includes(curTitle) || curTitle.includes(regTitle)));
+
+          if (isIdMatch || isTitleMatch) {
             list.push({ id: regId, ...data });
             if (data.accessGranted || data.loginAccessGranted) {
               grantedIds.push(regId);
@@ -499,7 +507,12 @@ const EventManagementPage: React.FC = () => {
     const accessEventId = searchParams.get("accessEventId") || searchParams.get("eventId");
     if (accessEventId && events.length > 0) {
       if (!isEventAccessModalOpen || eventAccessEvent?.id !== accessEventId) {
-        const targetEvent = events.find((e) => e.id === accessEventId);
+        const cleanAccess = accessEventId.replace(/[Il]/g, "i").toLowerCase();
+        const targetEvent = events.find((e) =>
+          e.id === accessEventId ||
+          e.id.toLowerCase() === accessEventId.toLowerCase() ||
+          e.id.replace(/[Il]/g, "i").toLowerCase() === cleanAccess
+        );
         if (targetEvent) {
           handleOpenEventAccess(targetEvent);
         }
@@ -1386,12 +1399,6 @@ const EventManagementPage: React.FC = () => {
     }
   };
 
-  // Password Prompt Modal States
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [commonPassword, setCommonPassword] = useState("");
-  const [confirmCommonPassword, setConfirmCommonPassword] = useState("");
-  const [showCommonPassword, setShowCommonPassword] = useState(false);
-  const [passwordErrorMsg, setPasswordErrorMsg] = useState<string | null>(null);
 
   const generateTeamEmail = (reg: any): string => {
     const rawName = reg.groupName && reg.groupName !== "Individual RSVP"
@@ -1402,319 +1409,87 @@ const EventManagementPage: React.FC = () => {
     return `${cleanName || "team"}@aiverse.in`;
   };
 
-  const handleOpenPasswordModal = () => {
+  const handleEnableLoginAccess = async () => {
     if (!eventAccessRegistrations || eventAccessRegistrations.length === 0) {
-      alert("No registered teams available to provide login access.");
-      return;
-    }
-    setCommonPassword("");
-    setConfirmCommonPassword("");
-    setPasswordErrorMsg(null);
-    setShowCommonPassword(false);
-    setIsPasswordModalOpen(true);
-  };
-
-  const handleConfirmProvisioning = async () => {
-    if (!commonPassword || commonPassword.trim().length < 4) {
-      setPasswordErrorMsg("Please enter a valid common password (at least 4 characters).");
-      return;
-    }
-    if (commonPassword !== confirmCommonPassword) {
-      setPasswordErrorMsg("Passwords do not match. Please verify both fields.");
+      await showAlert({
+        title: "No Teams Available",
+        message: "No registered teams available to grant access to.",
+        type: "info"
+      });
       return;
     }
 
-    setPasswordErrorMsg(null);
+    const confirmGrant = await showConfirm({
+      title: "Allow Login Access?",
+      message: "Are you sure you want to allow login access for all registered teams? Their credentials were created during registration.",
+      confirmText: "Allow Access",
+      cancelText: "Cancel",
+      type: "warning",
+      icon: "alert"
+    });
+    if (!confirmGrant) return;
+
     setIsProvisioningLoginAccess(true);
-
-    const isQuizEvent = Boolean(
-      eventAccessEvent?.category === "QUIZ" ||
-      eventAccessEvent?.category === "Quiz" ||
-      eventAccessEvent?.category?.toLowerCase()?.includes("quiz")
-    );
 
     try {
       const allIds: string[] = [];
       const firestoreRegUpdates: Array<{ id: string; data: any }> = [];
-      const firestoreTeamCreds: Array<{ id: string; data: any }> = [];
-      const firestoreUsers: Array<{ id: string; data: any }> = [];
-      const firestorePhones: Array<{ id: string; data: any }> = [];
-      const supabaseUsersToUpsert: any[] = [];
-      const authSignups: Array<{ email: string; password: string; options: any }> = [];
-      const emailsToSend: Array<{ to: string; content: any }> = [];
-
       const now = Date.now();
-      const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-      const siteBaseUrl = isLocal ? "https://aiversevitb.dpdns.org" : window.location.origin;
-      const loginUrl = `${siteBaseUrl}/login`;
 
       // 1. Prepare all records synchronously in memory (0ms)
       for (const reg of eventAccessRegistrations) {
-        const teamEmail = generateTeamEmail(reg);
-        const targetEmail = (
-          reg.teamLeadPersonalEmail ||
-          reg.personalEmail ||
-          reg.leadPersonalEmail ||
-          reg.email ||
-          reg.teamLeadEmail ||
-          ""
-        ).trim();
-
-        const authEmail = isQuizEvent ? (targetEmail || teamEmail) : teamEmail;
-        const userPhone = (
-          reg.phoneNumber ||
-          reg.leadPhone ||
-          reg.phone ||
-          reg.teamLeadPhone ||
-          ""
-        ).trim();
-        const displayName = isQuizEvent
-          ? (reg.fullName || reg.leadName || reg.teamLeadName || reg.name || "Participant")
-          : (reg.groupName || reg.teamLeadName || reg.name || "Team");
-
         allIds.push(reg.id);
 
-        // Registration doc update
+        // Registration doc update in Firestore
         firestoreRegUpdates.push({
           id: reg.id,
           data: {
-            teamEmail: authEmail,
-            personalEmail: targetEmail || authEmail,
-            phone: userPhone,
-            phoneNumber: userPhone,
-            teamPassword: commonPassword,
             accessGranted: true,
             loginAccessGranted: true,
-            accessRevokedAt: null,
             accessProvisionedAt: now,
           }
         });
-
-        // Team credentials doc
-        firestoreTeamCreds.push({
-          id: reg.id,
-          data: {
-            registrationId: reg.id,
-            teamName: displayName,
-            teamEmail: authEmail,
-            personalEmail: targetEmail || authEmail,
-            phone: userPhone,
-            phoneNumber: userPhone,
-            teamPassword: commonPassword,
-            teamLeadEmail: targetEmail || "",
-            eventId: eventAccessEvent?.id || "",
-            eventTitle: eventAccessEvent?.title || "",
-            isQuiz: isQuizEvent,
-            accessGranted: true,
-            loginAccessGranted: true,
-            accessRevokedAt: null,
-            updatedAt: now,
-          }
-        });
-
-        // Supabase user profile
-        supabaseUsersToUpsert.push({
-          email: authEmail,
-          personal_email: targetEmail || authEmail,
-          phone: userPhone || null,
-          name: displayName,
-          display_name: displayName,
-          role: "participant",
-          status: "Active",
-          event_title: eventAccessEvent?.title || "",
-          registration_id: reg.id,
-          team_name: displayName,
-        });
-
-        // Supabase auth signup payload
-        authSignups.push({
-          email: authEmail,
-          password: commonPassword,
-          options: {
-            data: {
-              name: displayName,
-              phone: userPhone,
-              role: "participant",
-              is_quiz: isQuizEvent,
-              event_title: eventAccessEvent?.title || "",
-              registration_id: reg.id
-            }
-          }
-        });
-
-        // Firestore users doc
-        const userDocId = authEmail.replace(/[^a-zA-Z0-9]/g, "_");
-        firestoreUsers.push({
-          id: userDocId,
-          data: {
-            email: authEmail,
-            personalEmail: targetEmail || authEmail,
-            phone: userPhone,
-            phoneNumber: userPhone,
-            password: commonPassword,
-            role: "participant",
-            teamName: displayName,
-            teamLeadName: reg.teamLeadName || reg.name || "",
-            name: displayName,
-            displayName: displayName,
-            teamLeadEmail: targetEmail || "",
-            registrationId: reg.id,
-            eventId: eventAccessEvent?.id || "",
-            eventTitle: eventAccessEvent?.title || "",
-            isQuiz: isQuizEvent,
-            accessGranted: true,
-            loginAccessGranted: true,
-            accessRevokedAt: null,
-            createdAt: now,
-            updatedAt: now,
-          }
-        });
-
-        // Firestore users_by_phone
-        if (userPhone) {
-          const digits = userPhone.replace(/\D/g, "");
-          const last10 = digits.slice(-10);
-          if (last10) {
-            firestorePhones.push({
-              id: last10,
-              data: {
-                email: authEmail,
-                personalEmail: targetEmail || authEmail,
-                phone: userPhone,
-                phoneNumber: userPhone,
-                password: commonPassword,
-                name: displayName,
-                teamName: displayName,
-                registrationId: reg.id,
-                eventId: eventAccessEvent?.id || "",
-                eventTitle: eventAccessEvent?.title || "",
-                isQuiz: isQuizEvent,
-                accessGranted: true,
-                loginAccessGranted: true,
-                accessRevokedAt: null,
-                updatedAt: now,
-              }
-            });
-          }
-        }
-
-        // Email queue (if hackathons / non-quiz)
-        if (targetEmail && !isQuizEvent) {
-          const emailContent = buildTeamCredentialsEmail({
-            teamLeadName: reg.teamLeadName || reg.name || "Participant",
-            eventTitle: eventAccessEvent?.title || "AI Verse Event",
-            groupName: reg.groupName,
-            teamEmail: authEmail,
-            password: commonPassword,
-            loginUrl,
-          });
-
-          emailsToSend.push({
-            to: targetEmail,
-            content: emailContent
-          });
-        }
       }
 
       // 2. High-speed Firestore Batch Commits (400 items per batch)
-      const commitBatches = async (collectionName: string, items: Array<{ id: string; data: any }>, isUpdate = false) => {
+      const commitBatches = async (collectionName: string, items: Array<{ id: string; data: any }>) => {
         for (let i = 0; i < items.length; i += 400) {
           const chunk = items.slice(i, i + 400);
           try {
             const batch = writeBatch(db);
             for (const item of chunk) {
               const docRef = doc(db, collectionName, item.id);
-              if (isUpdate) {
-                batch.update(docRef, item.data);
-              } else {
-                batch.set(docRef, item.data, { merge: true });
-              }
+              batch.set(docRef, item.data, { merge: true });
             }
             await batch.commit();
           } catch {
-            try {
-              const fallbackBatch = writeBatch(db);
-              for (const item of chunk) {
-                const docRef = doc(db, collectionName, item.id);
-                fallbackBatch.set(docRef, item.data, { merge: true });
-              }
-              await fallbackBatch.commit();
-            } catch {
-              // Gracefully continue without throwing permission alerts
-            }
+            // Gracefully continue without throwing permission alerts
           }
         }
       };
 
       // Execute all Firestore batch writes concurrently
       await Promise.allSettled([
-        commitBatches("registrations", firestoreRegUpdates, true),
-        commitBatches("team_credentials", firestoreTeamCreds, false),
-        commitBatches("users", firestoreUsers, false),
-        commitBatches("users_by_phone", firestorePhones, false)
+        commitBatches("registrations", firestoreRegUpdates)
       ]);
 
-      // 3. Supabase Bulk Upsert in public.users (1 single SQL batch call)
-      await userService.bulkUpsertUsers(supabaseUsersToUpsert);
-
-      // 4. Supabase Auth Users Creation (Parallel Worker Pool of 20 concurrent requests)
-      const supabaseUrl = env.supabase.url;
-      const supabaseAnonKey = env.supabase.anonKey;
-      if (supabaseUrl && supabaseAnonKey && authSignups.length > 0) {
-        const secondarySupabase = createClient(supabaseUrl, supabaseAnonKey, {
-          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-        });
-
-        const CONCURRENCY_LIMIT = 20;
-        for (let i = 0; i < authSignups.length; i += CONCURRENCY_LIMIT) {
-          const chunk = authSignups.slice(i, i + CONCURRENCY_LIMIT);
-          await Promise.allSettled(
-            chunk.map(async (acc) => {
-              try {
-                await secondarySupabase.auth.signUp({
-                  email: acc.email,
-                  password: acc.password,
-                  options: acc.options
-                });
-              } catch {
-                // Ignore duplicate account errors
-              }
-            })
-          );
-        }
-      }
-
-      // 5. Concurrent Email Dispatch (Worker pool of 10 concurrent requests)
-      if (emailsToSend.length > 0) {
-        const EMAIL_CONCURRENCY = 10;
-        for (let i = 0; i < emailsToSend.length; i += EMAIL_CONCURRENCY) {
-          const chunk = emailsToSend.slice(i, i + EMAIL_CONCURRENCY);
-          await Promise.allSettled(
-            chunk.map((item) =>
-              sendResendEmail({
-                to: item.to,
-                subject: item.content.subject,
-                text: item.content.text,
-                html: item.content.html,
-              })
-            )
-          );
+      if (eventAccessEvent?.id) {
+        try {
+          await updateDoc(doc(db, "events", eventAccessEvent.id), { allowLoginAccess: true });
+        } catch (evErr) {
+          console.warn("Notice updating allowLoginAccess on event:", evErr);
         }
       }
 
       setProvisionedTeamIds((prev) => Array.from(new Set([...prev, ...allIds])));
-      setIsPasswordModalOpen(false);
-      setLoginAccessSuccessMsg(
-        isQuizEvent
-          ? `Successfully provisioned login credentials for ${allIds.length} participant(s) concurrently in real time!`
-          : `Successfully generated credentials for ${allIds.length} team(s) & dispatched emails in parallel!`
-      );
+
+      setLoginAccessSuccessMsg(`✅ Successfully granted login access for ${allIds.length} participant(s)!`);
       setTimeout(() => {
         setLoginAccessSuccessMsg(null);
-      }, 7000);
+      }, 5000);
     } catch (err) {
-      console.error("Error provisioning login access:", err);
-      alert("Failed to provision login access.");
+      console.error("Error granting login access:", err);
+      alert("Failed to grant login access.");
     } finally {
       setIsProvisioningLoginAccess(false);
     }
@@ -1743,9 +1518,6 @@ const EventManagementPage: React.FC = () => {
     try {
       const now = Date.now();
       const firestoreRegUpdates: Array<{ id: string; data: any }> = [];
-      const firestoreTeamCreds: Array<{ id: string; data: any }> = [];
-      const firestoreUsers: Array<{ id: string; data: any }> = [];
-      const firestorePhones: Array<{ id: string; data: any }> = [];
       const supaEmailsToDelete: string[] = [];
 
       const isQuiz = Boolean(
@@ -1763,49 +1535,6 @@ const EventManagementPage: React.FC = () => {
             accessRevokedAt: now,
           }
         });
-
-        firestoreTeamCreds.push({
-          id: reg.id,
-          data: {
-            accessGranted: false,
-            updatedAt: now,
-          }
-        });
-
-        const targetEmails = [
-          generateTeamEmail(reg),
-          reg.teamEmail,
-          reg.personalEmail,
-          reg.email,
-          reg.collegeEmail
-        ].filter(Boolean);
-
-        for (const em of targetEmails) {
-          const userDocId = em.replace(/[^a-zA-Z0-9]/g, "_");
-          firestoreUsers.push({
-            id: userDocId,
-            data: {
-              accessGranted: false,
-              loginAccessGranted: false,
-              updatedAt: now,
-            }
-          });
-        }
-
-        const uPhone = reg.phoneNumber || reg.phone || reg.leadPhone;
-        if (uPhone) {
-          const last10 = uPhone.replace(/\D/g, "").slice(-10);
-          if (last10) {
-            firestorePhones.push({
-              id: last10,
-              data: {
-                accessGranted: false,
-                loginAccessGranted: false,
-                updatedAt: now,
-              }
-            });
-          }
-        }
 
         const supaEmails = isQuiz
           ? [reg.personalEmail, reg.email, reg.collegeEmail].filter(Boolean)
@@ -1831,10 +1560,7 @@ const EventManagementPage: React.FC = () => {
       };
 
       await Promise.allSettled([
-        commitBatches("registrations", firestoreRegUpdates),
-        commitBatches("team_credentials", firestoreTeamCreds),
-        commitBatches("users", firestoreUsers),
-        commitBatches("users_by_phone", firestorePhones)
+        commitBatches("registrations", firestoreRegUpdates)
       ]);
 
       // Concurrent delete in Supabase
@@ -1845,6 +1571,14 @@ const EventManagementPage: React.FC = () => {
         await Promise.allSettled(
           chunk.map((email) => userService.deleteUserByEmail(email))
         );
+      }
+
+      if (eventAccessEvent?.id) {
+        try {
+          await updateDoc(doc(db, "events", eventAccessEvent.id), { allowLoginAccess: false });
+        } catch (evErr) {
+          console.warn("Notice updating allowLoginAccess on event upon revoke:", evErr);
+        }
       }
 
       setProvisionedTeamIds([]);
@@ -1884,11 +1618,6 @@ const EventManagementPage: React.FC = () => {
         loginAccessGranted: false,
         accessRevokedAt: Date.now(),
       });
-      await setDoc(doc(db, "team_credentials", regId), {
-        accessGranted: false,
-        updatedAt: Date.now(),
-      }, { merge: true });
-
       // Also revoke in users collection & users_by_phone
       try {
         const reg = eventAccessRegistrations.find((r) => r.id === regId);
@@ -1899,35 +1628,6 @@ const EventManagementPage: React.FC = () => {
             eventAccessEvent?.category?.toLowerCase()?.includes("quiz") ||
             reg.isQuiz === true
           );
-          const targetEmails = [
-            generateTeamEmail(reg),
-            reg.teamEmail,
-            reg.personalEmail,
-            reg.email,
-            reg.collegeEmail
-          ].filter(Boolean);
-
-          for (const em of targetEmails) {
-            const userDocId = em.replace(/[^a-zA-Z0-9]/g, "_");
-            await setDoc(doc(db, "users", userDocId), {
-              accessGranted: false,
-              loginAccessGranted: false,
-              updatedAt: Date.now(),
-            }, { merge: true });
-          }
-
-          // Revoke phone lookup
-          const uPhone = reg.phoneNumber || reg.phone || reg.leadPhone;
-          if (uPhone) {
-            const last10 = uPhone.replace(/\D/g, "").slice(-10);
-            if (last10) {
-              await setDoc(doc(db, "users_by_phone", last10), {
-                accessGranted: false,
-                loginAccessGranted: false,
-                updatedAt: Date.now(),
-              }, { merge: true });
-            }
-          }
 
           // Delete from Supabase Auth
           const supaEmails = isQuiz
@@ -1981,13 +1681,26 @@ const EventManagementPage: React.FC = () => {
       const querySnapshot = await getDocs(collection(db, "registrations"));
       const list: any[] = [];
       const grantedIds: string[] = [];
+      const curEid = (eventObj?.id ? String(eventObj.id) : "").trim();
+      const curTitle = (eventObj?.title || "").toLowerCase().trim();
+      const cleanCurEid = curEid.replace(/[Il]/g, "i").toLowerCase();
+
       querySnapshot.forEach((docSnap) => {
         const data = docSnap.data();
         const regId = docSnap.id;
-        if (
-          (data.eventId && eventObj?.id && data.eventId === eventObj.id) ||
-          (data.eventTitle && eventObj?.title && data.eventTitle.toLowerCase().trim() === eventObj.title.toLowerCase().trim())
-        ) {
+        const regEid = (data.eventId ? String(data.eventId) : "").trim();
+        const regTitle = (data.eventTitle || "").toLowerCase().trim();
+
+        const isIdMatch = Boolean(
+          regEid && curEid && (
+            regEid === curEid ||
+            regEid.toLowerCase() === curEid.toLowerCase() ||
+            regEid.replace(/[Il]/g, "i").toLowerCase() === cleanCurEid
+          )
+        );
+        const isTitleMatch = Boolean(regTitle && curTitle && (regTitle === curTitle || regTitle.includes(curTitle) || curTitle.includes(regTitle)));
+
+        if (isIdMatch || isTitleMatch) {
           list.push({ id: regId, ...data });
           if (data.accessGranted || data.loginAccessGranted) {
             grantedIds.push(regId);
@@ -6909,19 +6622,19 @@ const EventManagementPage: React.FC = () => {
 
                     <div className="space-y-3">
                       <button
-                        onClick={handleOpenPasswordModal}
+                        onClick={handleEnableLoginAccess}
                         disabled={isProvisioningLoginAccess || eventAccessRegistrations.length === 0}
                         className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-300 disabled:to-slate-300 text-white font-black rounded-2xl text-xs sm:text-sm transition-all shadow-md shadow-blue-500/25 active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-center leading-snug border border-blue-400/30"
                       >
                         {isProvisioningLoginAccess ? (
                           <>
                             <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                            Provisioning Access...
+                            Granting Access...
                           </>
                         ) : (
                           <>
                             <UserCheck className="h-5 w-5" />
-                            {provisionedTeamIds.length > 0 ? "Update / Re-grant Login Access" : "Provide the login access to their team"}
+                            {provisionedTeamIds.length > 0 ? "Update / Re-grant Login Access" : "Allow to Login"}
                           </>
                         )}
                       </button>
@@ -6960,144 +6673,7 @@ const EventManagementPage: React.FC = () => {
         document.body
       )}
 
-      {/* 🔐 PASSWORD PROMPT MODAL */}
-      {isPasswordModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999999] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div
-            className="bg-white max-w-md w-full rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95 duration-200 text-left relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold shadow-inner shrink-0">
-                  <Key className="h-5.5 w-5.5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900 tracking-tight">
-                    {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz"))
-                      ? "Set Common Participant Password"
-                      : "Set Common Team Password"}
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Generate {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz")) ? "Supabase Auth" : "portal authentication"} for all {eventAccessRegistrations.length} {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz")) ? "participant(s)" : "team(s)"}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsPasswordModalOpen(false)}
-                disabled={isProvisioningLoginAccess}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
-            {/* Error banner */}
-            {passwordErrorMsg && (
-              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center gap-2 animate-in fade-in">
-                <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
-                <span>{passwordErrorMsg}</span>
-              </div>
-            )}
-
-            {/* Form Fields */}
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">
-                  Common Password <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showCommonPassword ? "text" : "password"}
-                    placeholder="Enter common password..."
-                    value={commonPassword}
-                    onChange={(e) => setCommonPassword(e.target.value)}
-                    className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:border-blue-600 font-mono text-sm text-slate-800 bg-slate-50/50 focus:bg-white transition-all pr-11"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCommonPassword(!showCommonPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-                  >
-                    {showCommonPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">
-                  Confirm Common Password <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type={showCommonPassword ? "text" : "password"}
-                  placeholder="Confirm common password..."
-                  value={confirmCommonPassword}
-                  onChange={(e) => setConfirmCommonPassword(e.target.value)}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:border-blue-600 font-mono text-sm text-slate-800 bg-slate-50/50 focus:bg-white transition-all"
-                />
-              </div>
-
-              {/* Preview Box */}
-              <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-100 text-xs space-y-2">
-                <div className="flex items-center gap-2 text-blue-800 font-extrabold uppercase text-[10px] tracking-wider">
-                  <Mail className="h-3.5 w-3.5 text-blue-600" />
-                  Credentials & Login Format Preview
-                </div>
-                {Boolean(
-                  eventAccessEvent?.category === "QUIZ" ||
-                  eventAccessEvent?.category === "Quiz" ||
-                  eventAccessEvent?.category?.toLowerCase()?.includes("quiz")
-                ) ? (
-                  <div className="text-slate-700 font-medium leading-relaxed space-y-1.5">
-                    <p>• <strong>Supabase Auth Email:</strong> <code className="bg-blue-100/80 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[11px]">Participant's Personal Mail</code></p>
-                    <p>• <strong>Password:</strong> <span className="font-mono text-blue-900 font-bold">{commonPassword ? commonPassword : "••••••••"}</span></p>
-                    <p>• <strong>Phone Login:</strong> <span className="text-emerald-700 font-bold">Direct Access</span> (Participants can log in directly using their registered phone number without a password)</p>
-                    <p className="text-[11px] text-emerald-700 font-bold mt-1">✓ No credentials email will be sent to quiz participants.</p>
-                  </div>
-                ) : (
-                  <div className="text-slate-700 font-medium leading-relaxed space-y-1">
-                    <p>• <strong>Team Email:</strong> <code className="bg-blue-100/70 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[11px]">(teamname)@aiverse.in</code></p>
-                    <p>• <strong>Password:</strong> <span className="font-mono text-blue-900 font-bold">{commonPassword ? commonPassword : "••••••••"}</span></p>
-                    <p className="text-[11px] text-slate-500 mt-1">An email will be sent to each team lead containing their team email and common password.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsPasswordModalOpen(false)}
-                disabled={isProvisioningLoginAccess}
-                className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmProvisioning}
-                disabled={isProvisioningLoginAccess}
-                className="w-2/3 py-3 bg-[#2563EB] hover:bg-blue-700 active:scale-95 disabled:bg-slate-300 text-white font-black rounded-2xl text-xs transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isProvisioningLoginAccess ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz")) ? "Provisioning Access..." : "Sending Emails..."}
-                  </>
-                ) : (
-                  <>
-                    <UserCheck className="h-4 w-4" />
-                    {Boolean(eventAccessEvent?.category === "QUIZ" || eventAccessEvent?.category === "Quiz" || eventAccessEvent?.category?.toLowerCase()?.includes("quiz")) ? "Confirm & Provision Access" : "Confirm & Send Access"}
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* 🚀 MULTI PROBLEM STATEMENTS MANAGEMENT FULL PAGE */}
       {isMultiProblemModalOpen && createPortal(
